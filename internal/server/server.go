@@ -1,0 +1,398 @@
+// Package server is the vstd HTTP engine: deck switcher, built-deck serving
+// with live reload (SSE), the structured edit API (studio mode), the
+// realtime token endpoint, and the async requests/ queue processor.
+//
+// Serving modes:
+//
+//	studio  — localhost authoring: everything enabled (default)
+//	present — localhost presenting: read-only content + realtime tokens
+//	public  — hosted (Railway): read-only; realtime tokens require the
+//	          presenter key until GitHub OAuth lands (Phase 4)
+package server
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/vessica-labs/vessica-studio/internal/oai"
+	"github.com/vessica-labs/vessica-studio/internal/studio"
+	"gopkg.in/yaml.v3"
+)
+
+type Mode string
+
+const (
+	ModeStudio  Mode = "studio"
+	ModePresent Mode = "present"
+	ModePublic  Mode = "public"
+)
+
+type Server struct {
+	St   *studio.Studio
+	Mode Mode
+	OAI  *oai.Client
+
+	mu   sync.Mutex
+	subs map[chan string]bool
+}
+
+func New(st *studio.Studio, mode Mode) *Server {
+	c := oai.New(st.Config.OpenAI.BaseURL)
+	return &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}}
+}
+
+func (s *Server) canEdit() bool { return s.Mode == ModeStudio }
+
+// ---- SSE hub ----
+
+func (s *Server) Broadcast(event string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for ch := range s.subs {
+		select {
+		case ch <- event:
+		default:
+		}
+	}
+}
+
+func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
+	fl, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", 500)
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	ch := make(chan string, 8)
+	s.mu.Lock()
+	s.subs[ch] = true
+	s.mu.Unlock()
+	defer func() {
+		s.mu.Lock()
+		delete(s.subs, ch)
+		s.mu.Unlock()
+	}()
+	fmt.Fprintf(w, "event: hello\ndata: vstd\n\n")
+	fl.Flush()
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case ev := <-ch:
+			fmt.Fprintf(w, "event: %s\ndata: 1\n\n", ev)
+			fl.Flush()
+		case <-time.After(25 * time.Second):
+			fmt.Fprintf(w, ": ping\n\n")
+			fl.Flush()
+		}
+	}
+}
+
+// ---- HTTP ----
+
+func (s *Server) Routes() *http.ServeMux {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /{$}", s.handleSwitcher)
+	mux.HandleFunc("GET /api/events", s.handleEvents)
+	mux.HandleFunc("GET /api/decks", s.handleDecks)
+	mux.HandleFunc("GET /d/{deck}/{$}", s.handleDeck)
+	mux.HandleFunc("GET /d/{deck}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/d/"+r.PathValue("deck")+"/", http.StatusFound)
+	})
+	mux.Handle("GET /library/", http.StripPrefix("/library/",
+		http.FileServer(http.Dir(filepath.Join(s.St.Root, "library")))))
+
+	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
+	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
+	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion/{section}", s.editOnly(s.handlePutCompanion))
+	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/title", s.editOnly(s.handlePutTitle))
+	mux.HandleFunc("POST /api/deck/{deck}/slides", s.editOnly(s.handleNewSlide))
+	mux.HandleFunc("POST /api/realtime/token", s.handleRealtimeToken)
+	return mux
+}
+
+func (s *Server) editOnly(h http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.canEdit() {
+			http.Error(w, `{"error":"read-only mode"}`, http.StatusForbidden)
+			return
+		}
+		h(w, r)
+	}
+}
+
+func (s *Server) handleSwitcher(w http.ResponseWriter, r *http.Request) {
+	if s.Mode == ModePublic {
+		// no deck listing on public instances; decks are reached by link only
+		http.Error(w, "vessica studio", http.StatusOK)
+		return
+	}
+	decks, err := s.St.ListDecks()
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	var b strings.Builder
+	b.WriteString(`<!DOCTYPE html><html><head><title>Vessica Studio</title><style>
+body{font-family:'Trebuchet MS',sans-serif;background:#0C2B15;color:#E3FDDB;margin:0;padding:60px}
+h1{font-family:Georgia,serif;font-weight:400;font-size:42px;color:#FCFBFA}
+a.deck{display:block;background:#12341d;border:1px solid #2c4a35;border-radius:14px;
+padding:22px 28px;margin:14px 0;color:#E3FDDB;text-decoration:none;font-size:20px;max-width:720px}
+a.deck:hover{border-color:#21BF61}
+.sub{color:#8fb59a;font-size:14px;margin-top:4px}
+.mode{position:fixed;top:16px;right:20px;border:1px solid #2c4a35;border-radius:999px;padding:4px 14px;font-size:12px;color:#8fb59a}
+</style></head><body><div class="mode">mode: ` + string(s.Mode) + `</div><h1>Vessica Studio</h1>`)
+	for _, d := range decks {
+		meta, err := s.St.LoadDeckMeta(d)
+		title := d
+		desc := ""
+		if err == nil {
+			title = meta.Title
+			desc = meta.Description
+			if meta.ForkedFrom != "" {
+				desc = "fork of " + meta.ForkedFrom + " · " + desc
+			}
+		}
+		fmt.Fprintf(&b, `<a class="deck" href="/d/%s/">%s<div class="sub">%s · %s</div></a>`, d, title, d, desc)
+	}
+	b.WriteString(`</body></html>`)
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	io.WriteString(w, b.String())
+}
+
+func (s *Server) handleDecks(w http.ResponseWriter, r *http.Request) {
+	decks, err := s.St.ListDecks()
+	if err != nil {
+		jsonErr(w, err, 500)
+		return
+	}
+	type item struct {
+		Name, Title, Theme, ForkedFrom string
+		Slides                         int
+	}
+	var out []item
+	for _, d := range decks {
+		meta, _ := s.St.LoadDeckMeta(d)
+		ids, _ := s.St.SlideIDs(d)
+		it := item{Name: d, Slides: len(ids)}
+		if meta != nil {
+			it.Title, it.Theme, it.ForkedFrom = meta.Title, meta.Theme, meta.ForkedFrom
+		}
+		out = append(out, it)
+	}
+	writeJSON(w, out)
+}
+
+func (s *Server) handleDeck(w http.ResponseWriter, r *http.Request) {
+	deck := r.PathValue("deck")
+	if !studio.ValidDeckName(deck) {
+		http.NotFound(w, r)
+		return
+	}
+	out, err := s.St.Build(deck)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	http.ServeFile(w, r, out)
+}
+
+func (s *Server) handleGetSlide(w http.ResponseWriter, r *http.Request) {
+	frag, comp, err := s.St.ReadSlide(r.PathValue("deck"), r.PathValue("id"))
+	if err != nil {
+		jsonErr(w, err, 404)
+		return
+	}
+	writeJSON(w, map[string]string{"fragment": frag, "companion": comp})
+}
+
+func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
+	if err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	deck, id := r.PathValue("deck"), r.PathValue("id")
+	if err := s.St.WriteFragment(deck, id, string(body)); err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	s.St.AppendLog(deck, id, "manual edit saved from player")
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handlePutCompanion(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	err = s.St.UpdateCompanionSection(r.PathValue("deck"), r.PathValue("id"),
+		r.PathValue("section"), string(body))
+	if err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handlePutTitle(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<16))
+	title := strings.TrimSpace(string(body))
+	if title == "" {
+		jsonErr(w, fmt.Errorf("empty title"), 400)
+		return
+	}
+	if err := s.St.SetTitle(r.PathValue("deck"), r.PathValue("id"), title); err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handleNewSlide(w http.ResponseWriter, r *http.Request) {
+	var req struct{ ID, Title, HTML string }
+	if err := json.NewDecoder(io.LimitReader(r.Body, 2<<20)).Decode(&req); err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	if err := s.St.NewSlide(r.PathValue("deck"), req.ID, req.Title, req.HTML); err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok", "id": req.ID})
+}
+
+func (s *Server) handleRealtimeToken(w http.ResponseWriter, r *http.Request) {
+	if s.Mode == ModePublic {
+		key := os.Getenv("VSTD_PRESENTER_KEY")
+		if key == "" || r.Header.Get("Authorization") != "Bearer "+key {
+			jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
+			return
+		}
+	}
+	body, code, err := s.OAI.MintRealtimeToken(
+		s.St.Config.OpenAI.RealtimeTokenPath, s.St.Config.OpenAI.RealtimeModel)
+	if err != nil {
+		jsonErr(w, err, 502)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	w.Write(body)
+}
+
+// ---- watcher + requests queue ----
+
+// Watch polls the content tree and (a) broadcasts reload events on change,
+// (b) in studio mode, processes queued asset requests from requests/*.yaml.
+func (s *Server) Watch(interval time.Duration) {
+	last := s.scan()
+	for {
+		time.Sleep(interval)
+		cur := s.scan()
+		if cur != last {
+			last = cur
+			log.Printf("change detected — broadcasting reload")
+			s.Broadcast("reload")
+		}
+		if s.canEdit() {
+			s.processRequests()
+		}
+	}
+}
+
+// scan fingerprints mtimes of everything that affects built decks.
+func (s *Server) scan() string {
+	var b strings.Builder
+	roots := []string{filepath.Join(s.St.Root, "decks"), filepath.Join(s.St.Root, "themes"),
+		filepath.Join(s.St.Root, "library")}
+	for _, root := range roots {
+		filepath.Walk(root, func(p string, info os.FileInfo, err error) error {
+			if err != nil {
+				return nil
+			}
+			if info.IsDir() {
+				if info.Name() == "build" {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+			fmt.Fprintf(&b, "%s:%d;", p, info.ModTime().UnixNano())
+			return nil
+		})
+	}
+	return b.String()
+}
+
+type assetRequest struct {
+	Prompt string   `yaml:"prompt"`
+	Family string   `yaml:"family"`
+	Tags   []string `yaml:"tags"`
+	Size   string   `yaml:"size"`
+	Slug   string   `yaml:"slug"`
+}
+
+func (s *Server) processRequests() {
+	dir := filepath.Join(s.St.Root, "requests")
+	ents, err := os.ReadDir(dir)
+	if err != nil {
+		return
+	}
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		p := filepath.Join(dir, e.Name())
+		b, err := os.ReadFile(p)
+		if err != nil {
+			continue
+		}
+		var req assetRequest
+		if err := yaml.Unmarshal(b, &req); err != nil || req.Prompt == "" {
+			log.Printf("requests: skipping malformed %s", e.Name())
+			s.archiveRequest(p, e.Name(), "malformed")
+			continue
+		}
+		if !s.OAI.HasKey() {
+			return // leave queued until a key is configured
+		}
+		log.Printf("requests: generating asset for %s", e.Name())
+		asset, err := s.OAI.GenerateAsset(filepath.Join(s.St.Root, "library"),
+			s.St.Config.OpenAI.ImageModel, req.Prompt, req.Family, req.Size, req.Slug, req.Tags, false)
+		if err != nil {
+			log.Printf("requests: %s failed: %v", e.Name(), err)
+			s.archiveRequest(p, e.Name(), "failed")
+			continue
+		}
+		log.Printf("requests: created asset %s", asset.ID)
+		s.archiveRequest(p, e.Name(), "done")
+		s.Broadcast("reload")
+	}
+}
+
+func (s *Server) archiveRequest(p, name, status string) {
+	done := filepath.Join(s.St.Root, "requests", "done")
+	os.MkdirAll(done, 0o755)
+	os.Rename(p, filepath.Join(done, status+"-"+name))
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(v)
+}
+
+func jsonErr(w http.ResponseWriter, err error, code int) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(code)
+	json.NewEncoder(w).Encode(map[string]string{"error": err.Error()})
+}
