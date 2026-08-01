@@ -16,16 +16,38 @@ import (
 	"encoding/hex"
 	"flag"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/vessica-labs/vessica-studio/internal/oai"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
+
+// engineRepoPublic reports whether the engine repo can be cloned
+// anonymously (what the Railway Docker build will do without GITHUB_TOKEN).
+func engineRepoPublic() bool {
+	resp, err := httpGet("https://api.github.com/repos/vessica-labs/vessica-studio")
+	if err != nil {
+		return true // network hiccup — don't block; the build will tell us
+	}
+	return resp == 200
+}
+
+func httpGet(url string) (int, error) {
+	c := &http.Client{Timeout: 8 * time.Second}
+	resp, err := c.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	resp.Body.Close()
+	return resp.StatusCode, nil
+}
 
 func railwayPath() string {
 	if path, err := exec.LookPath("railway"); err == nil {
@@ -255,8 +277,16 @@ func railwayUp(args []string) error {
 		}
 	}
 	gh := *ghToken
-	if gh == "" && interactive {
-		gh = prompt("GitHub token for the private engine repo build (Enter if public)", "")
+	enginePublic := engineRepoPublic()
+	if gh == "" && !enginePublic && interactive {
+		fmt.Println("The engine repo (vessica-labs/vessica-studio) is NOT publicly clonable —")
+		fmt.Println("the Railway build clones it, so it needs either a public repo or a token.")
+		fmt.Println("  · easiest: make the repo public (it is the OSS engine), then re-run")
+		fmt.Println("  · or: create a fine-grained PAT (Contents: Read on vessica-studio)")
+		gh = prompt("GitHub token (Enter to abort)", "")
+		if gh == "" {
+			return fmt.Errorf("aborted: the hosted build cannot clone a private engine repo without a token")
+		}
 	}
 
 	vars := map[string]string{
