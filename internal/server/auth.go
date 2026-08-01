@@ -19,6 +19,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	qrcode "github.com/skip2/go-qrcode"
 	"io"
 	"log"
 	"net/http"
@@ -182,6 +183,39 @@ func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {
 	deck := r.PathValue("deck")
 	tok := s.MintShare(deck, time.Duration(req.TTLHours)*time.Hour)
 	writeJSON(w, map[string]string{"url": "/v/" + deck + "/" + tok, "token": tok})
+}
+
+// handleShareQR renders a QR code for a freshly-minted share link — embed
+// it on a closing slide via <img src="/api/deck/<deck>/share-qr.png"> and it
+// can never go stale. Points at public_host when configured (so phones in
+// the room resolve it), else the request host.
+func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
+	deck := r.PathValue("deck")
+	if !s.canView(r, deck) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	ttl := 72
+	if v := r.URL.Query().Get("ttl"); v != "" {
+		fmt.Sscanf(v, "%d", &ttl)
+	}
+	base := s.St.Config.PublicHost
+	if base == "" {
+		scheme := "http"
+		if r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https" {
+			scheme = "https"
+		}
+		base = scheme + "://" + r.Host
+	}
+	link := strings.TrimRight(base, "/") + "/v/" + deck + "/" + s.MintShare(deck, time.Duration(ttl)*time.Hour)
+	png, err := qrcode.Encode(link, qrcode.Medium, 640)
+	if err != nil {
+		jsonErr(w, err, 500)
+		return
+	}
+	w.Header().Set("Content-Type", "image/png")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Write(png)
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {

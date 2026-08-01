@@ -147,6 +147,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /auth/github/poll/{id}", s.handleGitHubPoll)
 	mux.HandleFunc("GET /v/{deck}/{token}", s.handleShareLanding)
 	mux.HandleFunc("POST /api/deck/{deck}/share", s.handleMintShare)
+	mux.HandleFunc("GET /api/deck/{deck}/share-qr.png", s.handleShareQR)
 	mux.HandleFunc("POST /api/deck/{deck}/presenting", s.handlePresenting)
 	return mux
 }
