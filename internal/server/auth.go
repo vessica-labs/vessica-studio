@@ -25,6 +25,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"time"
@@ -40,6 +41,13 @@ type githubFlow struct {
 
 func (s *Server) initAuth() {
 	s.secret = os.Getenv("VSTD_SECRET")
+	if s.secret == "" && s.St.Config.ShareSecretCmd != "" {
+		// resolve the same secret the CLI uses (e.g. macOS Keychain), so QR
+		// codes minted by a LOCAL serve validate on the HOSTED instance
+		if out, err := exec.Command("sh", "-c", s.St.Config.ShareSecretCmd).Output(); err == nil {
+			s.secret = strings.TrimSpace(string(out))
+		}
+	}
 	s.ghClientID = os.Getenv("VSTD_GITHUB_CLIENT_ID")
 	s.allowed = map[string]bool{}
 	for _, l := range strings.Split(os.Getenv("VSTD_ALLOWED_GITHUB"), ",") {
