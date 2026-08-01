@@ -21,9 +21,11 @@ import (
 
 // Config is studio.yaml at the root of a content repo.
 type Config struct {
-	ThemeDefault string `yaml:"theme_default"`
-	Port         int    `yaml:"port"`
-	OpenAI       struct {
+	ThemeDefault   string `yaml:"theme_default"`
+	Port           int    `yaml:"port"`
+	PublicHost     string `yaml:"public_host,omitempty"`
+	ShareSecretCmd string `yaml:"share_secret_cmd,omitempty"`
+	OpenAI         struct {
 		BaseURL           string `yaml:"base_url"`
 		APIKeyCmd         string `yaml:"api_key_cmd"`
 		ImageModel        string `yaml:"image_model"`

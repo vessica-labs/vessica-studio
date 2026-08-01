@@ -61,6 +61,8 @@ vstd diff-upstream <fork>        slides changed in the parent since fork time
 vstd build <deck>|--all          assemble decks/<deck>/build/index.html
 vstd serve [deck] [--mode M]     serve + watch + live reload + edit API
 vstd asset gen --prompt P ...    generate a library image (gpt-image-2)
+vstd qr <deck> [--ttl 72]        signed audience share link + QR image
+vstd railway up                  one-command hosted deploy (Railway)
 ```
 
 ## Serving modes
