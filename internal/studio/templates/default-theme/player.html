@@ -652,6 +652,8 @@ body.editmode .slide.active{cursor:default}
   }
 
   function stop(msg){
+    if(window.__vdict)try{window.__vdict.flush();}catch(_){}
+    window.__dictating=false;
     cleanup();
     S.on=false;S.talking=false;
     setState('','');hideState();
@@ -672,6 +674,16 @@ body.editmode .slide.active{cursor:default}
     {type:'function',name:'highlight',description:'Softly glow the element on the current slide whose visible text best matches the phrase the speaker is discussing. Use sparingly — one highlight at a time, only when the speaker dwells on a specific point.',parameters:{type:'object',properties:{phrase:{type:'string'}},required:['phrase']}},
     {type:'function',name:'clear_highlight',description:'Remove any highlight.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'begin_conversation',description:'Call ONLY when the speaker says the wake word "Vessica" and wants you to respond aloud. After calling, you may speak.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'edit_text',description:'IN CONVERSATION ONLY: replace text on the current slide. find = the exact visible text (or a distinctive fragment of it); replace = the new text.',parameters:{type:'object',properties:{find:{type:'string'},replace:{type:'string'}},required:['find','replace']}},
+    {type:'function',name:'set_slide_title',description:'IN CONVERSATION ONLY: replace the current slide title.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'add_bullet',description:'IN CONVERSATION ONLY: add a bullet/point to the current slide.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'remove_element',description:'IN CONVERSATION ONLY: remove the element on the current slide whose text best matches the phrase.',parameters:{type:'object',properties:{match:{type:'string'}},required:['match']}},
+    {type:'function',name:'note_edit_request',description:'IN CONVERSATION ONLY: for changes too large to do live (redesigns, new imagery, restructures) — record the request in the slide companion for the agent redesign pass, and tell the speaker it is noted.',parameters:{type:'object',properties:{instruction:{type:'string'}},required:['instruction']}},
+    {type:'function',name:'new_blank_slide',description:'IN CONVERSATION ONLY: create a fresh draft slide after the current one ("give me a blank slide [titled X]"). Then AUTHORING MODE begins: treat subsequent speech as content — distill points with author_point, capture narration with author_talk — until the speaker says done/back to the presentation.',parameters:{type:'object',properties:{title:{type:'string'}}}},
+    {type:'function',name:'author_point',description:'AUTHORING MODE: add a distilled bullet to the draft slide as the speaker talks.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'author_talk',description:'AUTHORING MODE: append the speaker\'s narration (cleaned sentences) to the draft slide talk track.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'author_lead',description:'AUTHORING MODE: set the draft slide lead-in line.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'done_authoring',description:'AUTHORING MODE: the speaker is done with the draft ("done with the slide", "back to the deck") — save and return to normal presenting.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'end_conversation',description:'Call when the speaker asks you to stop, be quiet, or says thanks — then return to silent operation.',parameters:{type:'object',properties:{}}}
   ];
 
@@ -688,6 +700,8 @@ RULES:
 - While silent, your ONLY actions are tool calls. Never produce audio without begin_conversation.
 - Advance slides with next_slide when the speaker finishes the current slide's material and begins the next slide's opening idea. Be conservative — never advance mid-thought. Obey explicit commands ("next slide", "go back", "go to slide 12") immediately via tools.
 - Use highlight(phrase) when the speaker dwells on a specific element visible on the slide; clear_highlight when they move on.
+- LIVE EDITING (only after the wake word, in conversation): the speaker may ask you to change the slide — "change X to Y" → edit_text; "retitle this…" → set_slide_title; "add a bullet…" → add_bullet; "remove …" → remove_element. Confirm briefly aloud. For big asks (redesign, new image, restructure) use note_edit_request and say it's queued for the redesign pass.
+- BLANK-SLIDE AUTHORING (in conversation): "give me a blank slide (titled X)" → new_blank_slide. Then the speaker talks the slide into existence: distill each distinct point with author_point, stream narration with author_talk, set the lead with author_lead. When they say they're done / back to the presentation, call done_authoring and fall silent again on end_conversation if asked.
 CURRENT SLIDE ${P().cur()+1}/${P().count}: "${title.trim()}"
 SPEAKER'S TALK TRACK FOR THIS SLIDE: ${notes.trim().slice(0,600)}
 NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
@@ -713,6 +727,80 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
     if(m.type==='error')console.warn('vessica error event',m);
   }
 
+  // ---- presenter-mode editing helpers ----
+  function editable(){return !window.__vme||window.__vme.mode==='studio';}
+  function activeSec(){return document.querySelector('#frame > .slide.active');}
+  async function persistActive(){
+    const sec=activeSec();if(!sec)return 'no active slide';
+    const id=sec.dataset.vstd;if(!id)return 'slide has no id';
+    const c=sec.cloneNode(true);
+    c.classList.remove('active','mini');
+    c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+    try{
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
+        {method:'PUT',headers:{'Content-Type':'text/html'},body:c.outerHTML});
+      return r.ok?'saved':'save failed '+r.status;
+    }catch(e){return 'save failed: '+e.message;}
+  }
+  function findTextEl(phrase){
+    const p=(phrase||'').toLowerCase();
+    const cands=activeSec().querySelectorAll('.s-title,.s-lead,.bh,li,.chev,.kpi,.headband,.card,td,b,div,span');
+    let best=null,bestLen=Infinity;
+    cands.forEach(el=>{
+      const t=(el.textContent||'').toLowerCase();
+      if(t.includes(p)&&t.length<bestLen&&el.children.length<6){best=el;bestLen=t.length;}
+    });
+    return best;
+  }
+  function editText(find,replace){
+    if(!editable())return 'read-only mode — edits need local studio serving';
+    const el=findTextEl(find);
+    if(!el)return 'could not find "'+find+'" on this slide';
+    const walker=document.createTreeWalker(el,NodeFilter.SHOW_TEXT);
+    let n,done=false;
+    while((n=walker.nextNode())){
+      const i=n.nodeValue.toLowerCase().indexOf(find.toLowerCase());
+      if(i>=0){n.nodeValue=n.nodeValue.slice(0,i)+replace+n.nodeValue.slice(i+find.length);done=true;break;}
+    }
+    if(!done)el.textContent=replace;
+    persistActive();P().toast('Edited: '+replace.slice(0,40));
+    return 'changed';
+  }
+  function addBullet(text){
+    if(!editable())return 'read-only mode';
+    const d=window.__vdict&&window.__vdict.state().draft;
+    const sec=activeSec();
+    if(d&&sec&&sec.dataset.vstd===d.id)return JSON.stringify(window.__vdict.run('add_point',{text:text}));
+    let ul=sec.querySelector('ul.cl');
+    if(!ul){
+      const content=sec.querySelector('.content')||sec;
+      ul=document.createElement('ul');ul.className='cl';ul.style.fontSize='24px';
+      content.appendChild(ul);
+    }
+    const li=document.createElement('li');li.textContent=text;ul.appendChild(li);
+    persistActive();P().toast('+ '+text.slice(0,40));
+    return 'added';
+  }
+  function removeEl(match){
+    if(!editable())return 'read-only mode';
+    const el=findTextEl(match);
+    if(!el)return 'could not find "'+match+'"';
+    el.remove();persistActive();P().toast('Removed element');
+    return 'removed';
+  }
+  async function noteEdit(instruction){
+    if(!editable())return 'read-only mode';
+    const sec=activeSec();const id=sec&&sec.dataset.vstd;
+    if(!id)return 'no slide id';
+    try{
+      const cur=await (await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id)).json();
+      const m=(cur.companion||'').match(/## Edit requests\n([\s\S]*?)(?=\n## |$)/);
+      const body=((m&&m[1].trim())?m[1].trim()+'\n':'')+'- '+new Date().toISOString().slice(0,10)+' (spoken during presentation): '+instruction;
+      await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/companion/'+encodeURIComponent('Edit requests'),{method:'PUT',body:body});
+      P().toast('Queued for redesign pass');
+      return 'noted for the agent redesign pass';
+    }catch(e){return 'failed to note: '+e.message;}
+  }
   function runTool(name,args,callId){
     let out='ok';
     if(name==='next_slide')P().show(P().cur()+1);
@@ -722,14 +810,34 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
     else if(name==='clear_highlight')clearGlow();
     else if(name==='begin_conversation'){S.talking=true;S.audio.muted=false;setState('speaking','Vessica speaking');}
     else if(name==='end_conversation'){S.talking=false;S.audio.muted=true;setState('listening','Vessica listening · say "Vessica" to talk');}
+    else if(name==='edit_text')out=editText(args.find,args.replace);
+    else if(name==='set_slide_title')out=editText((activeSec().querySelector('.s-title,.serif')||{textContent:''}).textContent.trim(),args.text);
+    else if(name==='add_bullet')out=addBullet(args.text);
+    else if(name==='remove_element')out=removeEl(args.match);
+    else if(name==='note_edit_request'){noteEdit(args.instruction);out='noting…';}
+    else if(name==='new_blank_slide'){
+      if(!editable())out='read-only mode';
+      else if(window.__vdict){window.__dictating=true;window.__vdict.create(args.title||'Untitled');out='draft created — authoring mode';P().toast('Blank slide — talk and it will form');}
+      else out='dictation module unavailable';
+    }
+    else if(name==='author_point')out=JSON.stringify(window.__vdict?window.__vdict.run('add_point',{text:args.text}):'unavailable');
+    else if(name==='author_talk')out=JSON.stringify(window.__vdict?window.__vdict.run('append_talk_track',{text:args.text}):'unavailable');
+    else if(name==='author_lead')out=JSON.stringify(window.__vdict?window.__vdict.run('set_lead',{text:args.text}):'unavailable');
+    else if(name==='done_authoring'){
+      if(window.__vdict)window.__vdict.flush();
+      window.__dictating=false;
+      out='draft saved';P().toast('Draft saved — marked for the beautify pass');
+    }
     else out='unknown tool';
     send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:out}});
     send({type:'response.create'});
+    return out;
   }
 
   let glowEl=null;
   function clearGlow(){if(glowEl){glowEl.classList.remove('vglow');glowEl=null;}}
   window.__vstopVessica=()=>{if(S.on)stop();};
+  window.__vpres={run:(n,a)=>runTool(n,a||{},'test')};
   function doHighlight(phrase){
     clearGlow();
     if(!phrase)return false;
