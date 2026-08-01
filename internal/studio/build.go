@@ -51,7 +51,13 @@ func (s *Studio) Build(deck string) (string, error) {
 		slides.WriteString("\n")
 	}
 
-	rt := map[string]any{"deck": deck, "title": meta.Title, "slides": ids, "theme": meta.Theme}
+	rt := map[string]any{
+		"deck": deck, "title": meta.Title, "slides": ids, "theme": meta.Theme,
+		"realtime": map[string]string{
+			"model": s.Config.OpenAI.RealtimeModel,
+			"base":  s.Config.OpenAI.BaseURL,
+		},
+	}
 	rtJSON, _ := json.Marshal(rt)
 
 	out := string(player)

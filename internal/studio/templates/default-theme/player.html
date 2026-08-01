@@ -36,6 +36,21 @@ body:hover #hud{opacity:1}
 #toast{position:fixed;top:14px;right:14px;z-index:120;background:rgba(12,32,19,.95);color:#dff0e2;
   border:1px solid #21BF61;border-radius:12px;padding:10px 18px;font-family:var(--sans);font-size:14px;
   display:none;max-width:340px}
+/* ---------- Vessica presentation mode ---------- */
+#vstatus{position:fixed;top:14px;left:14px;z-index:120;display:none;align-items:center;gap:9px;
+  background:rgba(12,32,19,.92);border:1px solid #2c4a35;border-radius:999px;padding:7px 16px;
+  font-family:var(--sans);font-size:13px;color:#cfe6d4;cursor:pointer}
+#vstatus .dot{width:10px;height:10px;border-radius:50%;background:#575757}
+#vstatus.listening .dot{background:#21BF61;animation:vpulse 1.6s infinite}
+#vstatus.speaking .dot{background:#20E3AC;animation:vpulse .7s infinite}
+#vstatus.connecting .dot{background:#FEA127;animation:vpulse 1s infinite}
+#vstatus.error .dot{background:#FE7C2B}
+@keyframes vpulse{0%,100%{opacity:1}50%{opacity:.35}}
+.vglow{outline:3px solid rgba(32,227,172,.0);border-radius:12px;
+  box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45);
+  transition:box-shadow .3s ease;animation:vglowp 1.8s ease-in-out infinite}
+@keyframes vglowp{0%,100%{box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45)}
+  50%{box-shadow:0 0 0 3px rgba(32,227,172,.85),0 0 48px 10px rgba(32,227,172,.65)}}
 #menu,#notesPanel{position:fixed;z-index:80;background:#0f271733;backdrop-filter:blur(2px)}
 #menu{inset:0;display:none}
 #menu.open{display:flex;align-items:center;justify-content:center}
@@ -108,12 +123,14 @@ body.editmode .slide.active{cursor:default}
   <button data-act="menu">Agenda</button>
   <button data-act="grid">Grid</button>
   <button data-act="notes">Notes</button>
+  <button data-act="present" id="presentbtn">Present</button>
   <button data-act="edit" id="editbtn">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save HTML</button>
 </div>
 <div id="edithint">Edit mode · click = select · click again = edit text · drag = move · handles = resize · arrows = nudge · <b>Save HTML</b> downloads the edited file</div>
 <div id="menu"><div class="sheet"><h2>Jump to</h2><div id="menulist"></div></div></div>
 <div id="notesPanel"><div class="lbl">Speaker notes</div><div id="notesBody"></div></div>
+<div id="vstatus"><span class="dot"></span><span id="vlabel">Vessica off</span></div>
 <div id="overview"><div class="gridwrap" id="ovgrid"></div></div>
 
 <script>
@@ -140,6 +157,7 @@ body.editmode .slide.active{cursor:default}
     cur=Math.max(0,Math.min(slides.length-1,i));
     slides.forEach((s,j)=>s.classList.toggle('active',j===cur));
     cnt.textContent=(cur+1)+' / '+slides.length;
+    document.dispatchEvent(new CustomEvent('vstd:slide',{detail:{index:cur}}));
     progress.style.width=((cur+1)/slides.length*100)+'%';
     location.hash='#/'+(cur+1);
     const n=slides[cur].querySelector('.notes');
@@ -184,6 +202,7 @@ body.editmode .slide.active{cursor:default}
     else if(a==='notes'){notesOn=!notesOn;notesPanel.classList.toggle('open',notesOn);}
     else if(a==='edit')toggleEdit();
     else if(a==='save')saveHtml();
+    else if(a==='present')enterPresent();
   });
   menu.addEventListener('click',e=>{if(e.target===menu)menu.classList.remove('open');});
   addEventListener('keydown',e=>{
@@ -197,6 +216,8 @@ body.editmode .slide.active{cursor:default}
     else if(e.key==='m'||e.key==='M')menu.classList.toggle('open');
     else if(e.key==='g'||e.key==='G'){buildOv();overview.classList.toggle('open');}
     else if(e.key==='e'||e.key==='E')toggleEdit();
+    else if(e.key==='p'||e.key==='P')enterPresent();
+    else if(e.key==='v'||e.key==='V')document.dispatchEvent(new Event('vstd:vtoggle'));
     else if(e.key==='Escape'){clearSel();overview.classList.remove('open');menu.classList.remove('open');}
   });
 
@@ -468,8 +489,186 @@ body.editmode .slide.active{cursor:default}
     }catch(_){}
   }
 
+  function enterPresent(){
+    stopTextEdit();clearSel();
+    if(editMode)toggleEdit();
+    (document.documentElement.requestFullscreen?document.documentElement.requestFullscreen():Promise.resolve())
+      .catch(()=>{});
+    toast('Presentation mode — V starts/stops Vessica, arrows navigate, Esc exits');
+  }
+
   const h=parseInt((location.hash||'').replace('#/',''));
   show(isNaN(h)?0:h-1);
+
+  // public surface for the Vessica layer
+  window.VSTDP={show,goto:i=>show(i),cur:()=>cur,count:slides.length,
+    slideEl:()=>slides[cur],toast};
+})();
+
+/* ================= Vessica realtime layer (Phase 3 spike) =================
+   Wake word: "Vessica". Always-listening once started (V key / status pill).
+   The model can ONLY act through tools while muted; audio is unmuted
+   client-side exclusively by a begin_conversation tool call — that mute is
+   the guarantee, not the prompt. */
+(function(){
+  const S={pc:null,dc:null,audio:null,mic:null,on:false,talking:false};
+  const status=document.getElementById('vstatus');
+  const label=document.getElementById('vlabel');
+  const P=()=>window.VSTDP;
+
+  function setState(cls,text){
+    status.className='';
+    if(cls)status.classList.add(cls);
+    status.style.display='flex';
+    label.textContent=text;
+  }
+  function hideState(){status.style.display='none';}
+
+  document.addEventListener('vstd:vtoggle',()=>{S.on?stop('Vessica off'):start();});
+  status.addEventListener('click',()=>{S.on?stop('Vessica off'):start();});
+
+  async function start(){
+    if(S.on)return;
+    if(!(window.VSTD&&location.protocol.indexOf('http')===0)){
+      P().toast('Vessica needs the engine — run vstd serve and open the deck from localhost');
+      return;
+    }
+    setState('connecting','Vessica connecting…');
+    try{
+      const tr=await fetch('/api/realtime/token',{method:'POST'});
+      if(!tr.ok)throw new Error('token '+tr.status+' — is OPENAI_API_KEY configured?');
+      const tj=await tr.json();
+      const secret=(tj.client_secret&&tj.client_secret.value)||tj.value||tj.client_secret;
+      if(!secret||typeof secret!=='string')throw new Error('no client secret in token response');
+
+      S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
+      S.pc=new RTCPeerConnection();
+      S.audio=new Audio();S.audio.autoplay=true;S.audio.muted=true; // THE mute guarantee
+      S.pc.ontrack=e=>{S.audio.srcObject=e.streams[0];};
+      S.mic.getTracks().forEach(t=>S.pc.addTrack(t,S.mic));
+      S.dc=S.pc.createDataChannel('oai-events');
+      S.dc.onmessage=onEvent;
+      S.dc.onopen=()=>{configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
+
+      const offer=await S.pc.createOffer();
+      await S.pc.setLocalDescription(offer);
+      const rt=(window.VSTD.realtime)||{};
+      const base=(rt.base||'https://api.openai.com/v1');
+      const model=(rt.model||'gpt-realtime-2');
+      const sr=await fetch(base+'/realtime/calls?model='+encodeURIComponent(model),{
+        method:'POST',headers:{'Authorization':'Bearer '+secret,'Content-Type':'application/sdp'},
+        body:offer.sdp});
+      if(!sr.ok)throw new Error('webrtc offer '+sr.status);
+      await S.pc.setRemoteDescription({type:'answer',sdp:await sr.text()});
+      S.on=true;
+    }catch(err){
+      setState('error','Vessica failed: '+err.message);
+      cleanup();
+      setTimeout(hideState,6000);
+    }
+  }
+
+  function stop(msg){
+    cleanup();
+    S.on=false;S.talking=false;
+    setState('','');hideState();
+    if(msg)P().toast(msg);
+  }
+  function cleanup(){
+    try{S.dc&&S.dc.close();}catch(_){}
+    try{S.pc&&S.pc.close();}catch(_){}
+    try{S.mic&&S.mic.getTracks().forEach(t=>t.stop());}catch(_){}
+    S.pc=S.dc=S.mic=null;
+    clearGlow();
+  }
+
+  const TOOLS=[
+    {type:'function',name:'next_slide',description:'Advance to the next slide. Call when the speaker has clearly finished this slide and lands the opening idea of the next one.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'prev_slide',description:'Go back one slide.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'goto_slide',description:'Jump to a slide by its 1-based number.',parameters:{type:'object',properties:{number:{type:'integer'}},required:['number']}},
+    {type:'function',name:'highlight',description:'Softly glow the element on the current slide whose visible text best matches the phrase the speaker is discussing. Use sparingly — one highlight at a time, only when the speaker dwells on a specific point.',parameters:{type:'object',properties:{phrase:{type:'string'}},required:['phrase']}},
+    {type:'function',name:'clear_highlight',description:'Remove any highlight.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'begin_conversation',description:'Call ONLY when the speaker says the wake word "Vessica" and wants you to respond aloud. After calling, you may speak.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'end_conversation',description:'Call when the speaker asks you to stop, be quiet, or says thanks — then return to silent operation.',parameters:{type:'object',properties:{}}}
+  ];
+
+  function baseInstructions(){
+    const el=P().slideEl();
+    const title=(el.querySelector('.s-title,.serif')||{}).textContent||'';
+    const notes=(el.querySelector('.notes')||{}).textContent||'';
+    const next=document.querySelectorAll('#frame > .slide')[P().cur()+1];
+    const nextTitle=next?((next.querySelector('.s-title,.serif')||{}).textContent||''):'(end of deck)';
+    const nextCue=next?((next.querySelector('.notes')||{}).textContent||'').slice(0,300):'';
+    return `You are Vessica, a silent presentation co-pilot for the deck "${window.VSTD.title}". REHEARSAL MODE.
+RULES:
+- Stay COMPLETELY SILENT unless the speaker says the wake word "Vessica" — then call begin_conversation and respond briefly and helpfully, drawing on the slide context. When told to stop / be quiet / thanked, call end_conversation and go silent again.
+- While silent, your ONLY actions are tool calls. Never produce audio without begin_conversation.
+- Advance slides with next_slide when the speaker finishes the current slide's material and begins the next slide's opening idea. Be conservative — never advance mid-thought. Obey explicit commands ("next slide", "go back", "go to slide 12") immediately via tools.
+- Use highlight(phrase) when the speaker dwells on a specific element visible on the slide; clear_highlight when they move on.
+CURRENT SLIDE ${P().cur()+1}/${P().count}: "${title.trim()}"
+SPEAKER'S TALK TRACK FOR THIS SLIDE: ${notes.trim().slice(0,600)}
+NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
+  }
+
+  function send(o){if(S.dc&&S.dc.readyState==='open')S.dc.send(JSON.stringify(o));}
+  function configure(){
+    send({type:'session.update',session:{
+      instructions:baseInstructions(),
+      tools:TOOLS,tool_choice:'auto'
+    }});
+  }
+  document.addEventListener('vstd:slide',()=>{if(S.on){clearGlow();configure();}});
+
+  function onEvent(e){
+    let m;try{m=JSON.parse(e.data);}catch(_){return;}
+    if(m.type==='response.function_call_arguments.done'){
+      let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
+      runTool(m.name,args,m.call_id);
+    }
+    if(m.type==='output_audio_buffer.started'&&S.talking)setState('speaking','Vessica speaking — say "that\'s all" to end');
+    if(m.type==='output_audio_buffer.stopped'&&S.on&&S.talking)setState('listening','Vessica in conversation · listening');
+    if(m.type==='error')console.warn('vessica error event',m);
+  }
+
+  function runTool(name,args,callId){
+    let out='ok';
+    if(name==='next_slide')P().show(P().cur()+1);
+    else if(name==='prev_slide')P().show(P().cur()-1);
+    else if(name==='goto_slide')P().show((args.number||1)-1);
+    else if(name==='highlight')out=doHighlight(args.phrase||'')?'highlighted':'no matching element';
+    else if(name==='clear_highlight')clearGlow();
+    else if(name==='begin_conversation'){S.talking=true;S.audio.muted=false;setState('speaking','Vessica speaking');}
+    else if(name==='end_conversation'){S.talking=false;S.audio.muted=true;setState('listening','Vessica listening · say "Vessica" to talk');}
+    else out='unknown tool';
+    send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:out}});
+    send({type:'response.create'});
+  }
+
+  let glowEl=null;
+  function clearGlow(){if(glowEl){glowEl.classList.remove('vglow');glowEl=null;}}
+  function doHighlight(phrase){
+    clearGlow();
+    if(!phrase)return false;
+    const p=phrase.toLowerCase();
+    const cands=P().slideEl().querySelectorAll('.bh,.s-title,.s-lead,li,.chev,.kpi,.headband,.card,.pill,td,b');
+    let best=null,bestLen=Infinity;
+    cands.forEach(el=>{
+      const t=(el.textContent||'').toLowerCase();
+      if(t.includes(p)&&t.length<bestLen){best=el;bestLen=t.length;}
+    });
+    if(!best){ // fuzzy: majority word overlap
+      const words=p.split(/\s+/).filter(w=>w.length>3);
+      let bestScore=0;
+      cands.forEach(el=>{
+        const t=(el.textContent||'').toLowerCase();
+        const score=words.filter(w=>t.includes(w)).length;
+        if(score>bestScore||(score===bestScore&&score>0&&t.length<bestLen)){best=el;bestScore=score;bestLen=t.length;}
+      });
+      if(bestScore<Math.max(1,Math.ceil(words.length/2)))best=null;
+    }
+    if(best){glowEl=best;best.classList.add('vglow');return true;}
+    return false;
+  }
 })();
 </script>
 </body>
