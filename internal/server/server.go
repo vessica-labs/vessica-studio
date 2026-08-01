@@ -45,7 +45,7 @@ type Server struct {
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
-	c := oai.New(st.Config.OpenAI.BaseURL)
+	c := oai.New(st.Config.OpenAI.BaseURL, st.Config.OpenAI.APIKeyCmd)
 	return &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}}
 }
 

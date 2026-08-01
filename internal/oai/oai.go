@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -27,10 +28,19 @@ type Client struct {
 	HTTP    *http.Client
 }
 
-func New(baseURL string) *Client {
+// New resolves the API key in order: OPENAI_API_KEY env, VSTD_OPENAI_KEY
+// env, then keyCmd (a shell command whose stdout is the key — e.g. macOS
+// Keychain: `security find-generic-password -s vessica-openai -w`). The key
+// stays inside the engine process; it is never logged or served.
+func New(baseURL, keyCmd string) *Client {
 	key := os.Getenv("OPENAI_API_KEY")
 	if key == "" {
 		key = os.Getenv("VSTD_OPENAI_KEY")
+	}
+	if key == "" && keyCmd != "" {
+		if out, err := exec.Command("sh", "-c", keyCmd).Output(); err == nil {
+			key = strings.TrimSpace(string(out))
+		}
 	}
 	return &Client{BaseURL: strings.TrimRight(baseURL, "/"), Key: key,
 		HTTP: &http.Client{Timeout: 180 * time.Second}}

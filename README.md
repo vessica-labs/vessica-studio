@@ -95,10 +95,30 @@ images API, applies the style-family prompt prefix from
 PNG in `library/img/`, and records it in the manifest. The API key is read
 from `OPENAI_API_KEY` and never leaves the engine.
 
+## API key configuration
+
+Resolution order: `OPENAI_API_KEY` env → `VSTD_OPENAI_KEY` env → the
+`api_key_cmd` shell command from studio.yaml. Recommended on macOS — store
+the key in Keychain once:
+
+```
+security add-generic-password -U -s vessica-openai -a $USER -w 'sk-...'
+```
+
+then in `studio.yaml`:
+
+```yaml
+openai:
+  api_key_cmd: security find-generic-password -s vessica-openai -w
+```
+
+`vstd key check` verifies resolution without printing the key. The key never
+appears in built decks, server responses, or logs.
+
 ## Environment
 
 ```
-OPENAI_API_KEY       image generation + realtime tokens
+OPENAI_API_KEY       image generation + realtime tokens (or api_key_cmd)
 VSTD_PRESENTER_KEY   interim presenter auth for --mode public
 VSTD_MODE, PORT      mode/port overrides (Railway sets PORT)
 ```

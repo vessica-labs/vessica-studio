@@ -25,6 +25,7 @@ type Config struct {
 	Port         int    `yaml:"port"`
 	OpenAI       struct {
 		BaseURL           string `yaml:"base_url"`
+		APIKeyCmd         string `yaml:"api_key_cmd"`
 		ImageModel        string `yaml:"image_model"`
 		RealtimeModel     string `yaml:"realtime_model"`
 		RealtimeTokenPath string `yaml:"realtime_token_path"`
@@ -74,7 +75,7 @@ func Open(root string) (*Studio, error) {
 	return s, nil
 }
 
-func (s *Studio) DecksDir() string  { return filepath.Join(s.Root, "decks") }
+func (s *Studio) DecksDir() string { return filepath.Join(s.Root, "decks") }
 func (s *Studio) ThemeDir(name string) string {
 	return filepath.Join(s.Root, "themes", name)
 }
