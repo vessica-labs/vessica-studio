@@ -49,6 +49,17 @@ body:hover #hud{opacity:1}
 .vglow{outline:3px solid rgba(32,227,172,.0);border-radius:12px;
   box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45);
   transition:box-shadow .3s ease;animation:vglowp 1.8s ease-in-out infinite}
+#dictbar{position:fixed;left:0;right:0;bottom:0;z-index:110;display:none;align-items:center;gap:16px;
+  background:rgba(12,32,19,.96);border-top:2px solid #20E3AC;padding:12px 22px;font-family:var(--sans)}
+#dictbar .dot{width:12px;height:12px;border-radius:50%;background:#20E3AC;animation:vpulse 1.4s infinite;flex:0 0 12px}
+#dictbar .dlabel{color:#20E3AC;font-size:14px;font-weight:700;white-space:nowrap}
+#dictbar .dtrans{color:#cfe6d4;font-size:14px;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-style:italic}
+#dictbar .dact{color:#8fb59a;font-size:12px;white-space:nowrap}
+#dictbar button{background:none;border:1px solid #2c4a35;color:#cfe6d4;border-radius:999px;
+  padding:6px 16px;font-size:13px;cursor:pointer;font-family:var(--sans)}
+#dictbar button:hover{background:#1c4229}
+.draft-pill{position:absolute;right:44px;top:16px;border:1.5px dashed #FEA127;border-radius:999px;
+  padding:3px 14px;font-size:13px;color:#b06c0e;background:#fff9f0;font-family:var(--sans)}
 #followchip{position:fixed;bottom:14px;right:14px;z-index:120;display:none;
   background:rgba(12,32,19,.92);border:1px solid #21BF61;border-radius:999px;padding:8px 18px;
   font-family:var(--sans);font-size:13px;color:#cfe6d4;cursor:pointer}
@@ -222,6 +233,7 @@ body.editmode .slide.active{cursor:default}
     else if(e.key==='e'||e.key==='E')toggleEdit();
     else if(e.key==='p'||e.key==='P')enterPresent();
     else if(e.key==='v'||e.key==='V')document.dispatchEvent(new Event('vstd:vtoggle'));
+    else if(e.key==='d'||e.key==='D')document.dispatchEvent(new Event('vstd:dtoggle'));
     else if(e.key==='Escape'){clearSel();overview.classList.remove('open');menu.classList.remove('open');}
   });
 
@@ -489,6 +501,7 @@ body.editmode .slide.active{cursor:default}
       const es=new EventSource('/api/events');
       es.addEventListener('reload',()=>{
         if(editMode){toast('Deck changed on disk — finish editing, then reload');}
+        else if(window.__dictating){/* our own writes; DOM is already current */}
         else if(!window.__following){location.reload();}
       });
       es.addEventListener('follow',e=>{
@@ -716,6 +729,7 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
 
   let glowEl=null;
   function clearGlow(){if(glowEl){glowEl.classList.remove('vglow');glowEl=null;}}
+  window.__vstopVessica=()=>{if(S.on)stop();};
   function doHighlight(phrase){
     clearGlow();
     if(!phrase)return false;
@@ -739,6 +753,222 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
     if(best){glowEl=best;best.classList.add('vglow');return true;}
     return false;
   }
+})();
+
+/* ================= Dictation mode (Phase 5) =================
+   Press D: gpt-realtime-2 becomes a silent scribe. Narration streams into
+   the companion talk track and distilled bullets; spoken directives ("new
+   slide titled…", "change the title to…") execute through the structured
+   edit API. The dictating page updates its own DOM optimistically and
+   suppresses live-reload; a final reload on finish syncs the canon. */
+(function(){
+  const D={on:false,pc:null,dc:null,mic:null,draft:null,dirty:false,timer:null,seq:0};
+  let bar,dlabel,dtrans,dact;
+  const P=()=>window.VSTDP;
+
+  function ui(){
+    if(bar)return;
+    bar=document.createElement('div');bar.id='dictbar';
+    bar.innerHTML='<span class="dot"></span><span class="dlabel">DICTATING</span>'+
+      '<span class="dtrans" id="dtrans">say a slide title, or just start talking…</span>'+
+      '<span class="dact" id="dact"></span><button id="dend">End dictation (D)</button>';
+    document.body.appendChild(bar);
+    dtrans=document.getElementById('dtrans');dact=document.getElementById('dact');
+    document.getElementById('dend').addEventListener('click',()=>toggle());
+  }
+  function act(msg){if(!dact)return;dact.textContent=msg;clearTimeout(D._a);D._a=setTimeout(()=>{if(dact)dact.textContent='';},4000);}
+  function trans(msg){if(dtrans)dtrans.textContent=msg;}
+
+  document.addEventListener('vstd:dtoggle',()=>toggle());
+  async function toggle(){D.on?end():startD();}
+
+  async function startD(){
+    if(D.on)return;
+    if(!(window.VSTD&&location.protocol.indexOf('http')===0)){P().toast('Dictation needs the engine (vstd serve, studio mode)');return;}
+    const me=window.__vme;
+    if(me&&me.mode&&me.mode!=='studio'){P().toast('Dictation is a studio-mode feature');return;}
+    if(window.__vstopVessica)window.__vstopVessica();
+    ui();
+    bar.style.display='flex';
+    dtrans.textContent='connecting…';
+    try{
+      const tr=await fetch('/api/realtime/token',{method:'POST'});
+      if(!tr.ok)throw new Error('token '+tr.status);
+      const tj=await tr.json();
+      const secret=(tj.client_secret&&tj.client_secret.value)||tj.value||tj.client_secret;
+      if(!secret||typeof secret!=='string')throw new Error('no client secret');
+      D.mic=await navigator.mediaDevices.getUserMedia({audio:true});
+      D.pc=new RTCPeerConnection();
+      const sink=new Audio();sink.autoplay=true;sink.muted=true; // scribe never speaks
+      D.pc.ontrack=e=>{sink.srcObject=e.streams[0];};
+      D.mic.getTracks().forEach(t=>D.pc.addTrack(t,D.mic));
+      D.dc=D.pc.createDataChannel('oai-events');
+      D.dc.onmessage=onEvent;
+      D.dc.onopen=()=>{configure();dtrans.textContent='listening — talk, or say "new slide titled …"';};
+      const offer=await D.pc.createOffer();
+      await D.pc.setLocalDescription(offer);
+      const rt=(window.VSTD.realtime)||{};
+      const sr=await fetch((rt.base||'https://api.openai.com/v1')+'/realtime/calls?model='+encodeURIComponent(rt.model||'gpt-realtime-2'),{
+        method:'POST',headers:{'Authorization':'Bearer '+secret,'Content-Type':'application/sdp'},body:offer.sdp});
+      if(!sr.ok)throw new Error('webrtc '+sr.status);
+      await D.pc.setRemoteDescription({type:'answer',sdp:await sr.text()});
+      D.on=true;window.__dictating=true;
+    }catch(err){
+      dtrans.textContent='failed: '+err.message;
+      setTimeout(()=>{bar.style.display='none';},5000);
+      cleanup();
+    }
+  }
+
+  function end(){
+    flush(true);
+    cleanup();
+    D.on=false;window.__dictating=false;
+    if(bar)bar.style.display='none';
+    P().toast('Dictation saved. Next: run the beautify pass from Claude (slide-edit / deck-review) on the draft slides.');
+    setTimeout(()=>location.reload(),1200);
+  }
+  function cleanup(){
+    try{D.dc&&D.dc.close();}catch(_){}
+    try{D.pc&&D.pc.close();}catch(_){}
+    try{D.mic&&D.mic.getTracks().forEach(t=>t.stop());}catch(_){}
+    D.pc=D.dc=D.mic=null;
+  }
+
+  const TOOLS=[
+    {type:'function',name:'new_slide',description:'Start a new draft slide. Use when the speaker says "new slide" (optionally "titled X") or clearly begins a new topic after finishing one.',parameters:{type:'object',properties:{title:{type:'string'}}}},
+    {type:'function',name:'set_title',description:'Set/replace the current draft slide title (short, punchy, one line).',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'set_lead',description:'Set the lead-in line under the title.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'add_point',description:'Add one bullet capturing a distinct point the speaker just made. Short sentence fragment, executive style. Max 6 bullets per slide.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'remove_last_point',description:'Remove the most recent bullet ("scratch that").',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'set_intent',description:'Record what this slide must accomplish (companion Intent).',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'add_evidence',description:'Record a fact/source the speaker cites (companion Evidence).',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'append_talk_track',description:'Append the speaker\'s narration (lightly cleaned, faithful sentences) to the slide talk track. Call every sentence or two of narration.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
+    {type:'function',name:'goto_slide',description:'Navigate to a slide by 1-based number.',parameters:{type:'object',properties:{number:{type:'integer'}},required:['number']}},
+    {type:'function',name:'finish_dictation',description:'End the session when the speaker says they are done ("that\'s it", "end dictation").',parameters:{type:'object',properties:{}}}
+  ];
+
+  const INSTR=`You are the silent scribe for Vessica Studio dictation mode. The speaker is AUTHORING presentation slides by talking. You NEVER produce audio. You ONLY call tools.
+Distinguish two kinds of speech:
+1. NARRATION (default): the speaker is delivering the talk track for the current slide. Continuously (a) append_talk_track with faithful, lightly cleaned sentences (every sentence or two), and (b) when a distinct point lands, add_point with a short executive-style bullet distilling it. Never duplicate bullets; max 6 per slide.
+2. DIRECTIVES: explicit commands — "new slide", "new slide titled X", "call this slide X", "change the title", "the lead-in is X", "scratch that", "note the source: X", "the intent here is X", "go to slide N", "that's it / end dictation". Execute immediately with the matching tool. Directives are NEVER talk track.
+If narration starts with no draft slide, call new_slide first (infer a working title). Tool results return the current draft state — use it to stay consistent.`;
+
+  function send(o){if(D.dc&&D.dc.readyState==='open')D.dc.send(JSON.stringify(o));}
+  function configure(){
+    send({type:'session.update',session:{
+      instructions:INSTR,tools:TOOLS,tool_choice:'auto',
+      audio:{input:{transcription:{model:'whisper-1'}}}
+    }});
+  }
+
+  function onEvent(e){
+    let m;try{m=JSON.parse(e.data);}catch(_){return;}
+    if(m.type==='conversation.item.input_audio_transcription.completed'&&m.transcript)
+      trans('“'+m.transcript.trim().slice(-90)+'”');
+    if(m.type==='response.function_call_arguments.done'){
+      let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
+      const out=runTool(m.name,args);
+      send({type:'conversation.item.create',item:{type:'function_call_output',call_id:m.call_id,output:JSON.stringify(out)}});
+      send({type:'response.create'});
+    }
+    if(m.type==='error')console.warn('dictation error event',m);
+  }
+
+  // ---- draft slide model + rendering + persistence ----
+  function esc(t){return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+  function nextID(title){
+    const ids=window.VSTD.slides||[];
+    let mx=0;
+    ids.forEach(id=>{const n=parseInt(id);if(n>mx)mx=n;});
+    D.seq++;
+    const slug=(title||'dictated').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').split('-').slice(0,4).join('-')||'dictated';
+    return String(mx+10*D.seq).padStart(4,'0')+'-'+slug;
+  }
+  function renderFragment(d){
+    const pts=d.points.map(t=>'      <li>'+esc(t)+'</li>').join('\n');
+    return '<section class="slide" data-sec="'+esc(d.title)+'" data-draft="1">\n'+
+      '  <div class="draft-pill">DRAFT · dictated</div>\n'+
+      '  <div class="s-title">'+esc(d.title)+'</div>\n'+
+      '  <div class="s-lead">'+esc(d.lead||'')+'</div>\n'+
+      '  <div class="content" style="display:flex;flex-direction:column;justify-content:center">\n'+
+      '    <ul class="cl" style="font-size:26px;max-width:1000px">\n'+pts+'\n    </ul>\n'+
+      '  </div>\n'+
+      '  <div class="pgpill"></div>\n'+
+      '  <aside class="notes">'+esc(d.talk.join(' '))+'</aside>\n'+
+      '</section>';
+  }
+  function mountDraft(d,fresh){
+    const html=renderFragment(d);
+    if(fresh){
+      const frame=document.getElementById('frame');
+      const tmp=document.createElement('div');tmp.innerHTML=html;
+      const sec=tmp.firstChild;sec.dataset.vstd=d.id;
+      frame.insertBefore(sec,document.getElementById('selbox'));
+      window.VSTD.slides.push(d.id);
+      // the main viewer's slide list is frozen at load — activate directly
+      document.querySelectorAll('#frame > .slide').forEach(el=>el.classList.remove('active'));
+      sec.classList.add('active');
+    }else{
+      const sec=document.querySelector('[data-vstd="'+d.id+'"]');
+      if(sec){const tmp=document.createElement('div');tmp.innerHTML=html;
+        const ns=tmp.firstChild;ns.dataset.vstd=d.id;
+        if(sec.classList.contains('active'))ns.classList.add('active');
+        sec.replaceWith(ns);}
+    }
+  }
+  function schedule(){D.dirty=true;clearTimeout(D.timer);D.timer=setTimeout(()=>flush(false),900);}
+  async function flush(sync){
+    if(!D.draft||!D.dirty)return;
+    D.dirty=false;
+    const d=D.draft,deck=window.VSTD.deck;
+    const frag=renderFragment(d).replace(' data-vstd="'+d.id+'"','');
+    try{
+      await fetch('/api/deck/'+deck+'/slide/'+d.id+'/fragment',{method:'PUT',headers:{'Content-Type':'text/html'},body:frag});
+      const puts=[['Talk track',d.talk.join(' ')||'-'],['Intent',d.intent||d.title],['Key ideas',d.points.map(p=>'- '+p).join('\n')||'-'],['Evidence & sources',d.evidence.map(e=>'- '+e).join('\n')||'-']];
+      for(const [sec,body] of puts)
+        await fetch('/api/deck/'+deck+'/slide/'+d.id+'/companion/'+encodeURIComponent(sec),{method:'PUT',body:body});
+    }catch(err){console.warn('dictation persist failed',err);}
+  }
+  async function createSlide(title){
+    await flush(true);
+    const deck=window.VSTD.deck;
+    const d={id:nextID(title),title:title||'Untitled',lead:'',points:[],talk:[],intent:'',evidence:[]};
+    D.draft=d;
+    try{
+      await fetch('/api/deck/'+deck+'/slides',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({id:d.id,title:d.title})});
+    }catch(_){}
+    mountDraft(d,true);
+    D.dirty=true;schedule();
+    return d;
+  }
+
+  function state(){
+    const d=D.draft;
+    if(!d)return {status:'no draft slide yet'};
+    return {slide:d.id,title:d.title,lead:d.lead,points:d.points,talk_sentences:d.talk.length};
+  }
+  function runTool(name,args){
+    const d=D.draft;
+    if(name==='new_slide'){createSlide(args.title);act('new slide'+(args.title?': '+args.title:''));return {status:'created'};}
+    if(name==='goto_slide'){P().show((args.number||1)-1);return {status:'ok'};}
+    if(name==='finish_dictation'){act('finishing…');setTimeout(()=>end(),400);return {status:'ending'};}
+    if(!d){createSlide(args.text&&name==='set_title'?args.text:'Untitled');return Object.assign({note:'auto-created draft'},state());}
+    if(name==='set_title'){d.title=args.text;act('title: '+args.text);}
+    else if(name==='set_lead'){d.lead=args.text;act('lead-in set');}
+    else if(name==='add_point'){if(d.points.length<8){d.points.push(args.text);act('+ '+args.text);}}
+    else if(name==='remove_last_point'){d.points.pop();act('removed last point');}
+    else if(name==='set_intent'){d.intent=args.text;act('intent noted');}
+    else if(name==='add_evidence'){d.evidence.push(args.text);act('evidence noted');}
+    else if(name==='append_talk_track'){d.talk.push(args.text);}
+    else return {error:'unknown tool'};
+    mountDraft(d,false);schedule();
+    return state();
+  }
+
+  // test hook (harness only)
+  window.__vdict={run:runTool,create:createSlide,flush:()=>flush(true),state:()=>D};
 })();
 </script>
 </body>
