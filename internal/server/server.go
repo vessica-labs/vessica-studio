@@ -42,11 +42,21 @@ type Server struct {
 
 	mu   sync.Mutex
 	subs map[chan string]bool
+
+	// auth (see auth.go)
+	secret     string
+	ghClientID string
+	allowed    map[string]bool
+	flows      map[string]githubFlow
+
+	tokenMints []time.Time // realtime-token rate limiting
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
 	c := oai.New(st.Config.OpenAI.BaseURL, st.Config.OpenAI.APIKeyCmd)
-	return &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}}
+	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}}
+	s.initAuth()
+	return s
 }
 
 func (s *Server) canEdit() bool { return s.Mode == ModeStudio }
@@ -88,7 +98,11 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case ev := <-ch:
-			fmt.Fprintf(w, "event: %s\ndata: 1\n\n", ev)
+			name, data := ev, "1"
+			if i := strings.Index(ev, "|"); i >= 0 {
+				name, data = ev[:i], ev[i+1:]
+			}
+			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", name, data)
 			fl.Flush()
 		case <-time.After(25 * time.Second):
 			fmt.Fprintf(w, ": ping\n\n")
@@ -108,8 +122,14 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /d/{deck}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/d/"+r.PathValue("deck")+"/", http.StatusFound)
 	})
-	mux.Handle("GET /library/", http.StripPrefix("/library/",
-		http.FileServer(http.Dir(filepath.Join(s.St.Root, "library")))))
+	lib := http.StripPrefix("/library/", http.FileServer(http.Dir(filepath.Join(s.St.Root, "library"))))
+	mux.Handle("GET /library/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !s.hasAnyAccess(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		lib.ServeHTTP(w, r)
+	}))
 
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
@@ -117,6 +137,17 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/title", s.editOnly(s.handlePutTitle))
 	mux.HandleFunc("POST /api/deck/{deck}/slides", s.editOnly(s.handleNewSlide))
 	mux.HandleFunc("POST /api/realtime/token", s.handleRealtimeToken)
+
+	// Phase 4: auth, share links, live-follow, health
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
+	mux.HandleFunc("GET /api/me", s.handleMe)
+	mux.HandleFunc("GET /auth/login", s.handleLoginPage)
+	mux.HandleFunc("GET /auth/config", s.handleAuthConfig)
+	mux.HandleFunc("POST /auth/github/device", s.handleGitHubDevice)
+	mux.HandleFunc("POST /auth/github/poll/{id}", s.handleGitHubPoll)
+	mux.HandleFunc("GET /v/{deck}/{token}", s.handleShareLanding)
+	mux.HandleFunc("POST /api/deck/{deck}/share", s.handleMintShare)
+	mux.HandleFunc("POST /api/deck/{deck}/presenting", s.handlePresenting)
 	return mux
 }
 
@@ -131,9 +162,9 @@ func (s *Server) editOnly(h http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *Server) handleSwitcher(w http.ResponseWriter, r *http.Request) {
-	if s.Mode == ModePublic {
-		// no deck listing on public instances; decks are reached by link only
-		http.Error(w, "vessica studio", http.StatusOK)
+	if s.Mode == ModePublic && !s.isPresenter(r) {
+		// audiences arrive via share links; presenters sign in
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}
 	decks, err := s.St.ListDecks()
@@ -170,6 +201,10 @@ a.deck:hover{border-color:#21BF61}
 }
 
 func (s *Server) handleDecks(w http.ResponseWriter, r *http.Request) {
+	if s.Mode == ModePublic && !s.isPresenter(r) {
+		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
+		return
+	}
 	decks, err := s.St.ListDecks()
 	if err != nil {
 		jsonErr(w, err, 500)
@@ -198,6 +233,10 @@ func (s *Server) handleDeck(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !s.canView(r, deck) {
+		http.Error(w, "This deck requires a share link or presenter sign-in.", http.StatusForbidden)
+		return
+	}
 	out, err := s.St.Build(deck)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -207,6 +246,10 @@ func (s *Server) handleDeck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGetSlide(w http.ResponseWriter, r *http.Request) {
+	if !s.canView(r, r.PathValue("deck")) {
+		jsonErr(w, fmt.Errorf("access denied"), http.StatusForbidden)
+		return
+	}
 	frag, comp, err := s.St.ReadSlide(r.PathValue("deck"), r.PathValue("id"))
 	if err != nil {
 		jsonErr(w, err, 404)
@@ -273,12 +316,25 @@ func (s *Server) handleNewSlide(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRealtimeToken(w http.ResponseWriter, r *http.Request) {
-	if s.Mode == ModePublic {
-		key := os.Getenv("VSTD_PRESENTER_KEY")
-		if key == "" || r.Header.Get("Authorization") != "Bearer "+key {
-			jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
-			return
+	if !s.isPresenter(r) {
+		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
+		return
+	}
+	// rate limit: 10 mints per 5 minutes
+	s.mu.Lock()
+	cut := time.Now().Add(-5 * time.Minute)
+	kept := s.tokenMints[:0]
+	for _, t := range s.tokenMints {
+		if t.After(cut) {
+			kept = append(kept, t)
 		}
+	}
+	s.tokenMints = append(kept, time.Now())
+	over := len(s.tokenMints) > 10
+	s.mu.Unlock()
+	if over {
+		jsonErr(w, fmt.Errorf("rate limit: too many realtime sessions"), http.StatusTooManyRequests)
+		return
 	}
 	body, code, err := s.OAI.MintRealtimeToken(
 		s.St.Config.OpenAI.RealtimeTokenPath, s.St.Config.OpenAI.RealtimeModel)

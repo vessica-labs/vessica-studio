@@ -49,6 +49,10 @@ body:hover #hud{opacity:1}
 .vglow{outline:3px solid rgba(32,227,172,.0);border-radius:12px;
   box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45);
   transition:box-shadow .3s ease;animation:vglowp 1.8s ease-in-out infinite}
+#followchip{position:fixed;bottom:14px;right:14px;z-index:120;display:none;
+  background:rgba(12,32,19,.92);border:1px solid #21BF61;border-radius:999px;padding:8px 18px;
+  font-family:var(--sans);font-size:13px;color:#cfe6d4;cursor:pointer}
+#followchip.paused{border-color:#FEA127}
 @keyframes vglowp{0%,100%{box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45)}
   50%{box-shadow:0 0 0 3px rgba(32,227,172,.85),0 0 48px 10px rgba(32,227,172,.65)}}
 #menu,#notesPanel{position:fixed;z-index:80;background:#0f271733;backdrop-filter:blur(2px)}
@@ -478,13 +482,51 @@ body.editmode .slide.active{cursor:default}
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   }
 
-  // live reload from engine (SSE); no-op when opened as a plain file
+  // engine link: SSE (reload + live-follow), identity, presenter broadcast
+  window.__vme=null;
   if(location.protocol.indexOf('http')===0&&window.EventSource){
     try{
       const es=new EventSource('/api/events');
       es.addEventListener('reload',()=>{
         if(editMode){toast('Deck changed on disk — finish editing, then reload');}
-        else{location.reload();}
+        else if(!window.__following){location.reload();}
+      });
+      es.addEventListener('follow',e=>{
+        const p=(e.data||'').split('|');
+        if(p[0]!==(window.VSTD&&window.VSTD.deck))return;
+        window.__lastPresenterIdx=parseInt(p[1]);
+        if(window.__following)show(window.__lastPresenterIdx);
+      });
+      fetch('/api/me').then(r=>r.json()).then(me=>{
+        window.__vme=me;
+        const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
+        if(audience){
+          window.__following=true;
+          ['editbtn','savebtn','presentbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
+          const chip=document.createElement('div');
+          chip.id='followchip';chip.style.display='block';
+          chip.textContent='● Following the presenter — click to browse freely';
+          chip.addEventListener('click',()=>{
+            window.__following=!window.__following;
+            chip.classList.toggle('paused',!window.__following);
+            chip.textContent=window.__following?'● Following the presenter — click to browse freely':'○ Browsing freely — click to rejoin the presenter';
+            if(window.__following&&window.__lastPresenterIdx!=null)show(window.__lastPresenterIdx);
+          });
+          document.body.appendChild(chip);
+          addEventListener('keydown',e=>{
+            if(['ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(e.key)&&window.__following){
+              window.__following=false;chip.classList.add('paused');
+              chip.textContent='○ Browsing freely — click to rejoin the presenter';
+            }
+          },true);
+        }
+      }).catch(()=>{});
+      document.addEventListener('vstd:slide',e=>{
+        if(!window.__presenting)return;
+        if(window.__vme&&window.__vme.presenter===false)return;
+        fetch('/api/deck/'+window.VSTD.deck+'/presenting',{method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body:JSON.stringify({index:e.detail.index})}).catch(()=>{});
       });
     }catch(_){}
   }
@@ -492,6 +534,8 @@ body.editmode .slide.active{cursor:default}
   function enterPresent(){
     stopTextEdit();clearSel();
     if(editMode)toggleEdit();
+    window.__presenting=true;
+    document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement)window.__presenting=false;});
     (document.documentElement.requestFullscreen?document.documentElement.requestFullscreen():Promise.resolve())
       .catch(()=>{});
     toast('Presentation mode — V starts/stops Vessica, arrows navigate, Esc exits');

@@ -118,16 +118,27 @@ appears in built decks, server responses, or logs.
 ## Environment
 
 ```
-OPENAI_API_KEY       image generation + realtime tokens (or api_key_cmd)
-VSTD_PRESENTER_KEY   interim presenter auth for --mode public
-VSTD_MODE, PORT      mode/port overrides (Railway sets PORT)
+OPENAI_API_KEY          image generation + realtime tokens (or api_key_cmd)
+VSTD_SECRET             HMAC secret: sessions + share links (public mode)
+VSTD_GITHUB_CLIENT_ID   GitHub OAuth app (device flow) for presenter sign-in
+VSTD_ALLOWED_GITHUB     comma-separated presenter GitHub logins
+VSTD_MODE, PORT         mode/port overrides (Railway sets PORT)
 ```
+
+## Public mode (hosted)
+
+`--mode public` serves decks read-only for a hosted instance (Railway):
+presenter sign-in via GitHub Device Flow (`VSTD_GITHUB_CLIENT_ID` +
+`VSTD_ALLOWED_GITHUB` allowlist — public client ID only, no secret), signed
+deck-scoped audience share links (`vstd qr <deck> --ttl 72 --host URL`, HMAC
+`VSTD_SECRET`), gated library assets, presenter-only rate-limited realtime
+tokens, and live-follow (audience browsers track the presenter's slide over
+SSE, with break-off/rejoin). See a content repo's DEPLOY.md for Railway setup.
 
 ## Roadmap
 
 - Presentation mode with gpt-realtime-2 (wake-word "Vessica", voice Q&A,
   auto-advance from talk-track cues, element highlighting)
-- GitHub OAuth presenter auth; signed audience share links + QR; live-follow
 - Dictation authoring (speak the talk track; slides form live)
 - PDF / PPTX export; `vstd mcp`
 
