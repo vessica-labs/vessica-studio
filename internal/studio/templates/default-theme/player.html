@@ -527,20 +527,29 @@ body.editmode .slide.active{cursor:default}
   document.addEventListener('vstd:vtoggle',()=>{S.on?stop('Vessica off'):start();});
   status.addEventListener('click',()=>{S.on?stop('Vessica off'):start();});
 
+  function fetchT(url,opts,ms,label){
+    const ctl=new AbortController();
+    const t=setTimeout(()=>ctl.abort(),ms);
+    return fetch(url,Object.assign({},opts,{signal:ctl.signal}))
+      .catch(e=>{throw new Error(label+(e.name==='AbortError'?' timed out after '+(ms/1000)+'s — network may be blocking or very slow':' failed: '+e.message));})
+      .finally(()=>clearTimeout(t));
+  }
   async function start(){
     if(S.on)return;
     if(!(window.VSTD&&location.protocol.indexOf('http')===0)){
       P().toast('Vessica needs the engine — run vstd serve and open the deck from localhost');
       return;
     }
-    setState('connecting','Vessica connecting…');
+    const stage=t=>{setState('connecting','Vessica: '+t);console.log('vessica stage:',t);};
     try{
-      const tr=await fetch('/api/realtime/token',{method:'POST'});
+      stage('minting token…');
+      const tr=await fetchT('/api/realtime/token',{method:'POST'},20000,'token mint (engine → OpenAI)');
       if(!tr.ok)throw new Error('token '+tr.status+' — is OPENAI_API_KEY configured?');
       const tj=await tr.json();
       const secret=(tj.client_secret&&tj.client_secret.value)||tj.value||tj.client_secret;
-      if(!secret||typeof secret!=='string')throw new Error('no client secret in token response');
+      if(!secret||typeof secret!=='string')throw new Error('no client secret in token response: '+JSON.stringify(tj).slice(0,120));
 
+      stage('requesting microphone…');
       S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
       S.pc=new RTCPeerConnection();
       S.audio=new Audio();S.audio.autoplay=true;S.audio.muted=true; // THE mute guarantee
@@ -548,23 +557,40 @@ body.editmode .slide.active{cursor:default}
       S.mic.getTracks().forEach(t=>S.pc.addTrack(t,S.mic));
       S.dc=S.pc.createDataChannel('oai-events');
       S.dc.onmessage=onEvent;
-      S.dc.onopen=()=>{configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
+      S.dc.onopen=()=>{clearTimeout(S.watchdog);configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
+      S.pc.oniceconnectionstatechange=()=>{
+        const st=S.pc?S.pc.iceConnectionState:'?';
+        console.log('vessica ice:',st);
+        if(st==='checking')stage('establishing audio path (ICE)… — if this never completes, the network is blocking WebRTC/UDP');
+        if(st==='failed'){setState('error','Vessica: audio path FAILED — this network blocks WebRTC (UDP). Signaling worked; the code is fine. Try another network.');cleanup();}
+        if((st==='connected'||st==='completed')&&S.pc)console.log('vessica ice connected');
+      };
 
+      stage('negotiating session…');
       const offer=await S.pc.createOffer();
       await S.pc.setLocalDescription(offer);
       const rt=(window.VSTD.realtime)||{};
       const base=(rt.base||'https://api.openai.com/v1');
       const model=(rt.model||'gpt-realtime-2');
-      const sr=await fetch(base+'/realtime/calls?model='+encodeURIComponent(model),{
+      const sr=await fetchT(base+'/realtime/calls?model='+encodeURIComponent(model),{
         method:'POST',headers:{'Authorization':'Bearer '+secret,'Content-Type':'application/sdp'},
-        body:offer.sdp});
-      if(!sr.ok)throw new Error('webrtc offer '+sr.status);
-      await S.pc.setRemoteDescription({type:'answer',sdp:await sr.text()});
+        body:offer.sdp},25000,'SDP negotiation (browser → OpenAI)');
+      if(!sr.ok)throw new Error('webrtc offer rejected: HTTP '+sr.status+' '+(await sr.text()).slice(0,160));
+      const answerSdp=await sr.text();
+      await S.pc.setRemoteDescription({type:'answer',sdp:answerSdp});
       S.on=true;
+      stage('establishing audio path (ICE)…');
+      S.watchdog=setTimeout(()=>{
+        if(S.dc&&S.dc.readyState!=='open'){
+          const ice=S.pc?S.pc.iceConnectionState:'?';
+          setState('error','Vessica: stalled establishing the audio path (ICE state: '+ice+'). This network almost certainly blocks WebRTC/UDP — common on airplane and hotel wifi. Try another network.');
+          cleanup();S.on=false;
+        }
+      },30000);
     }catch(err){
       setState('error','Vessica failed: '+err.message);
       cleanup();
-      setTimeout(hideState,6000);
+      setTimeout(hideState,8000);
     }
   }
 
