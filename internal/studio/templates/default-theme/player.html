@@ -257,7 +257,7 @@ body.editmode .slide.active{cursor:default}
     ['nw','n','ne','e','se','s','sw','w'].map(d=>'<div class="hnd '+d+'" data-h="'+d+'"></div>').join('');
   frame.appendChild(selbox);
 
-  const CAND='.s-title,.s-lead,.src,.card,.colcard,.chev,.demoslot,.icontile,.pill,.todo,.kpi,.statxl,.wordmark,.headband,.bh,li,ul,table,svg,img,.arc,.aur';
+  const CAND='.s-title,.s-lead,.src,.card,.colcard,.chev,.demoslot,.icontile,.pill,.todo,.kpi,.statxl,.wordmark,.headband,.bh,li,ul,table,svg,img,.arc,.aur,[data-edit]';
 
   function toggleEdit(){
     editMode=!editMode;
