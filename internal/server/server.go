@@ -317,7 +317,11 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, fmt.Errorf("invalid deck"), 400)
 		return
 	}
-	pending := map[string][]string{}
+	type wp struct {
+		Kind string `json:"kind"`
+		Pct  int    `json:"pct"`
+	}
+	pending := map[string][]wp{}
 	if ids, err := s.St.SlideIDs(deck); err == nil {
 		for _, id := range ids {
 			b, err := os.ReadFile(s.St.SlidePath(deck, id, ".md"))
@@ -334,7 +338,11 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 				sec = sec[:n+1]
 			}
 			if !strings.Contains(sec, "(resolved") && strings.Contains(sec, "\n- ") {
-				pending[id] = append(pending[id], "redesign")
+				pct := 15
+				if strings.Contains(sec, "(in progress") {
+					pct = 60
+				}
+				pending[id] = append(pending[id], wp{"redesign", pct})
 			}
 		}
 	}
@@ -354,7 +362,11 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			if (req.Deck == "" || req.Deck == deck) && req.Slide != "" {
-				pending[req.Slide] = append(pending[req.Slide], "image")
+				pct := 15
+				if _, busy := genNow.Load(e.Name()); busy {
+					pct = 60
+				}
+				pending[req.Slide] = append(pending[req.Slide], wp{"image", pct})
 			}
 		}
 	}
@@ -449,6 +461,9 @@ func (s *Server) scan() string {
 	return b.String()
 }
 
+// genNow tracks request files currently being generated, for status pct.
+var genNow sync.Map
+
 type assetRequest struct {
 	Prompt string   `yaml:"prompt"`
 	Family string   `yaml:"family"`
@@ -484,8 +499,10 @@ func (s *Server) processRequests() {
 			return // leave queued until a key is configured
 		}
 		log.Printf("requests: generating asset for %s", e.Name())
+		genNow.Store(e.Name(), true)
 		asset, err := s.OAI.GenerateAsset(filepath.Join(s.St.Root, "library"),
 			s.St.Config.OpenAI.ImageModel, req.Prompt, req.Family, req.Size, req.Slug, req.Tags, false)
+		genNow.Delete(e.Name())
 		if err != nil {
 			log.Printf("requests: %s failed: %v", e.Name(), err)
 			s.archiveRequest(p, e.Name(), "failed")
