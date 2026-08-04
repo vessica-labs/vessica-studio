@@ -131,6 +131,7 @@ func (s *Server) Routes() *http.ServeMux {
 		lib.ServeHTTP(w, r)
 	}))
 
+	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion/{section}", s.editOnly(s.handlePutCompanion))
@@ -303,6 +304,63 @@ func (s *Server) handlePutTitle(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
+// handleDeckStatus reports background work in flight: slides with unresolved
+// "## Edit requests" (redesign pass pending) and queued image generations
+// attributed to a slide via the request yaml's deck:/slide: fields.
+func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.hasAnyAccess(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	deck := r.PathValue("deck")
+	if !studio.ValidDeckName(deck) {
+		jsonErr(w, fmt.Errorf("invalid deck"), 400)
+		return
+	}
+	pending := map[string][]string{}
+	if ids, err := s.St.SlideIDs(deck); err == nil {
+		for _, id := range ids {
+			b, err := os.ReadFile(s.St.SlidePath(deck, id, ".md"))
+			if err != nil {
+				continue
+			}
+			c := string(b)
+			idx := strings.Index(c, "## Edit requests")
+			if idx < 0 {
+				continue
+			}
+			sec := c[idx:]
+			if n := strings.Index(sec[1:], "\n## "); n >= 0 {
+				sec = sec[:n+1]
+			}
+			if !strings.Contains(sec, "(resolved") && strings.Contains(sec, "\n- ") {
+				pending[id] = append(pending[id], "redesign")
+			}
+		}
+	}
+	queued := 0
+	if ents, err := os.ReadDir(filepath.Join(s.St.Root, "requests")); err == nil {
+		for _, e := range ents {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			queued++
+			b, err := os.ReadFile(filepath.Join(s.St.Root, "requests", e.Name()))
+			if err != nil {
+				continue
+			}
+			var req assetRequest
+			if yaml.Unmarshal(b, &req) != nil {
+				continue
+			}
+			if (req.Deck == "" || req.Deck == deck) && req.Slide != "" {
+				pending[req.Slide] = append(pending[req.Slide], "image")
+			}
+		}
+	}
+	writeJSON(w, map[string]any{"pending": pending, "imageQueue": queued})
+}
+
 func (s *Server) handleNewSlide(w http.ResponseWriter, r *http.Request) {
 	var req struct{ ID, Title, HTML string }
 	if err := json.NewDecoder(io.LimitReader(r.Body, 2<<20)).Decode(&req); err != nil {
@@ -397,6 +455,8 @@ type assetRequest struct {
 	Tags   []string `yaml:"tags"`
 	Size   string   `yaml:"size"`
 	Slug   string   `yaml:"slug"`
+	Deck   string   `yaml:"deck,omitempty"`
+	Slide  string   `yaml:"slide,omitempty"`
 }
 
 func (s *Server) processRequests() {
