@@ -710,6 +710,7 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
   function send(o){if(S.dc&&S.dc.readyState==='open')S.dc.send(JSON.stringify(o));}
   function configure(){
     send({type:'session.update',session:{
+      type:'realtime',
       instructions:baseInstructions(),
       tools:TOOLS,tool_choice:'auto'
     }});
@@ -965,6 +966,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   function send(o){if(D.dc&&D.dc.readyState==='open')D.dc.send(JSON.stringify(o));}
   function configure(){
     send({type:'session.update',session:{
+      type:'realtime',
       instructions:INSTR,tools:TOOLS,tool_choice:'auto',
       audio:{input:{transcription:{model:'whisper-1'}}}
     }});
