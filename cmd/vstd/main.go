@@ -43,6 +43,8 @@ func main() {
 		err = cmdDiffUpstream(args)
 	case "build":
 		err = cmdBuild(args)
+	case "agent":
+		err = cmdAgent(args)
 	case "serve":
 		err = cmdServe(args)
 	case "asset":
@@ -256,6 +258,23 @@ func cmdBuild(args []string) error {
 	return nil
 }
 
+// cmdAgent sweeps the redesign queue once, synchronously, using the local
+// claude CLI (VSTD_AGENT_CMD to override). `vstd serve` with VSTD_AGENT=1
+// runs the same worker continuously in the background.
+func cmdAgent(args []string) error {
+	fs := flag.NewFlagSet("agent", flag.ExitOnError)
+	root := rootFlag(fs)
+	fs.Parse(args)
+	st, err := openStudio(*root)
+	if err != nil {
+		return err
+	}
+	srv := server.New(st, server.ModeStudio)
+	n := srv.RunAgentOnce()
+	log.Printf("agent: sweep complete — %d pass(es) run", n)
+	return nil
+}
+
 func cmdServe(args []string) error {
 	fs := flag.NewFlagSet("serve", flag.ExitOnError)
 	root := rootFlag(fs)
@@ -281,6 +300,7 @@ func cmdServe(args []string) error {
 		p = *port
 	}
 	go srv.Watch(700 * time.Millisecond)
+	srv.StartAgent()
 	addr := fmt.Sprintf(":%d", p)
 	url := fmt.Sprintf("http://localhost:%d/", p)
 	if deck != "" {

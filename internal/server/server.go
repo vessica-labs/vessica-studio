@@ -339,7 +339,17 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 			if n := strings.Index(sec[1:], "\n## "); n >= 0 {
 				sec = sec[:n+1]
 			}
-			if !strings.Contains(sec, "(resolved") && strings.Contains(sec, "\n- ") {
+			if strings.Contains(sec, "(worker error") {
+				pending[id] = append(pending[id], wp{"error", 15})
+				continue
+			}
+			live := false
+			for _, l := range strings.Split(sec, "\n") {
+				if strings.HasPrefix(l, "- ") && !strings.HasPrefix(l, "- resolved:") && !strings.HasPrefix(l, "- awaiting") {
+					live = true
+				}
+			}
+			if !strings.Contains(sec, "(resolved") && live {
 				pct := 15
 				if i := strings.Index(sec, "(in progress"); i >= 0 {
 					pct = 60
