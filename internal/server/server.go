@@ -17,7 +17,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -339,8 +341,17 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 			}
 			if !strings.Contains(sec, "(resolved") && strings.Contains(sec, "\n- ") {
 				pct := 15
-				if strings.Contains(sec, "(in progress") {
+				if i := strings.Index(sec, "(in progress"); i >= 0 {
 					pct = 60
+					end := i + 48
+					if end > len(sec) {
+						end = len(sec)
+					}
+					if m := pctMarkRe.FindStringSubmatch(sec[i:end]); m != nil {
+						if v, err := strconv.Atoi(m[1]); err == nil && v > 0 && v < 100 {
+							pct = v
+						}
+					}
 				}
 				pending[id] = append(pending[id], wp{"redesign", pct})
 			}
@@ -463,6 +474,9 @@ func (s *Server) scan() string {
 
 // genNow tracks request files currently being generated, for status pct.
 var genNow sync.Map
+
+// pctMarkRe extracts an explicit percentage from an "(in progress — 40%)" marker.
+var pctMarkRe = regexp.MustCompile(`([0-9]{1,2})%`)
 
 type assetRequest struct {
 	Prompt string   `yaml:"prompt"`
