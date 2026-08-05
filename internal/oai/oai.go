@@ -48,6 +48,30 @@ func New(baseURL, keyCmd string) *Client {
 
 func (c *Client) HasKey() bool { return c.Key != "" }
 
+// PostJSON exposes an authenticated JSON POST to an arbitrary API path —
+// used by the server's Vessica demo tools (Responses API web_search /
+// code_interpreter) so the key never leaves this package.
+func (c *Client) PostJSON(path string, payload any) ([]byte, int, error) {
+	return c.post(path, payload)
+}
+
+// GetRaw performs an authenticated GET and returns the raw body — used to
+// download container files produced by code-interpreter runs.
+func (c *Client) GetRaw(path string) ([]byte, int, error) {
+	req, err := http.NewRequest("GET", c.BaseURL+path, nil)
+	if err != nil {
+		return nil, 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+c.Key)
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer res.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(res.Body, 20<<20))
+	return body, res.StatusCode, nil
+}
+
 func (c *Client) post(path string, payload any) ([]byte, int, error) {
 	b, _ := json.Marshal(payload)
 	req, err := http.NewRequest("POST", c.BaseURL+path, bytes.NewReader(b))
