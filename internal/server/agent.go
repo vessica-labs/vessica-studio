@@ -25,6 +25,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 type agentWorker struct {
@@ -119,12 +121,42 @@ func actionable(sec string) bool {
 	return false
 }
 
-// next returns the first slide with actionable queued work.
+// queuedImageSlides maps deck/slide keys with a generation request still
+// waiting in requests/ — such slides stay on hold.
+func (w *agentWorker) queuedImageSlides() map[string]bool {
+	m := map[string]bool{}
+	ents, err := os.ReadDir(w.s.St.Root + "/requests")
+	if err != nil {
+		return m
+	}
+	for _, e := range ents {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		b, err := os.ReadFile(w.s.St.Root + "/requests/" + e.Name())
+		if err != nil {
+			continue
+		}
+		var req assetRequest
+		if yaml.Unmarshal(b, &req) != nil {
+			continue
+		}
+		if req.Slide != "" {
+			m[req.Deck+"/"+req.Slide] = true
+			m["/"+req.Slide] = true
+		}
+	}
+	return m
+}
+
+// next returns the first slide with actionable queued work — including
+// awaiting-imagery holds whose asset has since been generated.
 func (w *agentWorker) next() (string, string) {
 	decks, err := w.s.St.ListDecks()
 	if err != nil {
 		return "", ""
 	}
+	queued := w.queuedImageSlides()
 	for _, d := range decks {
 		ids, err := w.s.St.SlideIDs(d)
 		if err != nil {
@@ -145,6 +177,9 @@ func (w *agentWorker) next() (string, string) {
 			}
 			if actionable(sec) {
 				return d, id
+			}
+			if strings.Contains(sec, "- awaiting") && !queued[d+"/"+id] && !queued["/"+id] {
+				return d, id // imagery has landed in the library — resume
 			}
 		}
 	}
@@ -185,6 +220,11 @@ everything else.
 
 Progress: update the "(in progress — cloud agent — NN%%)" marker line in the
 companion as you work — 60 while editing, 90 before finishing.
+
+If the section contains "- awaiting imagery:" bullets whose generation
+request is NO LONGER in requests/ (the asset now exists — find the newest
+matching entry in library/manifest.json), execute the landing plan written
+in that bullet, place the asset on the slide, and resolve the bullet.
 
 When done: move each completed request bullet into "## Log" as
 "- resolved: ..." and delete the in-progress marker line.

@@ -324,6 +324,23 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 		Pct  int    `json:"pct"`
 	}
 	pending := map[string][]wp{}
+	// slides whose generation request is still queued stay on hold
+	onHold := map[string]bool{}
+	if ents, err := os.ReadDir(filepath.Join(s.St.Root, "requests")); err == nil {
+		for _, e := range ents {
+			if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+				continue
+			}
+			b, err := os.ReadFile(filepath.Join(s.St.Root, "requests", e.Name()))
+			if err != nil {
+				continue
+			}
+			var req assetRequest
+			if yaml.Unmarshal(b, &req) == nil && req.Slide != "" {
+				onHold[req.Slide] = true
+			}
+		}
+	}
 	if ids, err := s.St.SlideIDs(deck); err == nil {
 		for _, id := range ids {
 			b, err := os.ReadFile(s.St.SlidePath(deck, id, ".md"))
@@ -348,6 +365,9 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 				if strings.HasPrefix(l, "- ") && !strings.HasPrefix(l, "- resolved:") && !strings.HasPrefix(l, "- awaiting") {
 					live = true
 				}
+			}
+			if !live && strings.Contains(sec, "- awaiting") && !onHold[id] {
+				live = true // hold lifted — imagery generated, placement pending
 			}
 			if !strings.Contains(sec, "(resolved") && live {
 				pct := 15
