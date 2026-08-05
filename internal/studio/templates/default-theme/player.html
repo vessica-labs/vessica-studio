@@ -140,9 +140,9 @@ body.editmode .slide.active{cursor:default}
   <button data-act="notes">Notes</button>
   <button data-act="present" id="presentbtn">Present</button>
   <button data-act="edit" id="editbtn">Edit</button>
-  <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save HTML</button>
+  <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
 </div>
-<div id="edithint">Edit mode · click = select · click again = edit text · drag = move · handles = resize · arrows = nudge · <b>Save HTML</b> downloads the edited file</div>
+<div id="edithint">Edit mode · click = select · click again = edit text · drag = move · handles = resize · arrows = nudge · <b>changes save automatically when you exit (E)</b></div>
 <div id="menu"><div class="sheet"><h2>Jump to</h2><div id="menulist"></div></div></div>
 <div id="notesPanel"><div class="lbl">Speaker notes</div><div id="notesBody"></div></div>
 <div id="vstatus"><span class="dot"></span><span id="vlabel">Vessica off</span></div>
@@ -265,6 +265,10 @@ body.editmode .slide.active{cursor:default}
     document.getElementById('savebtn').style.display=editMode?'':'none';
     document.getElementById('editbtn').style.color=editMode?'#20E3AC':'';
     if(!editMode){stopTextEdit();clearSel();}
+    // exiting edit mode auto-saves changed slides (engine present + editable)
+    if(!editMode&&window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0&&(!window.__vme||window.__vme.mode==='studio')){
+      saveDirty().then(out=>{if(out.saved||out.conflicts.length||out.errors.length)reportSave(out);}).catch(()=>{});
+    }
   }
   function clearSel(){selEl=null;if(selbox)selbox.style.display='none';}
   function stopTextEdit(){
@@ -453,29 +457,71 @@ body.editmode .slide.active{cursor:default}
     t.textContent=msg;t.style.display='block';
     clearTimeout(t._h);t._h=setTimeout(()=>{t.style.display='none';},ms||3200);
   }
-  async function saveToEngine(){
-    const secs=[...document.querySelectorAll('#frame > .slide')];
-    let n=0;
-    for(const s of secs){
-      const id=s.dataset.vstd;if(!id)continue;
-      const c=s.cloneNode(true);
-      c.classList.remove('active','mini');
-      c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
-      if(window.__vclean)window.__vclean(c);
-      const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
-        {method:'PUT',headers:{'Content-Type':'text/html'},body:c.outerHTML});
-      if(!r.ok)throw new Error('HTTP '+r.status);
-      n++;
-    }
-    return n;
+  // ---- guarded slide persistence (dirty tracking + stale-write protection) ----
+  function cleanSlideHTML(sec){
+    const c=sec.cloneNode(true);
+    c.classList.remove('active','mini');c.style.display='';
+    c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+    if(window.__vclean)window.__vclean(c);
+    return c.outerHTML;
   }
+  // What each slide's DOM looked like when this page loaded — lets Save touch
+  // ONLY slides the user actually changed, instead of rewriting the whole deck.
+  const __baseline={};
+  slides.forEach(s=>{if(s.dataset.vstd)__baseline[s.dataset.vstd]=cleanSlideHTML(s);});
+  function slideDirty(sec){
+    const id=sec.dataset.vstd;
+    return !!id&&cleanSlideHTML(sec)!==__baseline[id];
+  }
+  // Save one slide, guarded: sends the fragment hash this page was built from
+  // (X-VSTD-Base-Hash); the engine 409s if the file changed since — a stale
+  // tab can no longer silently clobber a redesign that landed after it loaded.
+  async function saveSlide(sec){
+    const id=sec.dataset.vstd;
+    if(!id||!window.VSTD)return {status:'skip'};
+    const html=cleanSlideHTML(sec);
+    const hashes=window.VSTD.hashes||(window.VSTD.hashes={});
+    const hdrs={'Content-Type':'text/html'};
+    if(hashes[id])hdrs['X-VSTD-Base-Hash']=hashes[id];
+    window.__selfSave=Date.now();
+    const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
+      {method:'PUT',headers:hdrs,body:html});
+    window.__selfSave=Date.now();
+    if(r.status===409)return {status:'conflict',id};
+    if(!r.ok)return {status:'error',id,code:r.status};
+    const j=await r.json().catch(()=>({}));
+    if(j.hash)hashes[id]=j.hash;
+    __baseline[id]=html;
+    return {status:'ok',id};
+  }
+  window.__vsaveSlide=saveSlide;
+  async function saveDirty(){
+    const out={saved:0,conflicts:[],errors:[]};
+    for(const s of document.querySelectorAll('#frame > .slide')){
+      if(!s.dataset.vstd||!slideDirty(s))continue;
+      const res=await saveSlide(s);
+      if(res.status==='ok')out.saved++;
+      else if(res.status==='conflict')out.conflicts.push(res.id);
+      else if(res.status==='error')out.errors.push(res.id);
+    }
+    return out;
+  }
+  function reportSave(out,ctx){
+    if(out.conflicts.length)
+      toast('⚠ Not saved: slide(s) '+out.conflicts.join(', ')+' changed on disk (redesign pass or another tab) after this page loaded. Reload to see the newer version, then re-apply your edit.',9500);
+    else if(out.errors.length)toast('Save failed for '+out.errors.join(', '));
+    else if(out.saved)toast('Saved '+out.saved+' changed slide(s)'+(ctx||''));
+    return out;
+  }
+
   async function saveHtml(){
     stopTextEdit();clearSel();
     if(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0){
       try{
-        const n=await saveToEngine();
-        toast('Saved '+n+' slides to deck "'+window.VSTD.deck+'"');
-        return;
+        const out=await saveDirty();
+        if(!out.saved&&!out.conflicts.length&&!out.errors.length)toast('No changes to save');
+        else reportSave(out,' to deck "'+window.VSTD.deck+'"');
+        return; // conflicts are reported, never silently downloaded over
       }catch(err){toast('Engine save failed ('+err.message+') — downloading instead');}
     }
     const clone=document.documentElement.cloneNode(true);
@@ -504,6 +550,7 @@ body.editmode .slide.active{cursor:default}
       es.addEventListener('reload',()=>{
         if(editMode){toast('Deck changed on disk — finish editing, then reload');}
         else if(window.__dictating){/* our own writes; DOM is already current */}
+        else if(Date.now()-(window.__selfSave||0)<2500){/* our own save; DOM is already current */}
         else if(!window.__following){location.reload();}
       });
       es.addEventListener('follow',e=>{
@@ -735,15 +782,12 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
   function activeSec(){return document.querySelector('#frame > .slide.active');}
   async function persistActive(){
     const sec=activeSec();if(!sec)return 'no active slide';
-    const id=sec.dataset.vstd;if(!id)return 'slide has no id';
-    const c=sec.cloneNode(true);
-    c.classList.remove('active','mini');
-    c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
-      if(window.__vclean)window.__vclean(c);
+    if(!sec.dataset.vstd)return 'slide has no id';
     try{
-      const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
-        {method:'PUT',headers:{'Content-Type':'text/html'},body:c.outerHTML});
-      return r.ok?'saved':'save failed '+r.status;
+      if(!window.__vsaveSlide)return 'save unavailable';
+      const res=await window.__vsaveSlide(sec);
+      if(res.status==='conflict')return 'NOT saved: the slide changed on disk after this page loaded — the speaker should reload the deck before more edits';
+      return res.status==='ok'?'saved':'save failed';
     }catch(e){return 'save failed: '+e.message;}
   }
   function findTextEl(phrase){
@@ -1246,16 +1290,11 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   };
 
   function persistSec(sec){
+    if(window.__vsaveSlide)return window.__vsaveSlide(sec).then(res=>{
+      if(res&&res.status==='conflict'&&P())P().toast('Not saved — slide changed on disk after this page loaded; reload the deck');
+      return res;
+    });
     if(P()&&P().persistSlide)return P().persistSlide(sec);
-    if(!(window.VSTD&&window.VSTD.deck&&httpMode))return;
-    const id=sec.dataset.vstd;if(!id)return;
-    const c=sec.cloneNode(true);
-    c.classList.remove('active','mini');
-    c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
-    window.__vclean(c);
-    window.__selfSave=Date.now();
-    return fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
-      {method:'PUT',headers:{'Content-Type':'text/html'},body:c.outerHTML});
   }
 
   // ---- edit mode: drag-drop upload ----

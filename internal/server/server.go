@@ -269,6 +269,12 @@ func (s *Server) handleGetSlide(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"fragment": frag, "companion": comp})
 }
 
+// handlePutFragment writes a slide fragment. When the caller supplies
+// X-VSTD-Base-Hash (the fragment hash its DOM was loaded from), the write is
+// rejected with 409 if the on-disk fragment has changed since — this is what
+// stops a stale edit-mode tab from silently clobbering a redesign pass that
+// landed after the tab loaded. Callers without the header (agents, curl,
+// cloud sessions) write unconditionally, as before.
 func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
 	if err != nil {
@@ -276,12 +282,23 @@ func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deck, id := r.PathValue("deck"), r.PathValue("id")
+	if base := r.Header.Get("X-VSTD-Base-Hash"); base != "" {
+		if cur := s.St.HashSlide(deck, id); cur != "" && cur != base {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "conflict: the slide changed on disk after this page loaded — reload to pick up the newer version",
+				"current": cur,
+			})
+			return
+		}
+	}
 	if err := s.St.WriteFragment(deck, id, string(body)); err != nil {
 		jsonErr(w, err, 400)
 		return
 	}
 	s.St.AppendLog(deck, id, "manual edit saved from player")
-	writeJSON(w, map[string]string{"status": "ok"})
+	writeJSON(w, map[string]string{"status": "ok", "hash": s.St.HashSlide(deck, id)})
 }
 
 func (s *Server) handlePutCompanion(w http.ResponseWriter, r *http.Request) {

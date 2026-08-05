@@ -400,6 +400,16 @@ func (s *Studio) renumber(deck string, order []string, moved string) (string, er
 	return movedNew, nil
 }
 
+// HashSlide returns the content hash of one slide fragment ("" if unreadable).
+func (s *Studio) HashSlide(deck, id string) string {
+	b, err := os.ReadFile(s.SlidePath(deck, id, ".html"))
+	if err != nil {
+		return ""
+	}
+	h := sha256.Sum256(b)
+	return hex.EncodeToString(h[:8])
+}
+
 // HashSlides returns content hashes for every slide fragment in a deck.
 func (s *Studio) HashSlides(deck string) (map[string]string, error) {
 	ids, err := s.SlideIDs(deck)

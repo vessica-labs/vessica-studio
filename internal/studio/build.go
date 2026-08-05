@@ -51,8 +51,13 @@ func (s *Studio) Build(deck string) (string, error) {
 		slides.WriteString("\n")
 	}
 
+	hashes, _ := s.HashSlides(deck)
 	rt := map[string]any{
 		"deck": deck, "title": meta.Title, "slides": ids, "theme": meta.Theme,
+		// per-slide fragment hashes at build time — the player sends these
+		// back as X-VSTD-Base-Hash on fragment PUTs so a stale tab can never
+		// silently overwrite work that landed on disk after it loaded
+		"hashes": hashes,
 		"realtime": map[string]string{
 			"model": s.Config.OpenAI.RealtimeModel,
 			"base":  s.Config.OpenAI.BaseURL,
