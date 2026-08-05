@@ -24,6 +24,7 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -36,6 +37,10 @@ type agentWorker struct {
 	push       bool
 	bin        string
 	branch     string
+	conc       int
+	mu         sync.Mutex
+	inflight   map[string]bool
+	pushMu     sync.Mutex
 }
 
 // StartAgent launches the background worker when VSTD_AGENT=1.
@@ -44,12 +49,15 @@ func (s *Server) StartAgent() {
 		return
 	}
 	w := &agentWorker{s: s, maxPerHour: 6, bin: "claude", branch: "main",
-		push: os.Getenv("VSTD_GIT_PUSH") == "1"}
+		push: os.Getenv("VSTD_GIT_PUSH") == "1", conc: 3, inflight: map[string]bool{}}
 	if v := os.Getenv("VSTD_AGENT_CMD"); v != "" {
 		w.bin = v
 	}
 	if v := os.Getenv("VSTD_AGENT_MAX_PER_HOUR"); v != "" {
 		fmt.Sscanf(v, "%d", &w.maxPerHour)
+	}
+	if v := os.Getenv("VSTD_AGENT_CONCURRENCY"); v != "" {
+		fmt.Sscanf(v, "%d", &w.conc)
 	}
 	if v := os.Getenv("VSTD_GIT_BRANCH"); v != "" {
 		w.branch = v
@@ -59,14 +67,31 @@ func (s *Server) StartAgent() {
 
 func (w *agentWorker) loop() {
 	w.bootstrapGit()
-	log.Printf("agent: worker enabled (cmd=%s, max %d/hour, push=%v)", w.bin, w.maxPerHour, w.push)
+	log.Printf("agent: worker enabled (cmd=%s, max %d/hour, concurrency %d, push=%v)", w.bin, w.maxPerHour, w.conc, w.push)
 	for {
-		time.Sleep(45 * time.Second)
-		deck, slide := w.next()
-		if deck == "" || !w.allow() {
-			continue
+		time.Sleep(15 * time.Second)
+		for _, c := range w.nextAll() {
+			key := c[0] + "/" + c[1]
+			w.mu.Lock()
+			busy := w.inflight[key]
+			slots := len(w.inflight)
+			if !busy && slots < w.conc {
+				w.inflight[key] = true
+			}
+			w.mu.Unlock()
+			if busy || slots >= w.conc || !w.allow() {
+				continue
+			}
+			deck, slide := c[0], c[1]
+			go func() {
+				defer func() {
+					w.mu.Lock()
+					delete(w.inflight, deck+"/"+slide)
+					w.mu.Unlock()
+				}()
+				w.runPass(deck, slide)
+			}()
 		}
-		w.runPass(deck, slide)
 	}
 }
 
@@ -147,6 +172,40 @@ func (w *agentWorker) queuedImageSlides() map[string]bool {
 		}
 	}
 	return m
+}
+
+// nextAll returns every slide with actionable queued work, in deck order.
+func (w *agentWorker) nextAll() [][2]string {
+	var out [][2]string
+	decks, err := w.s.St.ListDecks()
+	if err != nil {
+		return out
+	}
+	queued := w.queuedImageSlides()
+	for _, d := range decks {
+		ids, err := w.s.St.SlideIDs(d)
+		if err != nil {
+			continue
+		}
+		for _, id := range ids {
+			b, err := os.ReadFile(w.s.St.SlidePath(d, id, ".md"))
+			if err != nil {
+				continue
+			}
+			m := editReqRe.FindStringSubmatch(string(b))
+			if m == nil {
+				continue
+			}
+			sec := m[1]
+			if strings.Contains(sec, "(in progress") || strings.Contains(sec, "(worker error") {
+				continue
+			}
+			if actionable(sec) || (strings.Contains(sec, "- awaiting") && !queued[d+"/"+id] && !queued["/"+id]) {
+				out = append(out, [2]string{d, id})
+			}
+		}
+	}
+	return out
 }
 
 // next returns the first slide with actionable queued work — including
@@ -326,6 +385,8 @@ func (w *agentWorker) enforceScope(preexisting map[string]bool) {
 }
 
 func (w *agentWorker) gitPush(deck, id string) {
+	w.pushMu.Lock()
+	defer w.pushMu.Unlock()
 	if _, err := os.Stat(w.s.St.Root + "/.git"); err != nil {
 		log.Printf("agent: push skipped — no git repo")
 		return

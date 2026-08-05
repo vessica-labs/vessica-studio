@@ -193,8 +193,15 @@ func (s *Studio) AppendLog(deck, id, line string) error {
 		content = string(b)
 	}
 	entry := fmt.Sprintf("- %s %s", time.Now().Format("2006-01-02"), line)
-	if strings.Contains(content, "## Log") {
-		content = strings.TrimRight(content, "\n") + "\n" + entry + "\n"
+	if idx := strings.Index(content, "## Log"); idx >= 0 {
+		// insert at the END of the Log section — never spill into a later section
+		rest := content[idx:]
+		if next := strings.Index(rest, "\n## "); next >= 0 {
+			at := idx + next
+			content = strings.TrimRight(content[:at], "\n") + "\n" + entry + "\n" + content[at:]
+		} else {
+			content = strings.TrimRight(content, "\n") + "\n" + entry + "\n"
+		}
 	} else {
 		content = strings.TrimRight(content, "\n") + "\n\n## Log\n" + entry + "\n"
 	}
