@@ -48,7 +48,7 @@ func (s *Server) StartAgent() {
 	if os.Getenv("VSTD_AGENT") != "1" {
 		return
 	}
-	w := &agentWorker{s: s, maxPerHour: 6, bin: "claude", branch: "main",
+	w := &agentWorker{s: s, maxPerHour: 12, bin: "claude", branch: "main",
 		push: os.Getenv("VSTD_GIT_PUSH") == "1", conc: 3, inflight: map[string]bool{}}
 	if v := os.Getenv("VSTD_AGENT_CMD"); v != "" {
 		w.bin = v
@@ -68,9 +68,11 @@ func (s *Server) StartAgent() {
 func (w *agentWorker) loop() {
 	w.bootstrapGit()
 	log.Printf("agent: worker enabled (cmd=%s, max %d/hour, concurrency %d, push=%v)", w.bin, w.maxPerHour, w.conc, w.push)
+	var lastBlockLog time.Time
 	for {
 		time.Sleep(15 * time.Second)
-		for _, c := range w.nextAll() {
+		queued := w.nextAll()
+		for _, c := range queued {
 			key := c[0] + "/" + c[1]
 			w.mu.Lock()
 			busy := w.inflight[key]
@@ -79,8 +81,18 @@ func (w *agentWorker) loop() {
 				w.inflight[key] = true
 			}
 			w.mu.Unlock()
-			if busy || slots >= w.conc || !w.allow() {
+			if busy || slots >= w.conc {
 				continue
+			}
+			if !w.allow() {
+				w.mu.Lock()
+				delete(w.inflight, key)
+				w.mu.Unlock()
+				if time.Since(lastBlockLog) > 2*time.Minute {
+					log.Printf("agent: RATE CAP reached (%d/hour) — %d slide(s) queued and waiting; raise VSTD_AGENT_MAX_PER_HOUR or restart serve to reset the window", w.maxPerHour, len(queued))
+					lastBlockLog = time.Now()
+				}
+				break
 			}
 			deck, slide := c[0], c[1]
 			go func() {
