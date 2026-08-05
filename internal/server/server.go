@@ -139,6 +139,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion/{section}", s.editOnly(s.handlePutCompanion))
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/title", s.editOnly(s.handlePutTitle))
 	mux.HandleFunc("POST /api/deck/{deck}/slides", s.editOnly(s.handleNewSlide))
+	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/move", s.editOnly(s.handleMoveSlide))
 	mux.HandleFunc("POST /api/realtime/token", s.handleRealtimeToken)
 
 	// Phase 4: auth, share links, live-follow, health
@@ -412,6 +413,20 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	writeJSON(w, map[string]any{"pending": pending, "imageQueue": queued})
+}
+
+func (s *Server) handleMoveSlide(w http.ResponseWriter, r *http.Request) {
+	var req struct{ After string }
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	newID, err := s.St.MoveSlide(r.PathValue("deck"), r.PathValue("id"), req.After)
+	if err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok", "id": newID})
 }
 
 func (s *Server) handleNewSlide(w http.ResponseWriter, r *http.Request) {

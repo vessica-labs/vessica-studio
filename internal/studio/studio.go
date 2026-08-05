@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -252,6 +253,133 @@ func (s *Studio) SetTitle(deck, id, title string) error {
 		return err
 	}
 	return s.AppendLog(deck, id, fmt.Sprintf("title set to %q via edit API", title))
+}
+
+// MoveSlide renames a slide so it sorts directly after the slide `after`
+// ("" = to the front). Sparse numbering gives room; when two neighbors are
+// adjacent it falls back to renumbering the whole deck at 10-step spacing.
+// Returns the slide's new id.
+func (s *Studio) MoveSlide(deck, id, after string) (string, error) {
+	if !ValidDeckName(deck) || !ValidSlideID(id) || (after != "" && !ValidSlideID(after)) {
+		return "", fmt.Errorf("invalid deck/slide id")
+	}
+	if id == after {
+		return id, nil
+	}
+	ids, err := s.SlideIDs(deck)
+	if err != nil {
+		return "", err
+	}
+	rest := make([]string, 0, len(ids))
+	found := false
+	for _, x := range ids {
+		if x == id {
+			found = true
+			continue
+		}
+		rest = append(rest, x)
+	}
+	if !found {
+		return "", fmt.Errorf("slide %q not found", id)
+	}
+	pos := 0
+	if after != "" {
+		pos = -1
+		for i, x := range rest {
+			if x == after {
+				pos = i + 1
+				break
+			}
+		}
+		if pos < 0 {
+			return "", fmt.Errorf("slide %q not found", after)
+		}
+	}
+	slug := id[strings.Index(id, "-")+1:]
+	prev, next := "", ""
+	if pos > 0 {
+		prev = rest[pos-1]
+	}
+	if pos < len(rest) {
+		next = rest[pos]
+	}
+	if p := midPrefix(prev, next); p != "" {
+		newID := p + "-" + slug
+		if err := s.renameSlide(deck, id, newID); err != nil {
+			return "", err
+		}
+		return newID, nil
+	}
+	// no room — renumber the whole deck with the moved slide in place
+	order := append(append(append([]string{}, rest[:pos]...), id), rest[pos:]...)
+	return s.renumber(deck, order, id)
+}
+
+// midPrefix returns a numeric prefix sorting strictly between prev and next
+// slide ids ("" allowed on either side), or "" when no room exists.
+func midPrefix(prev, next string) string {
+	a := 0
+	if prev != "" {
+		a, _ = strconv.Atoi(prev[:strings.Index(prev, "-")])
+	}
+	b := a + 20
+	if next != "" {
+		b, _ = strconv.Atoi(next[:strings.Index(next, "-")])
+	} else {
+		b = a + 20
+	}
+	if prev == "" && next != "" && b <= 1 {
+		return ""
+	}
+	if b-a > 1 {
+		return fmt.Sprintf("%04d", a+(b-a)/2)
+	}
+	if prev != "" {
+		if ap := prev[:strings.Index(prev, "-")]; len(ap) < 5 {
+			return ap + "5" // lexicographic midpoint: "0125" < "01255-…" < "0126"
+		}
+	}
+	return ""
+}
+
+func (s *Studio) renameSlide(deck, oldID, newID string) error {
+	if err := os.Rename(s.SlidePath(deck, oldID, ".html"), s.SlidePath(deck, newID, ".html")); err != nil {
+		return err
+	}
+	if _, err := os.Stat(s.SlidePath(deck, oldID, ".md")); err == nil {
+		os.Rename(s.SlidePath(deck, oldID, ".md"), s.SlidePath(deck, newID, ".md"))
+	}
+	return nil
+}
+
+// renumber renames every slide to (i+1)*10 spacing, preserving order, via a
+// temp-prefix phase to avoid collisions. Returns moved's final id.
+func (s *Studio) renumber(deck string, order []string, moved string) (string, error) {
+	dir := filepath.Join(s.DeckDir(deck), "slides")
+	// phase 1: to temp names
+	for i, id := range order {
+		for _, ext := range []string{".html", ".md"} {
+			if _, err := os.Stat(s.SlidePath(deck, id, ext)); err == nil {
+				os.Rename(s.SlidePath(deck, id, ext), filepath.Join(dir, fmt.Sprintf("zztmp%04d%s", i, ext)))
+			}
+		}
+	}
+	movedNew := ""
+	// phase 2: to final names
+	for i, id := range order {
+		slug := id[strings.Index(id, "-")+1:]
+		newID := fmt.Sprintf("%04d-%s", (i+1)*10, slug)
+		for _, ext := range []string{".html", ".md"} {
+			tmp := filepath.Join(dir, fmt.Sprintf("zztmp%04d%s", i, ext))
+			if _, err := os.Stat(tmp); err == nil {
+				os.Rename(tmp, s.SlidePath(deck, newID, ext))
+			}
+		}
+		if id == moved {
+			movedNew = newID
+		}
+	}
+	return movedNew, nil
 }
 
 // HashSlides returns content hashes for every slide fragment in a deck.
