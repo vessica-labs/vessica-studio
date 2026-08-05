@@ -71,6 +71,26 @@ type Manifest struct {
 	Version       int                    `json:"version"`
 	StyleFamilies map[string]StyleFamily `json:"styleFamilies"`
 	Assets        []Asset                `json:"assets"`
+	Videos        []VideoAsset           `json:"videos,omitempty"`
+}
+
+// VideoAsset is a library video: bytes live at video/<hash>.mp4 (gitignored,
+// synced to S3-compatible storage for hosted serving), the poster frame at
+// video-posters/<id>.jpg (small, committed). Slides reference the ID only;
+// the engine resolves /assets/video/<id> per serving mode.
+type VideoAsset struct {
+	ID       string   `json:"id"`
+	File     string   `json:"file"`             // video/<sha256>.<ext>
+	Poster   string   `json:"poster,omitempty"` // video-posters/<id>.jpg
+	Hash     string   `json:"hash"`             // full sha256 of the bytes (bucket object key)
+	Bytes    int64    `json:"bytes"`
+	Duration float64  `json:"duration,omitempty"` // seconds
+	Width    int      `json:"width,omitempty"`
+	Height   int      `json:"height,omitempty"`
+	Source   string   `json:"source,omitempty"` // original filename
+	Tags     []string `json:"tags,omitempty"`
+	Created  string   `json:"created"`
+	Usage    []string `json:"usage,omitempty"`
 }
 
 type StyleFamily struct {

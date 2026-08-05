@@ -33,6 +33,17 @@ type Config struct {
 		RealtimeModel     string `yaml:"realtime_model"`
 		RealtimeTokenPath string `yaml:"realtime_token_path"`
 	} `yaml:"openai"`
+	// Storage configures the S3-compatible bucket for video assets (Railway
+	// Storage Bucket, R2, MinIO, …). Every field can instead come from the
+	// VSTD_S3_* env vars (which win); the *_cmd fields resolve credentials
+	// via a shell command (macOS Keychain pattern) so no secret sits in git.
+	Storage struct {
+		Endpoint     string `yaml:"endpoint,omitempty"`
+		Bucket       string `yaml:"bucket,omitempty"`
+		Region       string `yaml:"region,omitempty"`
+		AccessKeyCmd string `yaml:"access_key_cmd,omitempty"`
+		SecretKeyCmd string `yaml:"secret_key_cmd,omitempty"`
+	} `yaml:"storage,omitempty"`
 }
 
 // DeckMeta is deck.yaml inside a deck directory.

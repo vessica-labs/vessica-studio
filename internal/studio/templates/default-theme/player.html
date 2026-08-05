@@ -257,7 +257,7 @@ body.editmode .slide.active{cursor:default}
     ['nw','n','ne','e','se','s','sw','w'].map(d=>'<div class="hnd '+d+'" data-h="'+d+'"></div>').join('');
   frame.appendChild(selbox);
 
-  const CAND='.s-title,.s-lead,.src,.card,.colcard,.chev,.demoslot,.icontile,.pill,.todo,.kpi,.statxl,.wordmark,.headband,.bh,li,ul,table,svg,img,.arc,.aur,[data-edit]';
+  const CAND='.s-title,.s-lead,.src,.card,.colcard,.chev,.demoslot,.icontile,.pill,.todo,.kpi,.statxl,.wordmark,.headband,.bh,li,ul,table,svg,img,video,.arc,.aur,[data-edit]';
 
   function toggleEdit(){
     editMode=!editMode;
@@ -301,7 +301,7 @@ body.editmode .slide.active{cursor:default}
   function setTx(el,x,y){el.dataset.tx=x;el.dataset.ty=y;el.style.transform=(x||y)?('translate('+x+'px,'+y+'px)'):'';}
 
   function startTextEdit(el,ev){
-    if(!el||el.matches('svg,img,.arc,.aur'))return;
+    if(!el||el.matches('svg,img,video,.arc,.aur'))return;
     stopTextEdit();
     el.setAttribute('contenteditable','true');
     el.focus();
@@ -461,6 +461,7 @@ body.editmode .slide.active{cursor:default}
       const c=s.cloneNode(true);
       c.classList.remove('active','mini');
       c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+      if(window.__vclean)window.__vclean(c);
       const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
         {method:'PUT',headers:{'Content-Type':'text/html'},body:c.outerHTML});
       if(!r.ok)throw new Error('HTTP '+r.status);
@@ -487,6 +488,7 @@ body.editmode .slide.active{cursor:default}
     clone.querySelector('#editbtn').style.color='';
     clone.querySelector('#frame').style.transform='';
     clone.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+    if(window.__vexport)await window.__vexport(clone);
     const blob=new Blob(['<!DOCTYPE html>\n'+clone.outerHTML],{type:'text/html'});
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);a.download='index.html';
@@ -737,6 +739,7 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
     const c=sec.cloneNode(true);
     c.classList.remove('active','mini');
     c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+      if(window.__vclean)window.__vclean(c);
     try{
       const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
         {method:'PUT',headers:{'Content-Type':'text/html'},body:c.outerHTML});
@@ -1079,6 +1082,270 @@ If narration starts with no draft slide, call new_slide first (infer a working t
 
   // test hook (harness only)
   window.__vdict={run:runTool,create:createSlide,flush:()=>flush(true),state:()=>D};
+})();
+/* ================= Video assets layer =================
+   Slides stay declarative: <video class="vid" data-vstd-video="<asset-id>"
+   data-autoplay data-loop [data-unmuted] [data-keep-time]></video>
+   This layer resolves sources per context (engine /assets/video/<id>, or
+   relative assets/ in a bundle export), owns the playback lifecycle
+   (play on slide enter, pause on leave, preload the next slide's videos),
+   handles browser autoplay policy (muted until a user gesture; present-mode
+   entry unlocks sound), gives audiences poster + tap-to-stream instead of
+   autoplay, and provides the edit-mode drag-drop upload UI + inspector. */
+(function(){
+  const P=()=>window.VSTDP;
+  const httpMode=location.protocol.indexOf('http')===0;
+  const frame=document.getElementById('frame');
+  if(!frame)return;
+
+  const css=document.createElement('style');
+  css.textContent=
+    'video.vid{display:block;width:100%;height:100%;max-height:100%;object-fit:contain;background:#000;border-radius:12px}'+
+    '.vtap{position:absolute;z-index:40;display:flex;align-items:center;justify-content:center;cursor:pointer;'+
+      'background:rgba(0,0,0,.25);border-radius:12px}'+
+    '.vtap span{width:84px;height:84px;border-radius:50%;background:rgba(12,32,19,.85);border:2px solid #21BF61;'+
+      'display:flex;align-items:center;justify-content:center;color:#E3FDDB;font-size:34px;padding-left:6px}'+
+    '.vunmute{position:absolute;right:28px;bottom:56px;z-index:41;background:rgba(12,32,19,.92);color:#dff0e2;'+
+      'border:1px solid #21BF61;border-radius:999px;padding:8px 18px;font-size:14px;font-family:var(--sans);cursor:pointer}'+
+    'body.editmode.vdrop #frame{outline:3px solid #20E3AC;outline-offset:6px}'+
+    '#vinspect{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);z-index:96;display:none;gap:6px;'+
+      'background:rgba(12,20,15,.94);border:1px solid #2c4a35;border-radius:999px;padding:7px 12px;font-family:var(--sans)}'+
+    '#vinspect button{background:none;border:1px solid #2c4a35;color:#cfe6d4;border-radius:999px;padding:4px 13px;'+
+      'font-size:13px;cursor:pointer;font-family:var(--sans);white-space:nowrap}'+
+    '#vinspect button.on{background:#21BF61;color:#0C2B15;border-color:#21BF61}'+
+    '#vinspect button.danger{color:#FE7C2B;border-color:#5a3a2a}';
+  document.head.appendChild(css);
+
+  let gestured=false;
+  const markG=()=>{gestured=true;};
+  addEventListener('pointerdown',markG,true);
+  addEventListener('keydown',markG,true);
+
+  const srcFor=id=>httpMode?'/assets/video/'+id:'assets/video/'+id+'.mp4';
+  const posterFor=id=>httpMode?'/assets/video/'+id+'/poster':'assets/video-posters/'+id+'.jpg';
+  const isAudience=()=>{const me=window.__vme;return !!(me&&me.mode==='public'&&!me.presenter);};
+  const allVids=()=>[...frame.querySelectorAll('.slide video[data-vstd-video]')];
+  const activeSlide=()=>frame.querySelector('.slide.active');
+
+  function setup(v){
+    const id=v.dataset.vstdVideo;
+    v.playsInline=true;v.setAttribute('playsinline','');
+    if(!v.dataset.vinit){v.preload='none';v.dataset.vinit='1';}
+    if(!v.getAttribute('poster'))v.poster=posterFor(id);
+    v.loop=v.hasAttribute('data-loop');
+    if(isAudience()||!v.hasAttribute('data-autoplay')){v.controls=true;}
+  }
+  function ensureSrc(v,preload){
+    if(!v.getAttribute('src')){v.src=srcFor(v.dataset.vstdVideo);if(preload){v.preload='auto';try{v.load();}catch(_){}}}
+    else if(preload&&v.preload!=='auto'){v.preload='auto';}
+  }
+  function clearOverlays(scope){(scope||document).querySelectorAll('.vtap,.vunmute').forEach(el=>el.remove());}
+  function overlayFor(v,cls,html,onTap){
+    const s=v.closest('.slide');if(!s)return null;
+    const o=document.createElement('div');o.className=cls;o.innerHTML=html;
+    if(cls==='vtap'){
+      const sr=s.getBoundingClientRect(),vr=v.getBoundingClientRect();
+      const k=sr.width/1280; // frame scale
+      o.style.left=((vr.left-sr.left)/k)+'px';o.style.top=((vr.top-sr.top)/k)+'px';
+      o.style.width=(vr.width/k)+'px';o.style.height=(vr.height/k)+'px';
+    }
+    o.addEventListener('click',e=>{e.stopPropagation();onTap();o.remove();});
+    s.appendChild(o);
+    return o;
+  }
+  function tapToPlay(v){
+    if(v.closest('.slide').querySelector('.vtap'))return;
+    overlayFor(v,'vtap','<span>▶</span>',()=>{gestured=true;ensureSrc(v,true);v.muted=!v.hasAttribute('data-unmuted');v.play().catch(()=>{});});
+  }
+  function unmuteChip(v){
+    if(v.closest('.slide').querySelector('.vunmute'))return;
+    overlayFor(v,'vunmute','🔊 Tap for sound',()=>{gestured=true;v.muted=false;});
+  }
+
+  function activate(){
+    const s=activeSlide();if(!s)return;
+    clearOverlays();
+    allVids().forEach(v=>{
+      if(!s.contains(v)){if(!v.paused)v.pause();return;}
+      setup(v);
+      if(isAudience())return; // poster + native controls; streams on tap only
+      if(!v.hasAttribute('data-autoplay'))return; // manual video: presenter uses controls
+      ensureSrc(v,false);
+      if(!v.hasAttribute('data-keep-time')){try{v.currentTime=0;}catch(_){}}
+      const wantSound=v.hasAttribute('data-unmuted');
+      v.muted=!(wantSound&&gestured);
+      const pr=v.play();
+      if(pr&&pr.catch)pr.catch(()=>{
+        if(!v.muted){v.muted=true;v.play().catch(()=>tapToPlay(v));if(wantSound)unmuteChip(v);}
+        else tapToPlay(v);
+      });
+      if(wantSound&&!gestured)unmuteChip(v);
+    });
+    preloadNext(s);
+  }
+  function preloadNext(s){
+    if(isAudience())return;
+    if(httpMode&&window.__vme==null){ // identity unknown — don't prefetch bytes an audience phone shouldn't pull
+      setTimeout(()=>{if(!isAudience()&&s.classList.contains('active'))preloadNext(s);},700);
+      return;
+    }
+    let n=s.nextElementSibling;
+    while(n&&(!n.classList||!n.classList.contains('slide')||n.hasAttribute('data-hidden')||n.hasAttribute('data-parked')))n=n.nextElementSibling;
+    if(!n)return;
+    n.querySelectorAll('video[data-vstd-video]').forEach(v=>{setup(v);ensureSrc(v,true);});
+  }
+  document.addEventListener('vstd:slide',activate);
+  // present-mode entry is a user gesture — unlock sound on data-unmuted videos
+  document.addEventListener('fullscreenchange',()=>{
+    if(!document.fullscreenElement)return;
+    const s=activeSlide();if(!s)return;
+    s.querySelectorAll('video[data-vstd-video][data-unmuted]').forEach(v=>{if(!v.paused)v.muted=false;});
+    clearOverlays(s);
+  });
+  // audience status arrives async (/api/me) — retro-apply to the current slide
+  let audApplied=false;
+  const audPoll=setInterval(()=>{
+    if(window.__vme==null)return;
+    clearInterval(audPoll);
+    if(isAudience()&&!audApplied){
+      audApplied=true;
+      allVids().forEach(v=>{
+        if(!v.paused)v.pause();
+        if(v.getAttribute('src')){v.removeAttribute('src');v.preload='none';try{v.load();}catch(_){}} // drop any pre-identity prefetch
+        v.controls=true;
+      });
+      clearOverlays();
+    }
+  },400);
+  setTimeout(()=>clearInterval(audPoll),15000);
+
+  // ---- save-path helpers (called by saveToEngine/persistSlide/saveHtml) ----
+  window.__vclean=function(rootEl){
+    rootEl.querySelectorAll('video[data-vstd-video]').forEach(v=>{
+      ['src','poster','controls','loop','playsinline','preload','autoplay','muted','data-vinit'].forEach(a=>v.removeAttribute(a));
+    });
+    rootEl.querySelectorAll('.vtap,.vunmute').forEach(el=>el.remove());
+  };
+  // single-file export cannot carry 50MB of video — swap each for its poster
+  // frame (inlined as a data URL) so the emailed file still reads well
+  window.__vexport=async function(clone){
+    const vids=clone.querySelectorAll('video[data-vstd-video]');
+    for(const v of vids){
+      let data='';
+      try{
+        const b=await (await fetch(posterFor(v.dataset.vstdVideo))).blob();
+        data=await new Promise(res=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>res('');r.readAsDataURL(b);});
+      }catch(_){}
+      const img=document.createElement('img');
+      img.className=v.className;img.setAttribute('style',v.getAttribute('style')||'');
+      img.setAttribute('data-vstd-video-poster',v.dataset.vstdVideo);
+      img.title='Video "'+v.dataset.vstdVideo+'" omitted in single-file export — use vstd bundle or the hosted deck';
+      if(data)img.src=data;
+      v.replaceWith(img);
+    }
+  };
+
+  function persistSec(sec){
+    if(P()&&P().persistSlide)return P().persistSlide(sec);
+    if(!(window.VSTD&&window.VSTD.deck&&httpMode))return;
+    const id=sec.dataset.vstd;if(!id)return;
+    const c=sec.cloneNode(true);
+    c.classList.remove('active','mini');
+    c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
+    window.__vclean(c);
+    window.__selfSave=Date.now();
+    return fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
+      {method:'PUT',headers:{'Content-Type':'text/html'},body:c.outerHTML});
+  }
+
+  // ---- edit mode: drag-drop upload ----
+  function canUpload(){return document.body.classList.contains('editmode')&&httpMode&&window.VSTD&&window.VSTD.deck&&(!window.__vme||window.__vme.mode==='studio');}
+  addEventListener('dragover',e=>{
+    if(!canUpload())return;
+    if([...(e.dataTransfer.items||[])].some(i=>i.kind==='file')){e.preventDefault();document.body.classList.add('vdrop');}
+  });
+  addEventListener('dragleave',e=>{if(!e.relatedTarget)document.body.classList.remove('vdrop');});
+  addEventListener('drop',e=>{
+    document.body.classList.remove('vdrop');
+    if(!canUpload())return;
+    const f=[...(e.dataTransfer.files||[])].find(f=>/^video\//.test(f.type)||/\.(mp4|mov|webm|m4v)$/i.test(f.name));
+    if(!f)return;
+    e.preventDefault();e.stopPropagation();
+    if(f.size>2*1024*1024*1024){P().toast('Too large (2GB max)');return;}
+    uploadVideo(f);
+  },true);
+
+  function uploadVideo(f){
+    const mb=(f.size/1e6).toFixed(1);
+    P().toast('Uploading '+f.name+' ('+mb+' MB)… 0%',60000);
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST','/api/asset/video?filename='+encodeURIComponent(f.name));
+    xhr.upload.onprogress=ev=>{
+      if(ev.lengthComputable)P().toast('Uploading '+f.name+' ('+mb+' MB)… '+Math.round(ev.loaded/ev.total*100)+'%',60000);
+    };
+    xhr.onload=()=>{
+      let j={};try{j=JSON.parse(xhr.responseText);}catch(_){}
+      if(xhr.status!==200||!j.asset){P().toast('Upload failed: '+(j.error||('HTTP '+xhr.status)));return;}
+      insertVideo(j.asset);
+      const w=(j.warnings||[]).join('; ');
+      P().toast('Video "'+j.asset.id+'" added'+(j.transcoded?' (transcoded for web)':'')+(w?' — '+w:''),6000);
+    };
+    xhr.onerror=()=>P().toast('Upload failed — network error');
+    xhr.send(f);
+  }
+  function insertVideo(asset){
+    const s=activeSlide();if(!s)return;
+    const v=document.createElement('video');
+    v.className='vid';
+    v.setAttribute('data-vstd-video',asset.id);
+    v.setAttribute('data-autoplay','');
+    v.setAttribute('data-loop','');
+    const host=s.querySelector('.content')||s;
+    if(host===s)v.setAttribute('style','position:absolute;left:66px;right:66px;top:168px;bottom:46px;width:auto;height:auto');
+    host.appendChild(v);
+    setup(v);ensureSrc(v,true);
+    persistSec(s);
+    showInspector(v);
+  }
+
+  // ---- edit mode: inspector for a selected video ----
+  let insp=null,inspFor=null;
+  function buildInspector(){
+    if(insp)return;
+    insp=document.createElement('div');insp.id='vinspect';
+    insp.innerHTML='<button data-k="data-autoplay">Autoplay</button>'+
+      '<button data-k="data-loop">Loop</button>'+
+      '<button data-k="data-unmuted">Sound</button>'+
+      '<button data-k="data-keep-time">Resume (don’t restart)</button>'+
+      '<button data-k="__remove" class="danger">Remove</button>';
+    insp.addEventListener('click',e=>{
+      const b=e.target.closest('button');if(!b||!inspFor)return;
+      const k=b.dataset.k;
+      const sec=inspFor.closest('.slide');
+      if(k==='__remove'){
+        clearOverlays(sec);inspFor.remove();persistSec(sec);hideInspector();P().toast('Video removed from slide');return;
+      }
+      if(inspFor.hasAttribute(k))inspFor.removeAttribute(k);else inspFor.setAttribute(k,'');
+      setup(inspFor);syncInspector();persistSec(sec);
+      if(k==='data-autoplay'||k==='data-unmuted')activate();
+    });
+    document.body.appendChild(insp);
+  }
+  function syncInspector(){
+    if(!insp||!inspFor)return;
+    insp.querySelectorAll('button[data-k^="data-"]').forEach(b=>b.classList.toggle('on',inspFor.hasAttribute(b.dataset.k)));
+  }
+  function showInspector(v){buildInspector();inspFor=v;insp.style.display='flex';syncInspector();}
+  function hideInspector(){if(insp)insp.style.display='none';inspFor=null;}
+  addEventListener('pointerup',e=>{
+    if(!document.body.classList.contains('editmode')){hideInspector();return;}
+    if(e.target.closest('#vinspect'))return;
+    const v=e.target.closest('video[data-vstd-video]');
+    if(v&&activeSlide()&&activeSlide().contains(v))showInspector(v);else hideInspector();
+  });
+  document.addEventListener('vstd:slide',hideInspector);
+
+  activate(); // initial slide is already active by the time this layer loads
 })();
 </script>
 </body>

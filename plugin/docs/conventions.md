@@ -61,6 +61,30 @@ Every generated slide gets AT LEAST one visual element. Priority order:
    file exists.
 3. **Inline SVG** (thin-line icons, gradient/aurora art) when a raster image adds nothing.
 
+## Video assets
+
+Library videos live in `manifest.json` under `videos` (id, duration,
+dimensions, poster). Reference by id ONLY — never by file path:
+
+    <video class="vid" data-vstd-video="<asset-id>" data-autoplay data-loop></video>
+
+Playback flags (attributes, no values): `data-autoplay` (play on slide
+enter; omit for click-to-play with native controls), `data-loop`,
+`data-unmuted` (sound — the player still starts muted until a user
+gesture/present-mode entry), `data-keep-time` (resume instead of restarting
+on re-entry). The player resolves `/assets/video/<id>` and owns the
+play/pause lifecycle; never hardcode `src` or `poster`.
+
+Adding a video: `vstd asset add-video <file> [--slug S --tags a,b]` when the
+CLI is available (normalizes to web H.264 +faststart, extracts a poster,
+updates the manifest, syncs the bucket). From a cloud session: copy the file
+to `library/inbox/<name>.mp4` via the bridge, then drop a yaml into
+`requests/` with `type: video`, `path: library/inbox/<name>.mp4`, `slug`,
+`tags` (+ optional `deck:`/`slide:`) — the running engine ingests it.
+Video bytes are gitignored (`library/video/`); posters are committed. List
+the asset id in the companion's `visuals:` frontmatter like any other asset.
+Audiences on share links get poster + tap-to-stream, not autoplay.
+
 ## The critic loop (for generated/heavily-edited slides)
 
 After building a slide: screenshot it (Playwright headless against the built deck or

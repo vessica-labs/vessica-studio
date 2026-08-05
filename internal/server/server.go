@@ -134,6 +134,10 @@ func (s *Server) Routes() *http.ServeMux {
 		lib.ServeHTTP(w, r)
 	}))
 
+	mux.HandleFunc("GET /assets/video/{id}", s.handleVideo)
+	mux.HandleFunc("GET /assets/video/{id}/poster", s.handleVideoPoster)
+	mux.HandleFunc("POST /api/asset/video", s.editOnly(s.handleVideoUpload))
+
 	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
@@ -543,7 +547,9 @@ var genNow sync.Map
 var pctMarkRe = regexp.MustCompile(`([0-9]{1,2})%`)
 
 type assetRequest struct {
+	Type   string   `yaml:"type,omitempty"` // "" | "image" (default) | "video"
 	Prompt string   `yaml:"prompt"`
+	Path   string   `yaml:"path,omitempty"` // video: file to ingest, relative to the studio root
 	Family string   `yaml:"family"`
 	Tags   []string `yaml:"tags"`
 	Size   string   `yaml:"size"`
@@ -568,7 +574,21 @@ func (s *Server) processRequests() {
 			continue
 		}
 		var req assetRequest
-		if err := yaml.Unmarshal(b, &req); err != nil || req.Prompt == "" {
+		if err := yaml.Unmarshal(b, &req); err != nil {
+			log.Printf("requests: skipping malformed %s", e.Name())
+			s.archiveRequest(p, e.Name(), "malformed")
+			continue
+		}
+		if req.Type == "video" {
+			if req.Path == "" {
+				log.Printf("requests: video request %s missing path:", e.Name())
+				s.archiveRequest(p, e.Name(), "malformed")
+				continue
+			}
+			s.processVideoRequest(p, e.Name(), req)
+			continue
+		}
+		if req.Prompt == "" {
 			log.Printf("requests: skipping malformed %s", e.Name())
 			s.archiveRequest(p, e.Name(), "malformed")
 			continue

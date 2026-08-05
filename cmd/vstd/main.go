@@ -12,13 +12,17 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
 	"github.com/vessica-labs/vessica-studio/internal/oai"
+	"github.com/vessica-labs/vessica-studio/internal/s3"
 	"github.com/vessica-labs/vessica-studio/internal/server"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
+	"github.com/vessica-labs/vessica-studio/internal/video"
 )
 
 const version = "0.3.0"
@@ -49,6 +53,8 @@ func main() {
 		err = cmdServe(args)
 	case "asset":
 		err = cmdAsset(args)
+	case "bundle":
+		err = cmdBundle(args)
 	case "qr":
 		err = cmdQR(args)
 	case "railway":
@@ -83,6 +89,10 @@ Usage:
   vstd serve [deck] [flags]           serve studio (watch, live reload, edit API)
   vstd asset gen --prompt P [flags]   generate a library image (gpt-image-2)
   vstd asset list|find [--tags a,b --family F]   browse/reuse the library
+  vstd asset add-video <file> [--slug S --tags a,b --no-transcode]
+                                      ingest a video (normalize, poster, manifest)
+  vstd asset push|pull                sync video bytes with the S3 bucket
+  vstd bundle <deck>                  self-contained folder export (videos included)
   vstd key check                      verify OpenAI key resolution
   vstd qr <deck> [--ttl 72] [--host U]  mint a signed audience share link + QR
   vstd railway up                     one-command Railway setup + deploy
@@ -101,6 +111,9 @@ Environment:
   OPENAI_API_KEY        image generation + realtime token minting
   VSTD_PRESENTER_KEY    interim presenter auth for --mode public
   PORT                  overrides port (Railway sets this)
+  VSTD_S3_ENDPOINT / _BUCKET / _ACCESS_KEY / _SECRET_KEY / _REGION
+                        S3-compatible bucket for video assets (Railway
+                        Storage Bucket); or studio.yaml storage: block
 `)
 }
 
@@ -378,6 +391,25 @@ func cmdAssetList(args []string, find bool) error {
 		n++
 		fmt.Printf("%-40s family=%-18s tags=%s\n  /library/%s\n", a.ID, a.Family, strings.Join(a.Tags, ","), a.File)
 	}
+	for _, v := range man.Videos {
+		if *family != "" {
+			continue
+		}
+		if len(want) > 0 {
+			hit := false
+			for _, t := range v.Tags {
+				if want[t] {
+					hit = true
+				}
+			}
+			if !hit {
+				continue
+			}
+		}
+		n++
+		fmt.Printf("%-40s VIDEO %.1fs %dx%d %.1fMB tags=%s\n  <video class=\"vid\" data-vstd-video=\"%s\" data-autoplay data-loop></video>\n",
+			v.ID, v.Duration, v.Width, v.Height, float64(v.Bytes)/1e6, strings.Join(v.Tags, ","), v.ID)
+	}
 	if n == 0 && find {
 		fmt.Println("no matching assets — generate one with `vstd asset gen` (reuse-before-generate: consider widening tags first)")
 	}
@@ -397,8 +429,14 @@ func cmdAsset(args []string) error {
 	if len(args) >= 1 && args[0] == "find" {
 		return cmdAssetList(args[1:], true)
 	}
+	if len(args) >= 1 && args[0] == "add-video" {
+		return cmdAssetAddVideo(args[1:])
+	}
+	if len(args) >= 1 && (args[0] == "push" || args[0] == "pull") {
+		return cmdAssetSync(args[0], args[1:])
+	}
 	if len(args) < 1 || args[0] != "gen" {
-		return fmt.Errorf("usage: vstd asset gen|list|find ...")
+		return fmt.Errorf("usage: vstd asset gen|list|find|add-video|push|pull ...")
 	}
 	fs := flag.NewFlagSet("asset gen", flag.ExitOnError)
 	root := rootFlag(fs)
@@ -432,6 +470,231 @@ func cmdAsset(args []string) error {
 	}
 	fmt.Printf("created asset %s (%s)\n  use as: /library/%s\n", asset.ID, asset.File, asset.File)
 	return nil
+}
+
+func s3ClientFor(st *studio.Studio) *s3.Client {
+	sc := st.Config.Storage
+	return s3.FromEnv(sc.Endpoint, sc.Bucket, sc.Region, s3.KeyCmds{
+		AccessKeyCmd: sc.AccessKeyCmd, SecretKeyCmd: sc.SecretKeyCmd,
+	})
+}
+
+func cmdAssetAddVideo(args []string) error {
+	fs := flag.NewFlagSet("asset add-video", flag.ExitOnError)
+	root := rootFlag(fs)
+	slug := fs.String("slug", "", "asset id (default: from the filename)")
+	tags := fs.String("tags", "", "comma-separated tags")
+	noT := fs.Bool("no-transcode", false, "store bytes as-is (still hashed + postered)")
+	var file string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		file = args[0]
+		args = args[1:]
+	}
+	fs.Parse(args)
+	if file == "" {
+		return fmt.Errorf("usage: vstd asset add-video <file> [--slug S --tags a,b --no-transcode]")
+	}
+	st, err := openStudio(*root)
+	if err != nil {
+		return err
+	}
+	var tagList []string
+	for _, t := range strings.Split(*tags, ",") {
+		if t = strings.TrimSpace(t); t != "" {
+			tagList = append(tagList, t)
+		}
+	}
+	res, err := video.Ingest(st.Root+"/library", file, video.Options{
+		Slug: *slug, Tags: tagList, NoTranscode: *noT,
+	})
+	if err != nil {
+		return err
+	}
+	a := res.Asset
+	fmt.Printf("created video asset %s\n  %s  (%.1f MB, %.1fs, %dx%d)\n",
+		a.ID, a.File, float64(a.Bytes)/1e6, a.Duration, a.Width, a.Height)
+	if res.Transcoded {
+		fmt.Println("  transcoded to web-ready H.264 (+faststart)")
+	}
+	for _, w := range res.Warnings {
+		fmt.Println("  warning:", w)
+	}
+	fmt.Printf("  use in a slide as: <video class=\"vid\" data-vstd-video=\"%s\" data-autoplay data-loop></video>\n", a.ID)
+	if c := s3ClientFor(st); c != nil {
+		fmt.Println("  syncing to bucket…")
+		key := "video/" + a.Hash + ".mp4"
+		if ok, _, _ := c.Head(key); !ok {
+			if err := c.Put(key, st.Root+"/library/"+a.File, "video/mp4"); err != nil {
+				fmt.Println("  bucket sync failed:", err, "— run `vstd asset push` later")
+			} else {
+				fmt.Println("  synced:", key)
+			}
+		} else {
+			fmt.Println("  already in bucket")
+		}
+	} else {
+		fmt.Println("  (no bucket configured — hosted serving needs `vstd asset push` once VSTD_S3_* is set)")
+	}
+	return nil
+}
+
+// cmdAssetSync pushes local video bytes the bucket is missing (push) or
+// downloads bytes the local checkout is missing (pull — a fresh clone has
+// manifest + posters but no blobs, since library/video/ is gitignored).
+func cmdAssetSync(dir string, args []string) error {
+	fs := flag.NewFlagSet("asset "+dir, flag.ExitOnError)
+	root := rootFlag(fs)
+	fs.Parse(args)
+	st, err := openStudio(*root)
+	if err != nil {
+		return err
+	}
+	c := s3ClientFor(st)
+	if c == nil {
+		return fmt.Errorf("no bucket configured: set VSTD_S3_ENDPOINT/_BUCKET/_ACCESS_KEY/_SECRET_KEY (or studio.yaml storage:)")
+	}
+	man, err := oai.LoadManifest(st.Root + "/library")
+	if err != nil {
+		return err
+	}
+	if len(man.Videos) == 0 {
+		fmt.Println("no video assets in the library manifest")
+		return nil
+	}
+	n := 0
+	for _, v := range man.Videos {
+		key := "video/" + v.Hash + ".mp4"
+		local := st.Root + "/library/" + v.File
+		if dir == "push" {
+			if _, err := os.Stat(local); err != nil {
+				fmt.Printf("skip %-24s (no local bytes — run `vstd asset pull`?)\n", v.ID)
+				continue
+			}
+			ok, _, err := c.Head(key)
+			if err != nil {
+				return fmt.Errorf("%s: %w", v.ID, err)
+			}
+			if ok {
+				continue
+			}
+			fmt.Printf("push %-24s %.1f MB…\n", v.ID, float64(v.Bytes)/1e6)
+			if err := c.Put(key, local, "video/mp4"); err != nil {
+				return fmt.Errorf("%s: %w", v.ID, err)
+			}
+			n++
+		} else {
+			if _, err := os.Stat(local); err == nil {
+				continue
+			}
+			fmt.Printf("pull %-24s %.1f MB…\n", v.ID, float64(v.Bytes)/1e6)
+			os.MkdirAll(st.Root+"/library/"+video.BytesDir, 0o755)
+			if err := c.Get(key, local); err != nil {
+				return fmt.Errorf("%s: %w", v.ID, err)
+			}
+			n++
+		}
+	}
+	fmt.Printf("%s complete — %d file(s) transferred\n", dir, n)
+	return nil
+}
+
+// cmdBundle exports a deck as a self-contained FOLDER (index.html + video
+// bytes + posters) for engine-less presenting of video-bearing decks — the
+// single-file build stays the fallback for slide-only decks, but 50MB of
+// video cannot be base64-inlined into one HTML file.
+func cmdBundle(args []string) error {
+	fs := flag.NewFlagSet("bundle", flag.ExitOnError)
+	root := rootFlag(fs)
+	if len(args) < 1 {
+		return fmt.Errorf("usage: vstd bundle <deck>")
+	}
+	deck := args[0]
+	fs.Parse(args[1:])
+	st, err := openStudio(*root)
+	if err != nil {
+		return err
+	}
+	built, err := st.Build(deck)
+	if err != nil {
+		return err
+	}
+	dir := st.DeckDir(deck) + "/build/bundle"
+	os.RemoveAll(dir)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	html, err := os.ReadFile(built)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(dir+"/index.html", html, 0o644); err != nil {
+		return err
+	}
+	man, err := oai.LoadManifest(st.Root + "/library")
+	if err != nil {
+		return err
+	}
+	// copy every video referenced by the deck (id-named, so the player's
+	// file:// fallback resolves assets/video/<id>.mp4 relatively)
+	re := regexp.MustCompile(`data-vstd-video="([a-z0-9-]+)"`)
+	seen := map[string]bool{}
+	nv := 0
+	for _, m := range re.FindAllStringSubmatch(string(html), -1) {
+		id := m[1]
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		for _, v := range man.Videos {
+			if v.ID != id {
+				continue
+			}
+			src := st.Root + "/library/" + v.File
+			if _, err := os.Stat(src); err != nil {
+				fmt.Printf("warning: %s has no local bytes (vstd asset pull?) — skipped\n", id)
+				continue
+			}
+			os.MkdirAll(dir+"/assets/video", 0o755)
+			if err := copyBundleFile(src, dir+"/assets/video/"+id+".mp4"); err != nil {
+				return err
+			}
+			if v.Poster != "" {
+				os.MkdirAll(dir+"/assets/video-posters", 0o755)
+				copyBundleFile(st.Root+"/library/"+v.Poster, dir+"/assets/video-posters/"+id+".jpg")
+			}
+			nv++
+		}
+	}
+	// library images referenced as /library/img/… need to travel too
+	imgRe := regexp.MustCompile(`/library/(img/[A-Za-z0-9._-]+)`)
+	ni := 0
+	for _, m := range imgRe.FindAllStringSubmatch(string(html), -1) {
+		rel := m[1]
+		dst := dir + "/library/" + rel
+		if _, err := os.Stat(dst); err == nil {
+			continue
+		}
+		src := st.Root + "/library/" + rel
+		if _, err := os.Stat(src); err != nil {
+			continue
+		}
+		os.MkdirAll(filepath.Dir(dst), 0o755)
+		if err := copyBundleFile(src, dst); err != nil {
+			return err
+		}
+		ni++
+	}
+	fmt.Printf("bundled %s → %s  (%d video(s), %d image(s))\n", deck, dir, nv, ni)
+	fmt.Println("present offline by opening index.html — keep the folder together")
+	return nil
+}
+
+func copyBundleFile(src, dst string) error {
+	in, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, in, 0o644)
 }
 
 func cmdQR(args []string) error {
