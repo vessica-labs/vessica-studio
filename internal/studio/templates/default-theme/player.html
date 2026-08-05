@@ -139,6 +139,7 @@ body.editmode .slide.active{cursor:default}
   <button data-act="grid">Grid</button>
   <button data-act="notes">Notes</button>
   <button data-act="present" id="presentbtn">Present</button>
+  <button id="newslidebtn" style="display:none">+ Slide</button>
   <button data-act="edit" id="editbtn">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
 </div>
@@ -513,6 +514,33 @@ body.editmode .slide.active{cursor:default}
     else if(out.saved)toast('Saved '+out.saved+' changed slide(s)'+(ctx||''));
     return out;
   }
+  // ---- "+ Slide": blank slide inserted right after the current one ----
+  async function newSlide(){
+    if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast('New slide needs the engine (vstd serve)');return;}
+    if(window.__vme&&window.__vme.mode&&window.__vme.mode!=='studio'){toast('Read-only mode — new slides need local studio serving');return;}
+    try{await saveDirty();}catch(_){} // a reload follows; don't lose open edits
+    const ids=window.VSTD.slides||[];
+    let mx=0;ids.forEach(id=>{const n=parseInt(id);if(n>mx)mx=n;});
+    const tmpId=String(Math.min(mx+10,99999)).padStart(4,'0')+'-new-'+(Date.now()%100000);
+    const curId=slides[cur]&&slides[cur].dataset.vstd;
+    try{
+      window.__selfSave=Date.now();
+      let r=await fetch('/api/deck/'+window.VSTD.deck+'/slides',{method:'POST',
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({id:tmpId,title:'New slide'})});
+      if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||('HTTP '+r.status));
+      if(curId){
+        window.__selfSave=Date.now();
+        r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+tmpId+'/move',{method:'POST',
+          headers:{'Content-Type':'application/json'},body:JSON.stringify({after:curId})});
+        if(!r.ok)throw new Error('created, but placing it failed: HTTP '+r.status);
+      }
+      toast('New slide added — opening it…');
+      location.hash='#/'+(cur+2); // raw position directly after the current slide
+      setTimeout(()=>location.reload(),350);
+    }catch(e){toast('New slide failed: '+e.message);}
+  }
+  const __nsb=document.getElementById('newslidebtn');
+  if(__nsb)__nsb.addEventListener('click',newSlide);
 
   async function saveHtml(){
     stopTextEdit();clearSel();
@@ -561,6 +589,7 @@ body.editmode .slide.active{cursor:default}
       });
       fetch('/api/me').then(r=>r.json()).then(me=>{
         window.__vme=me;
+        if(me.mode==='studio'){const b=document.getElementById('newslidebtn');if(b)b.style.display='';}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
         if(audience){
           window.__following=true;
