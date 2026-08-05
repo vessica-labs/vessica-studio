@@ -160,9 +160,16 @@ func (s *Studio) SlideIDs(deck string) ([]string, error) {
 	var out []string
 	for _, e := range ents {
 		n := e.Name()
-		if strings.HasSuffix(n, ".html") {
-			out = append(out, strings.TrimSuffix(n, ".html"))
+		if !strings.HasSuffix(n, ".html") {
+			continue
 		}
+		id := strings.TrimSuffix(n, ".html")
+		// scratch/temp files (e.g. a worker's _work_slide.html) must never
+		// take the whole deck down — skip anything that isn't a valid id
+		if !ValidSlideID(id) {
+			continue
+		}
+		out = append(out, id)
 	}
 	sort.Strings(out)
 	return out, nil
