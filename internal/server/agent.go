@@ -41,6 +41,35 @@ type agentWorker struct {
 	mu         sync.Mutex
 	inflight   map[string]bool
 	pushMu     sync.Mutex
+	queuedN    int
+	capped     bool
+}
+
+// Info reports worker state for the status endpoint.
+func (w *agentWorker) Info() map[string]any {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	cut := time.Now().Add(-time.Hour)
+	used := 0
+	for _, t := range w.runs {
+		if t.After(cut) {
+			used++
+		}
+	}
+	return map[string]any{"enabled": true, "maxPerHour": w.maxPerHour,
+		"used": used, "queued": w.queuedN, "capped": w.capped, "inflight": len(w.inflight)}
+}
+
+// SetMax raises/lowers the hourly cap at runtime (memory-only; restart
+// returns to the configured default — the circuit breaker stays safe).
+func (w *agentWorker) SetMax(n int) int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if n >= 1 && n <= 100 {
+		w.maxPerHour = n
+		w.capped = false
+	}
+	return w.maxPerHour
 }
 
 // StartAgent launches the background worker when VSTD_AGENT=1.
@@ -62,6 +91,7 @@ func (s *Server) StartAgent() {
 	if v := os.Getenv("VSTD_GIT_BRANCH"); v != "" {
 		w.branch = v
 	}
+	s.Agent = w
 	go w.loop()
 }
 
@@ -72,6 +102,12 @@ func (w *agentWorker) loop() {
 	for {
 		time.Sleep(15 * time.Second)
 		queued := w.nextAll()
+		w.mu.Lock()
+		w.queuedN = len(queued)
+		if len(queued) == 0 {
+			w.capped = false
+		}
+		w.mu.Unlock()
 		for _, c := range queued {
 			key := c[0] + "/" + c[1]
 			w.mu.Lock()
@@ -87,9 +123,10 @@ func (w *agentWorker) loop() {
 			if !w.allow() {
 				w.mu.Lock()
 				delete(w.inflight, key)
+				w.capped = true
 				w.mu.Unlock()
 				if time.Since(lastBlockLog) > 2*time.Minute {
-					log.Printf("agent: RATE CAP reached (%d/hour) — %d slide(s) queued and waiting; raise VSTD_AGENT_MAX_PER_HOUR or restart serve to reset the window", w.maxPerHour, len(queued))
+					log.Printf("agent: RATE CAP reached — %d slide(s) queued and waiting; raise the cap from the player banner or VSTD_AGENT_MAX_PER_HOUR", len(queued))
 					lastBlockLog = time.Now()
 				}
 				break
@@ -129,6 +166,8 @@ func (s *Server) RunAgentOnce() int {
 }
 
 func (w *agentWorker) allow() bool {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	cut := time.Now().Add(-time.Hour)
 	kept := w.runs[:0]
 	for _, t := range w.runs {

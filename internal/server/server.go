@@ -52,6 +52,7 @@ type Server struct {
 	flows      map[string]githubFlow
 
 	tokenMints []time.Time // realtime-token rate limiting
+	Agent *agentWorker
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
@@ -140,6 +141,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/title", s.editOnly(s.handlePutTitle))
 	mux.HandleFunc("POST /api/deck/{deck}/slides", s.editOnly(s.handleNewSlide))
 	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/move", s.editOnly(s.handleMoveSlide))
+	mux.HandleFunc("POST /api/agent/cap", s.editOnly(s.handleAgentCap))
 	mux.HandleFunc("POST /api/realtime/token", s.handleRealtimeToken)
 
 	// Phase 4: auth, share links, live-follow, health
@@ -412,7 +414,11 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	writeJSON(w, map[string]any{"pending": pending, "imageQueue": queued})
+	resp := map[string]any{"pending": pending, "imageQueue": queued}
+	if s.Agent != nil {
+		resp["agent"] = s.Agent.Info()
+	}
+	writeJSON(w, resp)
 }
 
 func (s *Server) handleMoveSlide(w http.ResponseWriter, r *http.Request) {
@@ -427,6 +433,19 @@ func (s *Server) handleMoveSlide(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok", "id": newID})
+}
+
+func (s *Server) handleAgentCap(w http.ResponseWriter, r *http.Request) {
+	if s.Agent == nil {
+		jsonErr(w, fmt.Errorf("agent worker not running"), 400)
+		return
+	}
+	var req struct{ MaxPerHour int }
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&req); err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	writeJSON(w, map[string]any{"status": "ok", "maxPerHour": s.Agent.SetMax(req.MaxPerHour)})
 }
 
 func (s *Server) handleNewSlide(w http.ResponseWriter, r *http.Request) {
