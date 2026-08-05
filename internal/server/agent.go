@@ -168,6 +168,7 @@ func (w *agentWorker) mark(deck, id, line string) {
 
 func (w *agentWorker) runPass(deck, id string) {
 	log.Printf("agent: pass starting — %s/%s", deck, id)
+	preexisting := w.dirtyPaths() // human edits present before the pass — never revert these
 	w.mark(deck, id, "- (in progress — cloud agent — 40%)")
 	prompt := fmt.Sprintf(`You are the Vessica Studio cloud redesign worker, running headless in a studio content repo.
 
@@ -197,7 +198,7 @@ Never touch themes/, engine files, other decks, or git state.`, deck, id, deck, 
 	cmd.Dir = w.s.St.Root
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
-	w.enforceScope(deck)
+	w.enforceScope(preexisting)
 	// full output always lands in a log file for diagnosis
 	logDir := w.s.St.Root + "/_agent-logs"
 	os.MkdirAll(logDir, 0o755)
@@ -233,8 +234,27 @@ Never touch themes/, engine files, other decks, or git state.`, deck, id, deck, 
 	w.s.Broadcast("reload")
 }
 
-// enforceScope reverts tracked changes outside the allowed roots.
-func (w *agentWorker) enforceScope(deck string) {
+// dirtyPaths snapshots the working tree's modified paths.
+func (w *agentWorker) dirtyPaths() map[string]bool {
+	m := map[string]bool{}
+	if _, err := os.Stat(w.s.St.Root + "/.git"); err != nil {
+		return m
+	}
+	out, err := w.git("status", "--porcelain")
+	if err != nil {
+		return m
+	}
+	for _, l := range strings.Split(out, "\n") {
+		if len(l) >= 4 {
+			m[strings.TrimSpace(l[3:])] = true
+		}
+	}
+	return m
+}
+
+// enforceScope reverts changes outside the allowed roots — but only changes
+// the pass itself introduced; anything dirty before the pass is left alone.
+func (w *agentWorker) enforceScope(preexisting map[string]bool) {
 	if _, err := os.Stat(w.s.St.Root + "/.git"); err != nil {
 		return
 	}
@@ -247,8 +267,12 @@ func (w *agentWorker) enforceScope(deck string) {
 			continue
 		}
 		p := strings.TrimSpace(l[3:])
+		if preexisting[p] {
+			continue
+		}
 		if strings.HasPrefix(p, "decks/") || strings.HasPrefix(p, "library/") ||
-			strings.HasPrefix(p, "requests/") || strings.HasPrefix(p, "_to_delete/") {
+			strings.HasPrefix(p, "requests/") || strings.HasPrefix(p, "_to_delete/") ||
+			strings.HasPrefix(p, "_agent-logs/") {
 			continue
 		}
 		st := strings.TrimSpace(l[:2])
