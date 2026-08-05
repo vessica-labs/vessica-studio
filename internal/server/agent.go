@@ -198,13 +198,19 @@ Never touch themes/, engine files, other decks, or git state.`, deck, id, deck, 
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
 	w.enforceScope(deck)
+	// full output always lands in a log file for diagnosis
+	logDir := w.s.St.Root + "/_agent-logs"
+	os.MkdirAll(logDir, 0o755)
+	logFile := fmt.Sprintf("%s/%s-%s.log", logDir, deck, id)
+	os.WriteFile(logFile, out, 0o644)
 	if err != nil {
-		tail := string(out)
-		if len(tail) > 200 {
-			tail = tail[len(tail)-200:]
+		tail := strings.TrimSpace(string(out))
+		tail = strings.ReplaceAll(tail, "\n", " · ")
+		if len(tail) > 220 {
+			tail = tail[len(tail)-220:]
 		}
-		log.Printf("agent: pass FAILED %s/%s: %v — %s", deck, id, err, tail)
-		w.mark(deck, id, fmt.Sprintf("- (worker error: %v — clear this line to retry)", err))
+		log.Printf("agent: pass FAILED %s/%s: %v — see %s", deck, id, err, logFile)
+		w.mark(deck, id, fmt.Sprintf("- (worker error: %v — %s — full log: _agent-logs/%s-%s.log — clear this line to retry)", err, tail, deck, id))
 		return
 	}
 	// if the agent forgot to clear its marker, clear it
