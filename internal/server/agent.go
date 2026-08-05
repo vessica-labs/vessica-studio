@@ -351,7 +351,14 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, w.bin, "--dangerously-skip-permissions", "-p", prompt)
+	// Managed machines (e.g. BCG policy) set disableBypassPermissionsMode,
+	// silently ignoring --dangerously-skip-permissions — headless Edit/Write
+	// then stall on approvals nobody can grant. An explicit allow-list is
+	// honored in default permission mode under any policy, so pass both.
+	cmd := exec.CommandContext(ctx, w.bin,
+		"--dangerously-skip-permissions",
+		"--allowedTools", "Edit,Write,MultiEdit,NotebookEdit,Read,Glob,Grep,Bash",
+		"-p", prompt)
 	cmd.Dir = w.s.St.Root
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
