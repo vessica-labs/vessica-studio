@@ -353,13 +353,23 @@ body.editmode .slide.active{cursor:default}
     if(drag.mode==='move'){
       if(Math.abs(dx)+Math.abs(dy)>2){drag.moved=true;keepOrig(selEl);setTx(selEl,drag.tx+dx,drag.ty+dy);updateSelbox();}
     }else{
-      const d=drag.dir;let w=drag.r.w,h2=drag.r.h,tx=drag.tx,ty=drag.ty;
+      const d=drag.dir;let w=drag.r.w,h2=drag.r.h;
       if(d.includes('e'))w=Math.max(24,drag.r.w+dx);
       if(d.includes('s'))h2=Math.max(16,drag.r.h+dy);
-      if(d.includes('w')){w=Math.max(24,drag.r.w-dx);tx=drag.tx+dx;}
-      if(d.includes('n')){h2=Math.max(16,drag.r.h-dy);ty=drag.ty+dy;}
+      if(d.includes('w'))w=Math.max(24,drag.r.w-dx);
+      if(d.includes('n'))h2=Math.max(16,drag.r.h-dy);
+      // media keeps its aspect ratio from corner handles; edges stretch freely
+      if(d.length===2&&selEl.matches('img,video')&&drag.r.h>0){
+        const ratio=drag.r.w/drag.r.h;
+        if(Math.abs(dx)*drag.r.h>=Math.abs(dy)*drag.r.w)h2=Math.max(16,w/ratio);
+        else w=Math.max(24,h2*ratio);
+      }
+      let tx=drag.tx,ty=drag.ty;
+      if(d.includes('w'))tx=drag.tx+(drag.r.w-w); // keep the east edge anchored
+      if(d.includes('n'))ty=drag.ty+(drag.r.h-h2); // keep the south edge anchored
       selEl.style.width=w+'px';selEl.style.height=h2+'px';
-      selEl.style.flex='0 0 auto';selEl.style.maxWidth='none';
+      // max-height was never cleared, so vertical resize silently clamped
+      selEl.style.flex='0 0 auto';selEl.style.maxWidth='none';selEl.style.maxHeight='none';
       if(d.includes('w')||d.includes('n'))setTx(selEl,tx,ty);
       updateSelbox();
     }
