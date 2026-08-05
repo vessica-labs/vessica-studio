@@ -74,9 +74,11 @@ func (s *Server) VessicaRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/vessica/{deck}/code", s.vesGate(s.handleRunCode))
 	mux.HandleFunc("GET /api/vessica/{deck}/inbox", s.vesGate(s.handleInbox))
 	mux.HandleFunc("GET /api/vessica/{deck}/artifact/{name}", s.vesGate(s.handleArtifact))
+	mux.HandleFunc("POST /api/vessica/{deck}/call", s.vesGate(s.handleCall))
 	// Telnyx webhook: unauthenticated by design (Telnyx calls it); inert
 	// unless TELNYX_API_KEY is configured.
 	mux.HandleFunc("POST /api/telnyx/webhook", s.handleTelnyxWebhook)
+	mux.HandleFunc("GET /api/telnyx/media", s.handleTelnyxMedia)
 }
 
 // ---- knowledge base ----
@@ -416,18 +418,30 @@ func (s *Server) handleTelnyxWebhook(w http.ResponseWriter, r *http.Request) {
 		Data struct {
 			EventType string `json:"event_type"`
 			Payload   struct {
-				Text string `json:"text"`
-				From struct {
-					PhoneNumber string `json:"phone_number"`
-				} `json:"from"`
+				Text          string `json:"text"`
+				CallControlID string `json:"call_control_id"`
+				From          json.RawMessage `json:"from"`
 			} `json:"payload"`
 		} `json:"data"`
 	}
-	if json.Unmarshal(body, &ev) != nil || ev.Data.EventType != "message.received" {
+	if json.Unmarshal(body, &ev) != nil {
+		w.Write([]byte("ok"))
+		return
+	}
+	if strings.HasPrefix(ev.Data.EventType, "call.") {
+		s.handleCallEvent(ev.Data.EventType, ev.Data.Payload.CallControlID)
+		w.Write([]byte("ok"))
+		return
+	}
+	if ev.Data.EventType != "message.received" {
 		w.Write([]byte("ok")) // ack everything else (delivery receipts, …)
 		return
 	}
-	num, text := ev.Data.Payload.From.PhoneNumber, strings.TrimSpace(ev.Data.Payload.Text)
+	var fromObj struct {
+		PhoneNumber string `json:"phone_number"`
+	}
+	json.Unmarshal(ev.Data.Payload.From, &fromObj)
+	num, text := fromObj.PhoneNumber, strings.TrimSpace(ev.Data.Payload.Text)
 	ent, ok := s.lookupSent(num)
 	if !ok || text == "" {
 		w.Write([]byte("ok"))
