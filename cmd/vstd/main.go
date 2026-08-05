@@ -280,6 +280,7 @@ func cmdServe(args []string) error {
 	root := rootFlag(fs)
 	port := fs.Int("port", 0, "port")
 	mode := fs.String("mode", envOr("VSTD_MODE", "studio"), "studio|present|public")
+	agent := fs.Bool("agent", false, "run the redesign agent worker alongside serving (same as VSTD_AGENT=1)")
 	var deck string
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		deck = args[0]
@@ -300,6 +301,9 @@ func cmdServe(args []string) error {
 		p = *port
 	}
 	go srv.Watch(700 * time.Millisecond)
+	if *agent {
+		os.Setenv("VSTD_AGENT", "1")
+	}
 	srv.StartAgent()
 	addr := fmt.Sprintf(":%d", p)
 	url := fmt.Sprintf("http://localhost:%d/", p)
