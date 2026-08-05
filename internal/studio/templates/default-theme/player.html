@@ -93,6 +93,10 @@ body.editmode #frame{outline:2px dashed rgba(33,191,97,.5);outline-offset:4px}
   background:rgba(12,32,19,.92);color:#dff0e2;border:1px solid #2c4a35;border-radius:999px;
   padding:8px 22px;font-size:13px;font-family:var(--sans);white-space:nowrap}
 body.editmode #edithint{display:block}
+#snapguides{position:absolute;inset:0;pointer-events:none;z-index:49}
+#snapguides .sg{position:absolute;background:var(--mint);opacity:.85;box-shadow:0 0 4px rgba(32,227,172,.6)}
+#snapguides .sg.v{top:0;bottom:0;width:1px}
+#snapguides .sg.h{left:0;right:0;height:1px}
 #selbox{position:absolute;z-index:50;pointer-events:none;border:1.5px solid var(--teal);display:none}
 #selbox .hnd{position:absolute;width:12px;height:12px;background:#fff;border:1.5px solid var(--teal);
   border-radius:3px;pointer-events:auto}
@@ -143,7 +147,7 @@ body.editmode .slide.active{cursor:default}
   <button data-act="edit" id="editbtn">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
 </div>
-<div id="edithint">Edit mode · click = select · click again = edit text · drag = move · handles = resize · arrows = nudge · <b>changes save automatically when you exit (E)</b></div>
+<div id="edithint">Edit mode · click = select · click again = edit text · drag = move (snaps to align — hold &#8997;/Alt to disable) · handles = resize · arrows = nudge · <b>changes save automatically when you exit (E)</b></div>
 <div id="menu"><div class="sheet"><h2>Jump to</h2><div id="menulist"></div></div></div>
 <div id="notesPanel"><div class="lbl">Speaker notes</div><div id="notesBody"></div></div>
 <div id="vstatus"><span class="dot"></span><span id="vlabel">Vessica off</span></div>
@@ -332,6 +336,42 @@ body.editmode .slide.active{cursor:default}
     const m=c&&c.match(/\d+/g);if(!m)return '#000000';
     return '#'+m.slice(0,3).map(n=>(+n).toString(16).padStart(2,'0')).join('');
   }
+  // ---- snap-to-alignment guides (smart guides while dragging) ----
+  const SNAP=6; // px in slide coordinates
+  const guideBox=document.createElement('div');
+  guideBox.id='snapguides';
+  frame.appendChild(guideBox);
+  function clearGuides(){guideBox.innerHTML='';}
+  function collectSnaps(exclude){
+    const slide=slides[cur];
+    // like-for-like anchors: k='s' start edge, 'c' center, 'e' end edge
+    const xs=[{v:66,k:'s'},{v:640,k:'c'},{v:1214,k:'e'}],
+          ys=[{v:54,k:'s'},{v:360,k:'c'},{v:666,k:'e'}]; // canvas margins + centers
+    slide.querySelectorAll(CAND).forEach(el=>{
+      if(el===exclude||el.contains(exclude)||exclude.contains(el))return;
+      if(el.matches('.aur,.arc'))return; // decorative glows: fuzzy edges, bad anchors
+      const r=slideRect(el);
+      if(r.w<4||r.h<4||r.w>1240||r.h>700)return; // skip invisible & full-bleed
+      xs.push({v:r.x,k:'s'},{v:r.x+r.w/2,k:'c'},{v:r.x+r.w,k:'e'});
+      ys.push({v:r.y,k:'s'},{v:r.y+r.h/2,k:'c'},{v:r.y+r.h,k:'e'});
+    });
+    return {xs,ys};
+  }
+  function snapAxis(cands,edges){
+    let best=null;
+    for(const c of cands)for(const p of edges){
+      if(c.k!==p.k)continue; // only snap matching boundaries: edge↔edge, center↔center
+      const d=c.v-p.v;
+      if(Math.abs(d)<=SNAP&&(!best||Math.abs(d)<Math.abs(best.d)))best={d,line:c.v};
+    }
+    return best;
+  }
+  function drawGuide(axis,v){
+    const g=document.createElement('div');
+    g.className='sg '+axis;
+    if(axis==='v')g.style.left=v+'px';else g.style.top=v+'px';
+    guideBox.appendChild(g);
+  }
   function keepOrig(el){if(el.dataset.orig===undefined)el.dataset.orig=el.getAttribute('style')||'';}
   function getTx(el){return [parseFloat(el.dataset.tx||0),parseFloat(el.dataset.ty||0)];}
   function setTx(el,x,y){el.dataset.tx=x;el.dataset.ty=y;el.style.transform=(x||y)?('translate('+x+'px,'+y+'px)'):'';}
@@ -374,7 +414,7 @@ body.editmode .slide.active{cursor:default}
       const wasSel=(t===selEl);
       selEl=t;updateSelbox();
       const [tx,ty]=getTx(t);
-      drag={mode:'move',sx:e.clientX,sy:e.clientY,tx,ty,wasSel,moved:false,px:e.clientX,py:e.clientY};
+      drag={mode:'move',sx:e.clientX,sy:e.clientY,tx,ty,wasSel,moved:false,px:e.clientX,py:e.clientY,r0:slideRect(t),snaps:collectSnaps(t)};
       e.preventDefault();
     } else if(slide.contains(e.target)){stopTextEdit();clearSel();}
   });
@@ -382,7 +422,20 @@ body.editmode .slide.active{cursor:default}
     if(!drag||!selEl)return;
     const dx=(e.clientX-drag.sx)/scale,dy=(e.clientY-drag.sy)/scale;
     if(drag.mode==='move'){
-      if(Math.abs(dx)+Math.abs(dy)>2){if(!drag.moved)pushUndo();drag.moved=true;keepOrig(selEl);setTx(selEl,drag.tx+dx,drag.ty+dy);updateSelbox();}
+      if(Math.abs(dx)+Math.abs(dy)>2){
+        if(!drag.moved)pushUndo();
+        drag.moved=true;keepOrig(selEl);
+        let nx=drag.tx+dx,ny=drag.ty+dy;
+        clearGuides();
+        if(!e.altKey&&drag.snaps&&drag.r0){
+          const rx=drag.r0.x+(nx-drag.tx),ry=drag.r0.y+(ny-drag.ty);
+          const sx=snapAxis(drag.snaps.xs,[{v:rx,k:'s'},{v:rx+drag.r0.w/2,k:'c'},{v:rx+drag.r0.w,k:'e'}]);
+          const sy=snapAxis(drag.snaps.ys,[{v:ry,k:'s'},{v:ry+drag.r0.h/2,k:'c'},{v:ry+drag.r0.h,k:'e'}]);
+          if(sx){nx+=sx.d;drawGuide('v',sx.line);}
+          if(sy){ny+=sy.d;drawGuide('h',sy.line);}
+        }
+        setTx(selEl,nx,ny);updateSelbox();
+      }
     }else{
       const d=drag.dir;let w=drag.r.w,h2=drag.r.h;
       if(d.includes('e'))w=Math.max(24,drag.r.w+dx);
@@ -407,7 +460,7 @@ body.editmode .slide.active{cursor:default}
   });
   addEventListener('pointerup',e=>{
     if(drag&&drag.mode==='move'&&drag.wasSel&&!drag.moved&&selEl&&!editingText)startTextEdit(selEl,e);
-    drag=null;
+    drag=null;clearGuides();
   });
   addEventListener('dblclick',e=>{
     if(!editMode)return;
@@ -642,7 +695,11 @@ body.editmode .slide.active{cursor:default}
         if(Date.now()-(window.__selfSave||0)<2500){/* our own save; DOM is already current */}
         else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
         else if(window.__dictating){/* our own writes; DOM is already current */}
-        else if(!window.__following){location.reload();}
+        else if(!window.__following){
+          // survive the reload in Grid view
+          if(overview.classList.contains('open'))location.hash='#/grid';
+          location.reload();
+        }
       });
       es.addEventListener('follow',e=>{
         const p=(e.data||'').split('|');
@@ -695,8 +752,12 @@ body.editmode .slide.active{cursor:default}
     toast('Presentation mode — V starts/stops Vessica, arrows navigate, Esc exits');
   }
 
-  const h=parseInt((location.hash||'').replace('#/',''));
-  show(isNaN(h)?0:h-1);
+  if((location.hash||'').indexOf('#/grid')===0){
+    show(0);buildOv();overview.classList.add('open');
+  }else{
+    const h=parseInt((location.hash||'').replace('#/',''));
+    show(isNaN(h)?0:h-1);
+  }
 
   // public surface for the Vessica layer
   window.VSTDP={show,goto:i=>show(i),cur:()=>cur,count:slides.length,
