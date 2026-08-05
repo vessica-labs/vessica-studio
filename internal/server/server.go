@@ -137,6 +137,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /assets/video/{id}", s.handleVideo)
 	mux.HandleFunc("GET /assets/video/{id}/poster", s.handleVideoPoster)
 	mux.HandleFunc("POST /api/asset/video", s.editOnly(s.handleVideoUpload))
+	mux.HandleFunc("POST /api/asset/image", s.editOnly(s.handleImageUpload))
 
 	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)

@@ -576,9 +576,9 @@ body.editmode .slide.active{cursor:default}
     try{
       const es=new EventSource('/api/events');
       es.addEventListener('reload',()=>{
-        if(editMode){toast('Deck changed on disk — finish editing, then reload');}
+        if(Date.now()-(window.__selfSave||0)<2500){/* our own save; DOM is already current */}
+        else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
         else if(window.__dictating){/* our own writes; DOM is already current */}
-        else if(Date.now()-(window.__selfSave||0)<2500){/* our own save; DOM is already current */}
         else if(!window.__following){location.reload();}
       });
       es.addEventListener('follow',e=>{
@@ -1336,11 +1336,18 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   addEventListener('drop',e=>{
     document.body.classList.remove('vdrop');
     if(!canUpload())return;
-    const f=[...(e.dataTransfer.files||[])].find(f=>/^video\//.test(f.type)||/\.(mp4|mov|webm|m4v)$/i.test(f.name));
-    if(!f)return;
+    const files=[...(e.dataTransfer.files||[])];
+    const vf=files.find(f=>/^video\//.test(f.type)||/\.(mp4|mov|webm|m4v)$/i.test(f.name));
+    const im=files.find(f=>/^image\/(png|jpe?g|gif|webp)$/.test(f.type)||/\.(png|jpe?g|gif|webp)$/i.test(f.name));
+    if(!vf&&!im)return;
     e.preventDefault();e.stopPropagation();
-    if(f.size>2*1024*1024*1024){P().toast('Too large (2GB max)');return;}
-    uploadVideo(f);
+    if(vf){
+      if(vf.size>2*1024*1024*1024){P().toast('Too large (2GB max)');return;}
+      uploadVideo(vf);
+    }else{
+      if(im.size>100*1024*1024){P().toast('Image too large (100MB max)');return;}
+      uploadImage(im);
+    }
   },true);
 
   function uploadVideo(f){
@@ -1352,6 +1359,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
       if(ev.lengthComputable)P().toast('Uploading '+f.name+' ('+mb+' MB)… '+Math.round(ev.loaded/ev.total*100)+'%',60000);
     };
     xhr.onload=()=>{
+      window.__selfSave=Date.now();
       let j={};try{j=JSON.parse(xhr.responseText);}catch(_){}
       if(xhr.status!==200||!j.asset){P().toast('Upload failed: '+(j.error||('HTTP '+xhr.status)));return;}
       insertVideo(j.asset);
@@ -1360,6 +1368,32 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     };
     xhr.onerror=()=>P().toast('Upload failed — network error');
     xhr.send(f);
+  }
+  function uploadImage(f){
+    P().toast('Uploading '+f.name+'…',30000);
+    const xhr=new XMLHttpRequest();
+    xhr.open('POST','/api/asset/image?filename='+encodeURIComponent(f.name));
+    xhr.onload=()=>{
+      window.__selfSave=Date.now();
+      let j={};try{j=JSON.parse(xhr.responseText);}catch(_){}
+      if(xhr.status!==200||!j.asset){P().toast('Upload failed: '+(j.error||('HTTP '+xhr.status)));return;}
+      insertImage(j.asset);
+      P().toast(j.reused?('Reused existing image "'+j.asset.id+'"'):('Image "'+j.asset.id+'" added to the library'),5000);
+    };
+    xhr.onerror=()=>P().toast('Upload failed — network error');
+    xhr.send(f);
+  }
+  function insertImage(asset){
+    const s=activeSlide();if(!s)return;
+    const img=document.createElement('img');
+    img.src='/library/'+asset.file;
+    img.alt=asset.id;
+    img.style.maxWidth='58%';img.style.maxHeight='58%';img.style.borderRadius='12px';
+    const host=s.querySelector('.content')||s;
+    if(host===s){img.style.position='absolute';img.style.right='66px';img.style.bottom='60px';}
+    host.appendChild(img);
+    persistSec(s);
+    P().toast('Drag to place, handles to resize');
   }
   function insertVideo(asset){
     const s=activeSlide();if(!s)return;

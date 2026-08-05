@@ -61,6 +61,11 @@ Every generated slide gets AT LEAST one visual element. Priority order:
    file exists.
 3. **Inline SVG** (thin-line icons, gradient/aurora art) when a raster image adds nothing.
 
+Users can also drag-drop image (png/jpg/gif/webp) and video files onto a slide
+in the player's edit mode — the engine registers them in the manifest
+(content-hash deduped) exactly like generated/ingested assets, so check the
+manifest for `model: upload` entries before assuming an asset must be generated.
+
 ## Video assets
 
 Library videos live in `manifest.json` under `videos` (id, duration,
