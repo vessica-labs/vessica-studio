@@ -161,6 +161,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/deck/{deck}/share-qr.png", s.handleShareQR)
 	mux.HandleFunc("POST /api/deck/{deck}/presenting", s.handlePresenting)
 	s.VessicaRoutes(mux) // demo tools: kb, tasks, display, sms, email, search, code
+	s.AudienceChatRoutes(mux) // QR-scanned per-person audience chat
 	return mux
 }
 
