@@ -361,9 +361,19 @@ KNOWLEDGE BASE (context on the company and audience):
 		"instructions": instr,
 		"audio": map[string]any{
 			"input": map[string]any{
-				"format":         map[string]any{"type": "audio/pcmu"},
-				"turn_detection": map[string]any{"type": "semantic_vad"},
-				"transcription":  map[string]any{"model": "whisper-1"},
+				"format": map[string]any{"type": "audio/pcmu"},
+				// explicit server VAD: create_response=true is what makes the
+				// model TAKE ITS TURN after the caller stops talking — left
+				// implicit, a config mismatch silences every turn after the
+				// scripted greeting. Generous silence window for phone audio.
+				"turn_detection": map[string]any{
+					"type":                "server_vad",
+					"threshold":           0.5,
+					"prefix_padding_ms":   300,
+					"silence_duration_ms": 700,
+					"create_response":     true,
+					"interrupt_response":  true,
+				},
 			},
 			"output": map[string]any{"format": map[string]any{"type": "audio/pcmu"}},
 		},
@@ -376,11 +386,21 @@ KNOWLEDGE BASE (context on the company and audience):
 		}},
 		"tool_choice": "auto",
 	}})
+	// transcription is nice-to-have (transcript file); sent as a SEPARATE
+	// update so an invalid transcription model can never take down the
+	// critical session config above
+	sendOAI(map[string]any{"type": "session.update", "session": map[string]any{
+		"type": "realtime",
+		"audio": map[string]any{"input": map[string]any{
+			"transcription": map[string]any{"model": transcribeModel()},
+		}},
+	}})
 	// speak first once the callee is on the line
 	sendOAI(map[string]any{"type": "response.create"})
 
 	go func() {
 		defer s.endCall(cs, "AI session closed")
+		respActive := false
 		for {
 			_, msg, err := oc.ReadMessage()
 			if err != nil {
@@ -399,12 +419,22 @@ KNOWLEDGE BASE (context on the company and audience):
 				continue
 			}
 			switch ev.Type {
+			case "session.updated":
+				log.Printf("call %s: session config accepted", cs.CallControlID)
+			case "response.created":
+				respActive = true
+			case "response.done":
+				respActive = false
 			case "response.output_audio.delta":
 				sendTelnyx(map[string]any{"event": "media", "media": map[string]string{"payload": ev.Delta}})
 			case "input_audio_buffer.speech_started":
-				// barge-in: flush queued phone audio + cancel the response
+				// barge-in: always flush queued phone audio; cancel only if a
+				// response is actually in flight (a bare cancel just spews
+				// error events into the session)
 				sendTelnyx(map[string]string{"event": "clear"})
-				sendOAI(map[string]string{"type": "response.cancel"})
+				if respActive {
+					sendOAI(map[string]string{"type": "response.cancel"})
+				}
 			case "conversation.item.input_audio_transcription.completed":
 				if t := strings.TrimSpace(ev.Transcript); t != "" {
 					cs.log(name + ": " + t)
@@ -476,4 +506,14 @@ func telnyxBase() string {
 		return strings.TrimRight(b, "/")
 	}
 	return "https://api.telnyx.com"
+}
+
+// transcribeModel picks the input-transcription model for phone calls
+// (transcript files); override with VSTD_TRANSCRIBE_MODEL if the default
+// is ever rejected by the API.
+func transcribeModel() string {
+	if m := os.Getenv("VSTD_TRANSCRIBE_MODEL"); m != "" {
+		return m
+	}
+	return "gpt-4o-mini-transcribe"
 }
