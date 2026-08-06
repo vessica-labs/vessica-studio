@@ -95,9 +95,9 @@ func (s *Server) handleCall(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, err, 400)
 		return
 	}
-	req.To = strings.ReplaceAll(strings.TrimSpace(req.To), " ", "")
-	if !e164Re.MatchString(req.To) {
-		jsonErr(w, fmt.Errorf("to must be E.164, e.g. +15551234567"), 400)
+	req.To = normalizeE164(req.To)
+	if req.To == "" {
+		jsonErr(w, fmt.Errorf("to is not a valid phone number — use E.164 like +15551234567 (US formats like (415) 555-2671 are auto-normalized)"), 400)
 		return
 	}
 	if strings.TrimSpace(req.Goal) == "" {

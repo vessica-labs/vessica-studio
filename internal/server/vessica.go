@@ -334,6 +334,35 @@ func (s *Server) lookupSent(number string) (sentEntry, bool) {
 
 var e164Re = regexp.MustCompile(`^\+[0-9]{7,15}$`)
 
+// normalizeE164 accepts human-formatted phone numbers — "(415) 555-2671",
+// "415.555.2671", "1-415-555-2671", "+1 415 555 2671" — and returns strict
+// E.164. Bare 10-digit numbers are assumed US (+1). Returns "" if it can't
+// make a valid number.
+func normalizeE164(raw string) string {
+	digits := strings.Map(func(r rune) rune {
+		if r >= '0' && r <= '9' {
+			return r
+		}
+		return -1
+	}, raw)
+	hadPlus := strings.HasPrefix(strings.TrimSpace(raw), "+")
+	var out string
+	switch {
+	case hadPlus:
+		out = "+" + digits
+	case len(digits) == 10:
+		out = "+1" + digits // bare US number
+	case len(digits) == 11 && digits[0] == '1':
+		out = "+" + digits
+	default:
+		out = "+" + digits
+	}
+	if !e164Re.MatchString(out) {
+		return ""
+	}
+	return out
+}
+
 func (s *Server) handleSMS(w http.ResponseWriter, r *http.Request) {
 	key, from := os.Getenv("TELNYX_API_KEY"), os.Getenv("TELNYX_FROM_NUMBER")
 	if key == "" || from == "" {
@@ -345,9 +374,9 @@ func (s *Server) handleSMS(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, err, 400)
 		return
 	}
-	req.To = strings.ReplaceAll(strings.TrimSpace(req.To), " ", "")
-	if !e164Re.MatchString(req.To) {
-		jsonErr(w, fmt.Errorf("to must be E.164, e.g. +15551234567"), 400)
+	req.To = normalizeE164(req.To)
+	if req.To == "" {
+		jsonErr(w, fmt.Errorf("to is not a valid phone number — use E.164 like +15551234567 (US formats like (415) 555-2671 are auto-normalized)"), 400)
 		return
 	}
 	if strings.TrimSpace(req.Body) == "" {
