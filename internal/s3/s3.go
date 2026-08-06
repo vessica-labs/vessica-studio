@@ -56,12 +56,15 @@ type KeyCmds struct {
 // Returns nil when not configured (no endpoint or no credentials) — callers
 // treat nil as "bucket sync/serving disabled".
 func FromEnv(endpoint, bucket, region string, cmds KeyCmds) *Client {
+	// Env values are trimmed defensively: a trailing newline or space from a
+	// copy-paste into a hosting dashboard silently breaks every signature.
+	env := func(k string) string { return strings.TrimSpace(os.Getenv(k)) }
 	c := &Client{
-		Endpoint:  strings.TrimRight(firstOf(os.Getenv("VSTD_S3_ENDPOINT"), endpoint), "/"),
-		Bucket:    firstOf(os.Getenv("VSTD_S3_BUCKET"), bucket),
-		Region:    firstOf(os.Getenv("VSTD_S3_REGION"), region, "auto"),
-		AccessKey: os.Getenv("VSTD_S3_ACCESS_KEY"),
-		SecretKey: os.Getenv("VSTD_S3_SECRET_KEY"),
+		Endpoint:  strings.TrimRight(firstOf(env("VSTD_S3_ENDPOINT"), endpoint), "/"),
+		Bucket:    firstOf(env("VSTD_S3_BUCKET"), bucket),
+		Region:    firstOf(env("VSTD_S3_REGION"), region, "auto"),
+		AccessKey: env("VSTD_S3_ACCESS_KEY"),
+		SecretKey: env("VSTD_S3_SECRET_KEY"),
 		HTTP:      &http.Client{Timeout: 10 * time.Minute},
 	}
 	if c.AccessKey == "" && cmds.AccessKeyCmd != "" {
