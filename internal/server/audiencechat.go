@@ -159,7 +159,7 @@ func (s *Server) chatInstructions(deck, name string) string {
 WHAT MATT WANTS YOU TO FIND OUT: ` + s.currentAsk(deck) + `
 STYLE: warm, brisk, conversational. One to two short sentences per turn, ONE question at a time. React briefly to what they say, follow up once when useful. After you have what Matt needs (2-4 exchanges), thank them by name, tell them their input is landing on the big screen, and let them go — don't drag it out. If they ask you something, answer briefly from the knowledge base and steer back.
 KNOWLEDGE BASE:
-` + s.kbDigestFor(deck, 4*1024)
+` + s.kbDigestFor(deck, 12*1024)
 }
 
 // chatModel calls the Responses API with the running transcript.

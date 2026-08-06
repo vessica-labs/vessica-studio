@@ -346,7 +346,7 @@ func (s *Server) startPhoneSession(cs *callSession) error {
 		}
 	}
 
-	kbDigest := s.kbDigestFor(cs.Deck, 6*1024)
+	kbDigest := s.kbDigestFor(cs.Deck, 10*1024)
 	name := cs.ToName
 	if name == "" {
 		name = "the person answering"

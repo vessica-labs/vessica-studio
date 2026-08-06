@@ -108,11 +108,11 @@ func (s *Server) handleKBList(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			docs = append(docs, doc{e.Name(), len(b)})
-			// digest: full doc up to 6 KB each, capped at ~24 KB total —
+			// digest: full doc up to 10 KB each, capped at ~24 KB total —
 			// presentation KBs are small; she should "just know" them.
 			c := string(b)
-			if len(c) > 6*1024 {
-				c = c[:6*1024] + "\n…(truncated — use kb_read for the rest)"
+			if len(c) > 10*1024 {
+				c = c[:10*1024] + "\n…(truncated — use kb_read for the rest)"
 			}
 			if digest.Len() < 24*1024 {
 				fmt.Fprintf(&digest, "\n\n===== %s =====\n%s", e.Name(), c)
