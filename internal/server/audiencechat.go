@@ -58,6 +58,7 @@ func (s *Server) AudienceChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/chat/{deck}/session/{sid}", s.handleChatMessage)
 	mux.HandleFunc("GET /api/deck/{deck}/chat-qr.png", s.handleChatQR)
 	mux.HandleFunc("POST /api/vessica/{deck}/ask", s.vesGate(s.handleSetAsk))
+	mux.HandleFunc("GET /api/vessica/{deck}/pulse", s.vesGate(s.handlePulse))
 }
 
 // ---- the current "ask" (what stage-Vessica wants to learn) ----
@@ -261,13 +262,14 @@ func (s *Server) handleChatMessage(w http.ResponseWriter, r *http.Request) {
 	cs.turns++
 	cs.history = append(cs.history, chatMsg{Role: "user", Text: text})
 
-	// stage push first — the audience's words reach Vessica even if the
-	// per-person model call hiccups
+	// record first — the audience's words are safe even if the per-person
+	// model call hiccups. The stage session is NOT pinged per message: with
+	// a room full of people that would stampede the presenter's realtime
+	// session. Instead pulseNotify emits a debounced "vpulse" event and the
+	// player delivers ONE aggregated update.
 	s.appendInbox(deck, inboxMsg{Dir: "in", Channel: "chat", With: cs.Name,
 		Text: text, Time: time.Now().Format(time.RFC3339)})
-	ev, _ := json.Marshal(map[string]string{"deck": deck, "from": cs.Name,
-		"channel": "chat", "text": text})
-	s.Broadcast("vinbox|" + string(ev))
+	s.pulseNotify(deck)
 
 	reply, err := s.chatModel(cs, deck)
 	if err != nil {
@@ -297,6 +299,79 @@ func (s *Server) mirrorChat(cs *chatSession) {
 		return '-'
 	}, cs.Name)
 	os.WriteFile(s.vesDir(cs.Deck, "chats", safe+".md"), []byte(b.String()), 0o600)
+}
+
+// ---- audience pulse: debounced aggregation for the stage session ----
+
+// pulseWindow is the minimum spacing between stage notifications no matter
+// how fast audience messages arrive.
+const pulseWindow = 12 * time.Second
+
+var pulseMu sync.Mutex
+var pulsePending = map[string]int{}
+var pulseTimer = map[string]*time.Timer{}
+var pulseLast = map[string]time.Time{}
+
+// pulseNotify coalesces chat activity into at most one vpulse broadcast per
+// pulseWindow per deck (leading edge when idle, trailing edge under load).
+func (s *Server) pulseNotify(deck string) {
+	pulseMu.Lock()
+	defer pulseMu.Unlock()
+	pulsePending[deck]++
+	if pulseTimer[deck] != nil {
+		return // a flush is already scheduled
+	}
+	delay := time.Duration(0)
+	if since := time.Since(pulseLast[deck]); since < pulseWindow {
+		delay = pulseWindow - since
+	}
+	pulseTimer[deck] = time.AfterFunc(delay, func() {
+		pulseMu.Lock()
+		n := pulsePending[deck]
+		pulsePending[deck] = 0
+		pulseLast[deck] = time.Now()
+		pulseTimer[deck] = nil
+		pulseMu.Unlock()
+		if n > 0 {
+			ev, _ := json.Marshal(map[string]any{"deck": deck, "new": n})
+			s.Broadcast("vpulse|" + string(ev))
+		}
+	})
+}
+
+// handlePulse returns the aggregate view of audience input the stage
+// session works from: totals, who has participated, and recent messages.
+func (s *Server) handlePulse(w http.ResponseWriter, r *http.Request) {
+	deck := r.PathValue("deck")
+	var msgs []inboxMsg
+	if b, err := os.ReadFile(s.vesDir(deck, "inbox.json")); err == nil {
+		json.Unmarshal(b, &msgs)
+	}
+	total := 0
+	seen := map[string]bool{}
+	var people []string
+	var recent []inboxMsg
+	for _, m := range msgs {
+		if m.Channel != "chat" || m.Dir != "in" {
+			continue
+		}
+		total++
+		if !seen[m.With] {
+			seen[m.With] = true
+			people = append(people, m.With)
+		}
+		recent = append(recent, m)
+	}
+	if len(recent) > 30 {
+		recent = recent[len(recent)-30:]
+	}
+	if people == nil {
+		people = []string{}
+	}
+	if recent == nil {
+		recent = []inboxMsg{}
+	}
+	writeJSON(w, map[string]any{"total": total, "participants": people, "recent": recent})
 }
 
 // ---- the audience page (self-contained, mobile-first) ----
