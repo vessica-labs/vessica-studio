@@ -18,11 +18,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	mrand "math/rand"
 
 	qrcode "github.com/skip2/go-qrcode"
 )
@@ -59,6 +62,7 @@ func (s *Server) AudienceChatRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/deck/{deck}/chat-qr.png", s.handleChatQR)
 	mux.HandleFunc("POST /api/vessica/{deck}/ask", s.vesGate(s.handleSetAsk))
 	mux.HandleFunc("GET /api/vessica/{deck}/pulse", s.vesGate(s.handlePulse))
+	mux.HandleFunc("POST /api/vessica/{deck}/chat-swarm", s.vesGate(s.handleChatSwarm))
 }
 
 // ---- the current "ask" (what stage-Vessica wants to learn) ----
@@ -372,6 +376,105 @@ func (s *Server) handlePulse(w http.ResponseWriter, r *http.Request) {
 		recent = []inboxMsg{}
 	}
 	writeJSON(w, map[string]any{"total": total, "participants": people, "recent": recent})
+}
+
+// ---- rehearsal swarm: 20 simulated audience chatters ----
+//
+// POST /api/vessica/{deck}/chat-swarm (presenter-gated) spins up 20 fake
+// participants named Test-* who join over ~5s and chat through the REAL
+// pipeline — per-person model sessions, inbox, transcripts, pulse
+// debouncing — so the presenter can rehearse the full crowd experience
+// (Live Display ticking, [AUDIENCE PULSE] events reaching stage Vessica)
+// without a room. Roughly 60-80 Responses-API calls per run.
+
+var swarmMu sync.Mutex
+var swarmRunning bool
+
+var swarmNames = []string{"Ava", "Ben", "Carla", "Deepak", "Elena", "Farid",
+	"Grace", "Hiro", "Imani", "Jonas", "Katya", "Liam", "Mei", "Noah",
+	"Olivia", "Priya", "Quinn", "Rosa", "Sam", "Tomas"}
+
+var swarmLines = []string{
+	"I want to hear more about governance and risk",
+	"Can Matt show more live demos and less theory?",
+	"How do we measure ROI on agent programs?",
+	"What does this mean for our workforce?",
+	"Curious about the cost curves he mentioned",
+	"How do we pick between the agent platforms?",
+	"More on security and data privacy please",
+	"How do non-engineers actually start building?",
+	"What failed in other rollouts? War stories!",
+	"How long does a pilot really take?",
+	"Interested in the change management side",
+	"What should leadership do differently on Monday?",
+}
+
+func (s *Server) handleChatSwarm(w http.ResponseWriter, r *http.Request) {
+	if !s.OAI.HasKey() {
+		jsonErr(w, fmt.Errorf("swarm needs the OpenAI key"), 501)
+		return
+	}
+	swarmMu.Lock()
+	if swarmRunning {
+		swarmMu.Unlock()
+		jsonErr(w, fmt.Errorf("a test swarm is already running"), 429)
+		return
+	}
+	swarmRunning = true
+	swarmMu.Unlock()
+	deck := r.PathValue("deck")
+	go s.runChatSwarm(deck)
+	writeJSON(w, map[string]string{"status": "ok",
+		"note": "20 simulated audience members joining over the next ~30s"})
+}
+
+func (s *Server) runChatSwarm(deck string) {
+	defer func() {
+		swarmMu.Lock()
+		swarmRunning = false
+		swarmMu.Unlock()
+		log.Printf("chat-swarm: %s done", deck)
+	}()
+	log.Printf("chat-swarm: %s starting (20 simulated chatters)", deck)
+	var wg sync.WaitGroup
+	for i, base := range swarmNames {
+		wg.Add(1)
+		go func(i int, base string) {
+			defer wg.Done()
+			time.Sleep(time.Duration(mrand.Intn(5000)) * time.Millisecond) // scanning the QR
+			cs := &chatSession{Deck: deck, Name: "Test-" + base}
+			cs.history = append(cs.history, chatMsg{Role: "user",
+				Text: "(" + cs.Name + " just joined the chat — greet them and start.)"})
+			greeting, err := s.chatModel(cs, deck)
+			if err != nil {
+				log.Printf("chat-swarm: %s greeting failed: %v", cs.Name, err)
+				return
+			}
+			cs.history = append(cs.history, chatMsg{Role: "assistant", Text: greeting})
+			s.appendInbox(deck, inboxMsg{Dir: "out", Channel: "chat", With: cs.Name,
+				Text: greeting, Time: time.Now().Format(time.RFC3339)})
+			turns := 2 + mrand.Intn(2)
+			for t := 0; t < turns; t++ {
+				time.Sleep(time.Duration(1500+mrand.Intn(6000)) * time.Millisecond) // typing
+				text := swarmLines[mrand.Intn(len(swarmLines))]
+				if t > 0 {
+					text = "Also — " + swarmLines[mrand.Intn(len(swarmLines))]
+				}
+				cs.history = append(cs.history, chatMsg{Role: "user", Text: text})
+				s.appendInbox(deck, inboxMsg{Dir: "in", Channel: "chat", With: cs.Name,
+					Text: text, Time: time.Now().Format(time.RFC3339)})
+				s.pulseNotify(deck)
+				reply, err := s.chatModel(cs, deck)
+				if err != nil {
+					log.Printf("chat-swarm: %s turn %d failed: %v", cs.Name, t, err)
+					return
+				}
+				cs.history = append(cs.history, chatMsg{Role: "assistant", Text: reply})
+				s.mirrorChat(cs)
+			}
+		}(i, base)
+	}
+	wg.Wait()
 }
 
 // ---- the audience page (self-contained, mobile-first) ----
