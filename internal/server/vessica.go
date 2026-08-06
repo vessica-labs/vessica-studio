@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -38,7 +39,11 @@ var vesMu sync.Mutex // serializes _vessica file mutations
 
 func (s *Server) vesDir(deck string, parts ...string) string {
 	p := filepath.Join(append([]string{s.St.Root, "_vessica", deck}, parts...)...)
-	os.MkdirAll(filepath.Dir(p), 0o755)
+	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+		// surface the real cause (e.g. permission denied on the studio root)
+		// instead of letting the caller's write fail with a bare ENOENT
+		log.Printf("vessica: cannot create %s: %v", filepath.Dir(p), err)
+	}
 	return p
 }
 
@@ -418,8 +423,8 @@ func (s *Server) handleTelnyxWebhook(w http.ResponseWriter, r *http.Request) {
 		Data struct {
 			EventType string `json:"event_type"`
 			Payload   struct {
-				Text          string `json:"text"`
-				CallControlID string `json:"call_control_id"`
+				Text          string          `json:"text"`
+				CallControlID string          `json:"call_control_id"`
 				From          json.RawMessage `json:"from"`
 			} `json:"payload"`
 		} `json:"data"`
