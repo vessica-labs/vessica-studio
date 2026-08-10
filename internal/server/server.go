@@ -17,8 +17,8 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"regexp"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -51,8 +51,9 @@ type Server struct {
 	allowed    map[string]bool
 	flows      map[string]githubFlow
 
-	tokenMints []time.Time // realtime-token rate limiting
-	Agent *agentWorker
+	tokenMints []time.Time         // realtime-token rate limiting
+	printJobs  map[string]printJob // one-time keys for in-flight PDF exports (export.go)
+	Agent      *agentWorker
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
@@ -139,6 +140,8 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/asset/video", s.editOnly(s.handleVideoUpload))
 	mux.HandleFunc("POST /api/asset/image", s.editOnly(s.handleImageUpload))
 
+	mux.HandleFunc("GET /api/deck/{deck}/export.pdf", s.handleExportPDF)
+	mux.HandleFunc("GET /api/deck/{deck}/print.html", s.handlePrintHTML)
 	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
@@ -160,7 +163,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/deck/{deck}/share", s.handleMintShare)
 	mux.HandleFunc("GET /api/deck/{deck}/share-qr.png", s.handleShareQR)
 	mux.HandleFunc("POST /api/deck/{deck}/presenting", s.handlePresenting)
-	s.VessicaRoutes(mux) // demo tools: kb, tasks, display, sms, email, search, code
+	s.VessicaRoutes(mux)      // demo tools: kb, tasks, display, sms, email, search, code
 	s.AudienceChatRoutes(mux) // QR-scanned per-person audience chat
 	return mux
 }

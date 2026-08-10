@@ -144,6 +144,7 @@ body.editmode .slide.active{cursor:default}
   <button data-act="grid">Grid</button>
   <button data-act="notes">Notes</button>
   <button data-act="present" id="presentbtn">Present</button>
+  <button data-act="pdf" id="pdfbtn" style="display:none" title="Download PDF (active + hidden slides)">PDF</button>
   <button id="newslidebtn" style="display:none">+ Slide</button>
   <button data-act="edit" id="editbtn">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
@@ -223,6 +224,7 @@ body.editmode .slide.active{cursor:default}
     else if(a==='notes'){notesOn=!notesOn;notesPanel.classList.toggle('open',notesOn);}
     else if(a==='edit')toggleEdit();
     else if(a==='save')saveHtml();
+    else if(a==='pdf')downloadPdf();
     else if(a==='present')enterPresent();
   });
   menu.addEventListener('click',e=>{if(e.target===menu)menu.classList.remove('open');});
@@ -691,6 +693,27 @@ body.editmode .slide.active{cursor:default}
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   }
 
+  // ---- PDF export: engine renders active + hidden (not unused) slides ----
+  let __pdfBusy=false;
+  async function downloadPdf(){
+    if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast('PDF export needs the engine (vstd serve)');return;}
+    if(__pdfBusy)return;
+    __pdfBusy=true;
+    toast('Generating PDF…',120000);
+    try{
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.pdf');
+      if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
+      const blob=await r.blob();
+      const a=document.createElement('a');
+      a.href=URL.createObjectURL(blob);a.download=window.VSTD.deck+'.pdf';
+      document.body.appendChild(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+      const n=r.headers.get('X-VSTD-Pages');
+      toast('PDF downloaded'+(n?' — '+n+' slides':''));
+    }catch(e){toast('PDF export failed: '+e.message,7000);}
+    finally{__pdfBusy=false;}
+  }
+
   // engine link: SSE (reload + live-follow), identity, presenter broadcast
   window.__vme=null;
   if(location.protocol.indexOf('http')===0&&window.EventSource){
@@ -716,6 +739,8 @@ body.editmode .slide.active{cursor:default}
         window.__vme=me;
         if(me.mode==='studio'){const b=document.getElementById('newslidebtn');if(b)b.style.display='';}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
+        // presenter-only: starts hidden so an audience tab never flashes it
+        if(!audience){const b=document.getElementById('pdfbtn');if(b)b.style.display='';}
         if(audience){
           window.__following=true;
           ['editbtn','savebtn','presentbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});

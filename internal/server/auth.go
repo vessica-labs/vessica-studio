@@ -146,9 +146,11 @@ func (s *Server) canView(r *http.Request, deck string) bool {
 	return s.Mode != ModePublic || s.isPresenter(r) || s.hasShare(r, deck)
 }
 
-// hasAnyAccess gates shared assets (/library) in public mode.
+// hasAnyAccess gates shared assets (/library) in public mode. Loopback
+// requests pass: the headless Chrome spawned for PDF export (export.go)
+// fetches slide imagery cookie-less from inside this same machine/container.
 func (s *Server) hasAnyAccess(r *http.Request) bool {
-	if s.Mode != ModePublic || s.isPresenter(r) {
+	if s.Mode != ModePublic || s.isPresenter(r) || isLoopback(r) {
 		return true
 	}
 	for _, c := range r.Cookies() {

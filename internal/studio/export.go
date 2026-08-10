@@ -1,0 +1,103 @@
+package studio
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+)
+
+// openSectionRe matches a slide fragment's root <section ...> opening tag.
+var openSectionRe = regexp.MustCompile(`(?is)<section\b[^>]*>`)
+
+// SlideParked reports whether a fragment's root <section> carries
+// data-parked — the player's "unused" state. Hidden (data-hidden) slides are
+// still part of the deck; parked ones are not.
+func SlideParked(frag string) bool {
+	tag := openSectionRe.FindString(frag)
+	return tag != "" && strings.Contains(tag, "data-parked")
+}
+
+// markActive adds the "active" class to the root <section> so theme rules
+// keyed on .slide.active (visibility, entrance styling) apply in the static
+// print page, where no player JS runs.
+func markActive(frag string) string {
+	tag := openSectionRe.FindString(frag)
+	if tag == "" {
+		return frag
+	}
+	var repl string
+	if strings.Contains(tag, `class="`) {
+		repl = strings.Replace(tag, `class="`, `class="active `, 1)
+	} else {
+		repl = strings.Replace(tag, "<section", `<section class="active"`, 1)
+	}
+	return strings.Replace(frag, tag, repl, 1)
+}
+
+// printCSS pins each slide to a fixed 1280x720 page. It is appended after the
+// theme so its display override beats the theme's `.slide{display:none}`.
+const printCSS = `
+@page{size:1280px 720px;margin:0}
+html,body{margin:0;padding:0;background:#fff}
+.vstd-page{position:relative;width:1280px;height:720px;overflow:hidden;page-break-after:always;break-after:page}
+.vstd-page:last-child{page-break-after:auto;break-after:auto}
+.vstd-page .slide{display:block!important;position:absolute;inset:0;transform:none;animation:none}
+.vstd-page .notes{display:none!important}
+`
+
+// BuildPrintHTML assembles a static print-ready page for PDF export: theme +
+// deck CSS with one page per slide, in deck order, including hidden slides
+// but excluding parked ("unused") ones. Unlike Build it embeds no player —
+// the result renders deterministically under a headless browser's
+// print-to-PDF. Returns the HTML and the page count.
+func (s *Studio) BuildPrintHTML(deck string) (string, int, error) {
+	meta, err := s.LoadDeckMeta(deck)
+	if err != nil {
+		return "", 0, err
+	}
+	themeDir := s.ThemeDir(meta.Theme)
+	themeCSS, err := os.ReadFile(filepath.Join(themeDir, "theme.css"))
+	if err != nil {
+		return "", 0, fmt.Errorf("theme %q: %w", meta.Theme, err)
+	}
+	deckCSS, _ := os.ReadFile(filepath.Join(s.DeckDir(deck), "deck.css"))
+
+	ids, err := s.SlideIDs(deck)
+	if err != nil {
+		return "", 0, err
+	}
+	var pages strings.Builder
+	n := 0
+	for _, id := range ids {
+		frag, _, err := s.ReadSlide(deck, id)
+		if err != nil {
+			return "", 0, err
+		}
+		if SlideParked(frag) {
+			continue
+		}
+		pages.WriteString(`<div class="vstd-page">`)
+		pages.WriteString(markActive(stampFragment(frag, id)))
+		pages.WriteString("</div>\n")
+		n++
+	}
+	if n == 0 {
+		return "", 0, fmt.Errorf("deck %q has no exportable slides", deck)
+	}
+
+	var b strings.Builder
+	b.WriteString("<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>")
+	b.WriteString(htmlEscape(meta.Title))
+	b.WriteString("</title>\n<style>\n")
+	b.Write(themeCSS)
+	b.WriteString("\n/* deck overrides */\n")
+	b.Write(deckCSS)
+	b.WriteString("\n/* print export */\n")
+	b.WriteString(printCSS)
+	b.WriteString("</style>\n</head>\n<body>\n")
+	b.WriteString(pages.String())
+	b.WriteString("</body></html>\n")
+	return b.String(), n, nil
+}
