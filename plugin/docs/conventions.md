@@ -4,7 +4,8 @@ Read this before any deck work. All skills in this plugin follow these rules.
 
 ## Content model
 
-A studio root contains `studio.yaml`, `themes/<name>/{theme.css,player.html,tokens.json}`,
+A studio root contains `studio.yaml`, `themes/<name>/{theme.css,tokens.json}`
+(the player/HUD is engine-owned — never write a theme player.html),
 `library/` (shared image library + `manifest.json`), `requests/` (async asset queue),
 and `decks/<deck>/` with `deck.yaml`, `deck.css`, and `slides/`.
 

@@ -23,6 +23,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/server"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"github.com/vessica-labs/vessica-studio/internal/video"
+	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
 const version = "0.3.0"
@@ -61,6 +62,8 @@ func main() {
 		err = cmdRailway(args)
 	case "key":
 		err = cmdKey(args)
+	case "skill":
+		err = cmdSkill(args)
 	case "version":
 		fmt.Println("vstd", version)
 	case "help", "-h", "--help":
@@ -95,6 +98,9 @@ Usage:
   vstd bundle <deck>                  self-contained folder export (videos included)
   vstd key check                      verify OpenAI key resolution
   vstd qr <deck> [--ttl 72] [--host U]  mint a signed audience share link + QR
+  vstd skill [name]                   print an agent skill (deck-new, slide-edit, …);
+                                      no name lists all — canonical workflow
+                                      instructions for any agent (Claude, Codex)
   vstd railway up                     one-command Railway setup + deploy
   vstd railway status|<args>          linked project info / CLI passthrough
   vstd version
@@ -325,6 +331,35 @@ func cmdServe(args []string) error {
 	}
 	log.Printf("vstd %s serving %s (mode %s) — %s", version, st.Root, m, url)
 	return http.ListenAndServe(addr, srv.Routes())
+}
+
+// cmdSkill prints embedded agent skills — the canonical workflow
+// instructions for building decks with any agent runtime. Claude Code reads
+// the same files natively via the plugin manifest; Codex prompt launchers
+// run `vstd skill <name>` to load them. One source of truth.
+func cmdSkill(args []string) error {
+	if len(args) == 0 {
+		fmt.Println("Available skills (print one with `vstd skill <name>`):")
+		for _, n := range plugin.Names() {
+			fmt.Println("  " + n)
+		}
+		fmt.Println("\nShared authoring conventions: `vstd skill conventions`")
+		return nil
+	}
+	if args[0] == "conventions" {
+		s, err := plugin.Conventions()
+		if err != nil {
+			return err
+		}
+		fmt.Print(s)
+		return nil
+	}
+	s, err := plugin.Skill(args[0])
+	if err != nil {
+		return err
+	}
+	fmt.Print(s)
+	return nil
 }
 
 func cmdKey(args []string) error {

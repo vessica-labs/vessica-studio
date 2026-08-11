@@ -8,3 +8,14 @@ reuse-first image library, and the layout→visual→critic generation loop.
 
 Works file-first: skills detect whether a `vstd` engine is running (edit API +
 live reload) and fall back to direct file edits in the content repo otherwise.
+
+Install (Claude Code / Cowork):
+
+```
+/plugin marketplace add vessica-labs/vessica-studio
+/plugin install vessica-studio@vessica-studio
+```
+
+The same skill files are the single source of truth for every agent runtime:
+they are embedded in the `vstd` binary and printable with `vstd skill <name>`,
+which is how the Codex prompt launchers in `../codex/` load them.

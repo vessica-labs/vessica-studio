@@ -29,12 +29,43 @@ vstd new my-deck --title "My Presentation"
 vstd serve                      # http://localhost:4400
 ```
 
+## Use from Claude (Cowork / Claude Code)
+
+The repo ships a Claude plugin (six skills: `deck-new`, `deck-fork`,
+`deck-review`, `market-refresh`, `slide-add`, `slide-edit`). Install it once:
+
+```
+/plugin marketplace add vessica-labs/vessica-studio
+/plugin install vessica-studio@vessica-studio
+```
+
+(In Cowork, run the same two commands in the chat, or add the marketplace
+from Settings → Plugins.) Then just ask — "new deck about X", "review the
+missing-middle deck", "add a slide on Y" — the matching skill triggers
+automatically, or invoke one directly with `/vessica-studio:deck-new`.
+
+## Use from Codex
+
+Codex loads the same workflows through thin prompt launchers that read the
+canonical instructions from the engine (`vstd skill <name>`), so both agents
+always run identical playbooks:
+
+```
+git clone https://github.com/vessica-labs/vessica-studio && ./vessica-studio/codex/install.sh
+```
+
+This installs `/vstd-deck-new`, `/vstd-slide-edit`, etc. into `~/.codex/prompts`.
+For repo-level guidance, copy `codex/AGENTS.md` into your content repo (or
+merge it into an existing AGENTS.md). Updating the `vstd` binary updates
+every workflow — the launchers never go stale.
+
 ## Content model
 
 ```
 studio-root/
 ├── studio.yaml                 # config (theme default, port, OpenAI models)
-├── themes/<name>/              # theme.css + player.html + tokens.json
+├── themes/<name>/              # theme.css + tokens.json (presentation only —
+│                               #   the player/HUD is engine-owned and invariant)
 ├── library/                    # shared generated-image library + manifest.json
 ├── requests/                   # async asset-generation queue (yaml files)
 └── decks/<deck>/
@@ -62,6 +93,7 @@ vstd build <deck>|--all          assemble decks/<deck>/build/index.html
 vstd serve [deck] [--mode M]     serve + watch + live reload + edit API
 vstd asset gen --prompt P ...    generate a library image (gpt-image-2)
 vstd qr <deck> [--ttl 72]        signed audience share link + QR image
+vstd skill [name]                print canonical agent workflows (any runtime)
 vstd railway up                  one-command hosted deploy (Railway)
 ```
 
@@ -139,10 +171,7 @@ SSE, with break-off/rejoin). See a content repo's DEPLOY.md for Railway setup.
 
 ## Roadmap
 
-- Presentation mode with gpt-realtime-2 (wake-word "Vessica", voice Q&A,
-  auto-advance from talk-track cues, element highlighting)
-- Dictation authoring (speak the talk track; slides form live)
-- PDF / PPTX export; `vstd mcp`
+- PPTX export; `vstd mcp`
 
 ## License
 

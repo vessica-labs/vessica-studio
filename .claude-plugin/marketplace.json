@@ -1,0 +1,11 @@
+{
+  "name": "vessica-studio",
+  "owner": { "name": "Vessica Labs" },
+  "plugins": [
+    {
+      "name": "vessica-studio",
+      "source": "./plugin",
+      "description": "Agent-driven presentation building on the Vessica Studio engine (vstd): create, edit, fork, and review HTML decks with a layout→visual→critic quality loop."
+    }
+  ]
+}

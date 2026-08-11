@@ -36,11 +36,17 @@ func markActive(frag string) string {
 	return strings.Replace(frag, tag, repl, 1)
 }
 
+// printBaseCSS precedes theme.css so themes can override it — it mirrors the
+// player's base so slides inherit the same body font in print as on stage.
+const printBaseCSS = `
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{margin:0;padding:0;background:#fff;font-family:var(--sans,"Trebuchet MS",Verdana,sans-serif)}
+`
+
 // printCSS pins each slide to a fixed 1280x720 page. It is appended after the
 // theme so its display override beats the theme's `.slide{display:none}`.
 const printCSS = `
 @page{size:1280px 720px;margin:0}
-html,body{margin:0;padding:0;background:#fff}
 .vstd-page{position:relative;width:1280px;height:720px;overflow:hidden;page-break-after:always;break-after:page}
 .vstd-page:last-child{page-break-after:auto;break-after:auto}
 .vstd-page .slide{display:block!important;position:absolute;inset:0;transform:none;animation:none}
@@ -91,6 +97,7 @@ func (s *Studio) BuildPrintHTML(deck string) (string, int, error) {
 	b.WriteString("<!DOCTYPE html>\n<html><head><meta charset=\"utf-8\"><title>")
 	b.WriteString(htmlEscape(meta.Title))
 	b.WriteString("</title>\n<style>\n")
+	b.WriteString(printBaseCSS)
 	b.Write(themeCSS)
 	b.WriteString("\n/* deck overrides */\n")
 	b.Write(deckCSS)

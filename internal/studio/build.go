@@ -3,14 +3,23 @@ package studio
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 )
 
-// Build assembles a deck: theme player.html + theme.css + deck.css + slide
-// fragments -> decks/<deck>/build/index.html. Returns the output path.
+// Build assembles a deck: the engine's embedded player + theme.css +
+// deck.css + slide fragments -> decks/<deck>/build/index.html. Returns the
+// output path.
+//
+// The player (HUD markup, chrome styling, and all runtime JS) is the
+// engine-owned control plane, identical for every theme — themes contribute
+// presentation only (theme.css + deck.css). A themes/<theme>/player.html on
+// disk is ignored with a warning; per-theme players are how the HUD used to
+// drift.
 //
 // Player template markers:
 //
@@ -24,9 +33,12 @@ func (s *Studio) Build(deck string) (string, error) {
 		return "", err
 	}
 	themeDir := s.ThemeDir(meta.Theme)
-	player, err := os.ReadFile(filepath.Join(themeDir, "player.html"))
+	player, err := templates.ReadFile("templates/player.html")
 	if err != nil {
-		return "", fmt.Errorf("theme %q: %w (run `vstd init` to scaffold a default theme)", meta.Theme, err)
+		return "", fmt.Errorf("embedded player: %w", err)
+	}
+	if _, err := os.Stat(filepath.Join(themeDir, "player.html")); err == nil {
+		warnThemePlayerOnce(meta.Theme)
 	}
 	themeCSS, err := os.ReadFile(filepath.Join(themeDir, "theme.css"))
 	if err != nil {
@@ -81,6 +93,17 @@ func (s *Studio) Build(deck string) (string, error) {
 		return "", err
 	}
 	return outPath, nil
+}
+
+// warnThemePlayerOnce logs the ignored-player deprecation once per theme —
+// Build runs on every deck GET, so an unconditional log would flood serve
+// output.
+var themePlayerWarned sync.Map
+
+func warnThemePlayerOnce(theme string) {
+	if _, seen := themePlayerWarned.LoadOrStore(theme, true); !seen {
+		log.Printf("theme %q: player.html is ignored — the player is engine-owned now; theme customization lives in theme.css (delete the file to silence this)", theme)
+	}
 }
 
 var sectionTagRe = regexp.MustCompile(`<section\s`)

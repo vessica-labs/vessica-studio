@@ -7,13 +7,23 @@
 <style>
 
 /* ============================================================
-   BCG SLIDE DESIGN SYSTEM — HTML implementation
-   Source of truth: BCGSlideDesignSystem.md (New BCG PPT template)
-   Canvas: 16:9 → 1280×720 px base (96 px = 1 inch)
+   VESSICA STUDIO PLAYER — the engine-owned control plane.
+   This file is embedded in the vstd binary and used for EVERY
+   theme; themes contribute theme.css + deck.css only. HUD
+   behavior and styling are invariant by design — the chrome
+   below uses engine-owned --vstd-* tokens that themes must not
+   redefine. Canvas: 16:9 → 1280×720 px base (96 px = 1 inch).
    ============================================================ */
 
+:root{
+  --vstd-deep:#0C2B15; --vstd-green:#21BF61; --vstd-teal:#18A8AF; --vstd-mint:#20E3AC;
+  --vstd-off:#FCFBFA; --vstd-gray:#575757;
+  --vstd-serif:Georgia,serif;
+  --vstd-sans:"Trebuchet MS",Verdana,sans-serif;
+}
+
 *{box-sizing:border-box;margin:0;padding:0}
-html,body{height:100%;background:#111614;font-family:var(--sans)}
+html,body{height:100%;background:#111614;font-family:var(--vstd-sans)}
 
 /* ---------- Stage & scaling ---------- */
 #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
@@ -28,18 +38,26 @@ html,body{height:100%;background:#111614;font-family:var(--sans)}
   background:rgba(12,20,15,.82);border:1px solid #2c4a35;border-radius:999px;padding:6px 12px;z-index:60;
   opacity:0;transition:opacity .25s}
 body:hover #hud{opacity:1}
-#hud button{background:none;border:none;color:#cfe6d4;font-family:var(--sans);font-size:13px;cursor:pointer;
-  padding:4px 10px;border-radius:999px}
+#hud button{background:none;border:none;color:#cfe6d4;font-family:var(--vstd-sans);font-size:13px;cursor:pointer;
+  padding:4px 10px;border-radius:999px;white-space:nowrap}
 #hud button:hover{background:#1c4229}
 #hud .cnt{color:#8fb59a;font-size:12px;padding:0 6px;min-width:70px;text-align:center}
-#progress{position:fixed;left:0;bottom:0;height:3px;background:var(--green);z-index:70;transition:width .2s}
+#hudmore{display:none;position:absolute;bottom:48px;right:0;flex-direction:column;gap:2px;
+  background:rgba(12,20,15,.96);border:1px solid #2c4a35;border-radius:16px;padding:8px;min-width:150px}
+#hudmore.open{display:flex}
+#hudmore button{text-align:left;padding:11px 16px;font-size:16px}
+/* touch devices: hud always visible, bigger targets, secondary items behind ⋯ */
+body.mobilehud #hud{opacity:1;gap:2px;padding:8px 10px;bottom:calc(10px + env(safe-area-inset-bottom));max-width:96vw}
+body.mobilehud #hud>button{font-size:16px;padding:9px 13px}
+body.mobilehud #hud .cnt{font-size:14px;min-width:52px}
+#progress{position:fixed;left:0;bottom:0;height:3px;background:var(--vstd-green);z-index:70;transition:width .2s}
 #toast{position:fixed;top:14px;right:14px;z-index:120;background:rgba(12,32,19,.95);color:#dff0e2;
-  border:1px solid #21BF61;border-radius:12px;padding:10px 18px;font-family:var(--sans);font-size:14px;
+  border:1px solid #21BF61;border-radius:12px;padding:10px 18px;font-family:var(--vstd-sans);font-size:14px;
   display:none;max-width:340px}
 /* ---------- Vessica presentation mode ---------- */
 #vstatus{position:fixed;top:14px;left:14px;z-index:120;display:none;align-items:center;gap:9px;
   background:rgba(12,32,19,.92);border:1px solid #2c4a35;border-radius:999px;padding:7px 16px;
-  font-family:var(--sans);font-size:13px;color:#cfe6d4;cursor:pointer}
+  font-family:var(--vstd-sans);font-size:13px;color:#cfe6d4;cursor:pointer}
 #vstatus .dot{width:10px;height:10px;border-radius:50%;background:#575757}
 #vstatus.listening .dot{background:#21BF61;animation:vpulse 1.6s infinite}
 #vstatus.speaking .dot{background:#20E3AC;animation:vpulse .7s infinite}
@@ -49,41 +67,95 @@ body:hover #hud{opacity:1}
 .vglow{outline:3px solid rgba(32,227,172,.0);border-radius:12px;
   box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45);
   transition:box-shadow .3s ease;animation:vglowp 1.8s ease-in-out infinite}
+#vprog{position:fixed;left:0;top:0;right:0;height:3px;z-index:130;display:none;background:rgba(32,227,172,.14)}
+#vprog .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:#20E3AC;overflow:hidden;transition:width .6s ease}
+#vprog .fill::after{content:'';position:absolute;left:-40%;width:40%;top:0;bottom:0;
+  background:linear-gradient(90deg,transparent,#96F977,transparent);animation:vprogslide 1.6s linear infinite}
+@keyframes vprogslide{to{left:140%}}
+#vproglabel{position:fixed;top:9px;left:50%;transform:translateX(-50%);z-index:130;display:none;
+  background:rgba(12,43,21,.85);color:#c9f5d3;font:12px var(--vstd-sans);border-radius:999px;padding:3px 14px;pointer-events:none}
+#capbar{position:fixed;top:34px;left:50%;transform:translateX(-50%);z-index:131;display:none;align-items:center;gap:12px;
+  background:#3a2c0d;border:1.5px solid #FEA127;color:#FFE9B8;border-radius:999px;padding:6px 8px 6px 18px;font:12.5px var(--vstd-sans)}
+#capbar button{background:#FEA127;color:#3d2c05;border:none;border-radius:999px;padding:5px 14px;font:700 12px var(--vstd-sans);cursor:pointer}
+#capbar button:hover{background:#ffb54a}
+#overview .thumb .tprog{position:absolute;left:0;right:0;top:0;height:4px;background:rgba(32,227,172,.3);z-index:5}
+#overview .thumb .tprog .fill{position:absolute;left:0;top:0;bottom:0;width:0;background:#20E3AC;overflow:hidden}
+#overview .thumb .tprog .fill::after{content:'';position:absolute;left:-40%;width:40%;top:0;bottom:0;
+  background:linear-gradient(90deg,transparent,#96F977,transparent);animation:vprogslide 1.6s linear infinite}
+#hudSticky.pending{color:#FEA127!important;font-weight:700}
+#stickyPad{position:fixed;left:50%;bottom:64px;z-index:106;width:340px;background:#FFF8C9;border-radius:4px;
+  box-shadow:0 14px 40px rgba(0,0,0,.35);padding:16px;transform:translateX(-50%) rotate(-1deg);display:none;font-family:var(--vstd-sans)}
+#stickyPad h4{margin:0 0 8px;font-size:13px;color:#7a5a10;letter-spacing:.08em}
+.stickyref{outline:2.5px dashed #FEA127!important;outline-offset:3px;border-radius:4px}
+#stickyPad .ref{display:none;align-items:center;gap:8px;background:#FEA127;color:#3d2c05;border-radius:6px;
+  padding:5px 10px;font-size:11.5px;margin-bottom:8px;font-weight:600}
+#stickyPad .ref span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#stickyPad .ref b{cursor:pointer;font-size:14px;line-height:1}
+#stickyPad .aim{font-size:10.5px;color:#a08c3e;margin-bottom:6px}
+#stickyPad .open-notes{max-height:110px;overflow:auto;margin-bottom:8px}
+#stickyPad .open-notes div{font-size:11.5px;color:#6b5a20;border-left:3px solid #E0C24A;padding:3px 8px;margin-bottom:4px;background:#fffce3}
+#stickyPad textarea{width:100%;box-sizing:border-box;height:92px;border:1px dashed #d8bd52;background:#fffdf0;border-radius:4px;
+  padding:8px;font:14px var(--vstd-sans);color:#3d3208;resize:vertical;outline:none}
+#stickyPad .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+#stickyPad .hint{font-size:10.5px;color:#a08c3e}
+#stickyPad button{background:#0C2B15;color:#E3FDDB;border:none;border-radius:999px;padding:7px 18px;font:600 13px var(--vstd-sans);cursor:pointer}
 #dictbar{position:fixed;left:0;right:0;bottom:0;z-index:110;display:none;align-items:center;gap:16px;
-  background:rgba(12,32,19,.96);border-top:2px solid #20E3AC;padding:12px 22px;font-family:var(--sans)}
+  background:rgba(12,32,19,.96);border-top:2px solid #20E3AC;padding:12px 22px;font-family:var(--vstd-sans)}
 #dictbar .dot{width:12px;height:12px;border-radius:50%;background:#20E3AC;animation:vpulse 1.4s infinite;flex:0 0 12px}
 #dictbar .dlabel{color:#20E3AC;font-size:14px;font-weight:700;white-space:nowrap}
 #dictbar .dtrans{color:#cfe6d4;font-size:14px;flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;font-style:italic}
 #dictbar .dact{color:#8fb59a;font-size:12px;white-space:nowrap}
 #dictbar button{background:none;border:1px solid #2c4a35;color:#cfe6d4;border-radius:999px;
-  padding:6px 16px;font-size:13px;cursor:pointer;font-family:var(--sans)}
+  padding:6px 16px;font-size:13px;cursor:pointer;font-family:var(--vstd-sans)}
 #dictbar button:hover{background:#1c4229}
 .draft-pill{position:absolute;right:44px;top:16px;border:1.5px dashed #FEA127;border-radius:999px;
-  padding:3px 14px;font-size:13px;color:#b06c0e;background:#fff9f0;font-family:var(--sans)}
+  padding:3px 14px;font-size:13px;color:#b06c0e;background:#fff9f0;font-family:var(--vstd-sans)}
 #followchip{position:fixed;bottom:14px;right:14px;z-index:120;display:none;
   background:rgba(12,32,19,.92);border:1px solid #21BF61;border-radius:999px;padding:8px 18px;
-  font-family:var(--sans);font-size:13px;color:#cfe6d4;cursor:pointer}
+  font-family:var(--vstd-sans);font-size:13px;color:#cfe6d4;cursor:pointer}
 #followchip.paused{border-color:#FEA127}
 @keyframes vglowp{0%,100%{box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45)}
   50%{box-shadow:0 0 0 3px rgba(32,227,172,.85),0 0 48px 10px rgba(32,227,172,.65)}}
 #menu,#notesPanel{position:fixed;z-index:80;background:#0f271733;backdrop-filter:blur(2px)}
 #menu{inset:0;display:none}
 #menu.open{display:flex;align-items:center;justify-content:center}
-#menu .sheet{background:var(--off);border-radius:16px;padding:34px 40px;width:760px;max-height:82vh;overflow:auto}
-#menu h2{font-family:var(--serif);font-weight:400;color:var(--deep);font-size:30px;margin-bottom:14px}
-#menu a{display:flex;gap:14px;align-items:baseline;text-decoration:none;color:var(--gray);font-size:15px;
+#menu .sheet{background:var(--vstd-off);border-radius:16px;padding:34px 40px;width:760px;max-height:82vh;overflow:auto}
+#menu h2{font-family:var(--vstd-serif);font-weight:400;color:var(--vstd-deep);font-size:30px;margin-bottom:14px}
+#menu a{display:flex;gap:14px;align-items:baseline;text-decoration:none;color:var(--vstd-gray);font-size:15px;
   padding:8px 4px;border-bottom:1px solid #e2e0da;cursor:pointer}
-#menu a:hover{color:var(--deep)}
-#menu a .n{color:var(--green);font-size:13px;min-width:28px}
+#menu a:hover{color:var(--vstd-deep)}
+#menu a .n{color:var(--vstd-green);font-size:13px;min-width:28px}
 #notesPanel{left:0;right:0;bottom:0;background:rgba(12,32,19,.94);color:#dff0e2;display:none;
-  padding:16px 26px 20px;font-size:15px;line-height:1.5;max-height:32vh;overflow:auto;border-top:2px solid var(--green)}
+  padding:16px 26px 20px;font-size:15px;line-height:1.5;max-height:32vh;overflow:auto;border-top:2px solid var(--vstd-green)}
 #notesPanel.open{display:block}
-#notesPanel .lbl{color:var(--mint);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
+#notesPanel .lbl{color:var(--vstd-mint);font-size:11px;letter-spacing:.1em;text-transform:uppercase;margin-bottom:6px}
 #overview{position:fixed;inset:0;background:#111614;z-index:90;display:none;overflow:auto;padding:30px}
 #overview.open{display:block}
 #overview .gridwrap{display:grid;grid-template-columns:repeat(4,1fr);gap:18px}
+#ovbar{position:sticky;top:-30px;z-index:12;display:flex;align-items:center;gap:14px;margin:-10px 0 18px;
+  background:rgba(17,22,20,.94);border:1px solid #2c4a35;border-radius:10px;padding:10px 18px;width:fit-content}
+#ovbar label{color:#8fb59a;font:12px var(--vstd-sans);letter-spacing:.08em}
+#ovbar input[type=range]{width:170px;accent-color:#20E3AC}
+#ovbar .zi{color:#cfe6d4;font-size:15px}
 #overview .thumb{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:6px;cursor:pointer;outline:2px solid transparent}
-#overview .thumb:hover{outline-color:var(--green)}
+#overview .thumb:hover{outline-color:var(--vstd-green)}
+#overview .thumb.hiddenSlide .mini{opacity:.32;filter:grayscale(.5)}
+#overview .thumb.hiddenSlide::after{content:'HIDDEN';position:absolute;top:6px;left:6px;background:rgba(12,43,21,.85);
+  color:#FEA127;font-size:10px;font-weight:700;letter-spacing:.08em;border-radius:4px;padding:2px 8px;z-index:6}
+#overview .thumb .eye{position:absolute;top:4px;right:4px;z-index:7;background:rgba(12,43,21,.85);border:1px solid #3d5c46;
+  color:#cfe6d4;border-radius:6px;font-size:11px;padding:3px 9px;cursor:pointer;opacity:0;transition:opacity .15s}
+#overview .thumb:hover .eye{opacity:1}
+#overview .thumb.dragover{outline:2px dashed var(--vstd-mint);outline-offset:2px}
+#overview .thumb.dragging{opacity:.4}
+#overview .thumb.selected{outline:2.5px solid var(--vstd-mint);outline-offset:2px}
+#overview .thumb.selected::before{content:'✓';position:absolute;top:6px;right:34px;z-index:8;background:var(--vstd-mint);
+  color:#06140c;font-weight:700;font-size:12px;border-radius:50%;width:20px;height:20px;display:flex;align-items:center;justify-content:center}
+#overview .ovbreak{grid-column:1/-1;display:flex;align-items:center;gap:14px;margin:22px 0 4px;color:#FEA127;
+  font:700 12px var(--vstd-sans);letter-spacing:.14em;padding:10px 0;border-radius:8px}
+#overview .ovbreak::before,#overview .ovbreak::after{content:'';flex:1;border-top:1.5px dashed #7a5a2b}
+#overview .ovbreak.dragover{background:rgba(254,161,39,.12);outline:2px dashed #FEA127}
+#overview .thumb.parkedSlide .mini{opacity:.45;filter:saturate(.4)}
+#overview .thumb.parkedSlide .cap{color:#FEA127}
 #overview .thumb .mini{width:1280px;height:720px;transform:scale(var(--ts));transform-origin:top left;position:absolute;top:0;left:0;pointer-events:none}
 #overview .thumb .cap{position:absolute;left:6px;bottom:4px;background:rgba(12,43,21,.85);color:#dff0e2;font-size:11px;
   padding:2px 8px;border-radius:999px;z-index:5}
@@ -91,34 +163,34 @@ body:hover #hud{opacity:1}
 body.editmode #frame{outline:2px dashed rgba(33,191,97,.5);outline-offset:4px}
 #edithint{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:95;display:none;
   background:rgba(12,32,19,.92);color:#dff0e2;border:1px solid #2c4a35;border-radius:999px;
-  padding:8px 22px;font-size:13px;font-family:var(--sans);white-space:nowrap}
+  padding:8px 22px;font-size:13px;font-family:var(--vstd-sans);white-space:nowrap}
 body.editmode #edithint{display:block}
 body.editmode section.slide img,body.editmode section.slide video{pointer-events:auto !important}
 #snapguides{position:absolute;inset:0;pointer-events:none;z-index:49}
-#snapguides .sg{position:absolute;background:var(--mint);opacity:.85;box-shadow:0 0 4px rgba(32,227,172,.6)}
+#snapguides .sg{position:absolute;background:var(--vstd-mint);opacity:.85;box-shadow:0 0 4px rgba(32,227,172,.6)}
 #snapguides .sg.v{top:0;bottom:0;width:1px}
 #snapguides .sg.h{left:0;right:0;height:1px}
-#selbox{position:absolute;z-index:50;pointer-events:none;border:1.5px solid var(--teal);display:none}
-#selbox .hnd{position:absolute;width:12px;height:12px;background:#fff;border:1.5px solid var(--teal);
+#selbox{position:absolute;z-index:50;pointer-events:none;border:1.5px solid var(--vstd-teal);display:none}
+#selbox .hnd{position:absolute;width:12px;height:12px;background:#fff;border:1.5px solid var(--vstd-teal);
   border-radius:3px;pointer-events:auto}
 #selbox .hnd.nw{left:-7px;top:-7px;cursor:nwse-resize}#selbox .hnd.n{left:calc(50% - 6px);top:-7px;cursor:ns-resize}
 #selbox .hnd.ne{right:-7px;top:-7px;cursor:nesw-resize}#selbox .hnd.e{right:-7px;top:calc(50% - 6px);cursor:ew-resize}
 #selbox .hnd.se{right:-7px;bottom:-7px;cursor:nwse-resize}#selbox .hnd.s{left:calc(50% - 6px);bottom:-7px;cursor:ns-resize}
 #selbox .hnd.sw{left:-7px;bottom:-7px;cursor:nesw-resize}#selbox .hnd.w{left:-7px;top:calc(50% - 6px);cursor:ew-resize}
 #selbox .etools{position:absolute;left:0;top:-44px;display:flex;gap:6px;pointer-events:auto}
-#selbox .etools button{background:var(--deep);color:#dff0e2;border:1px solid #2c4a35;border-radius:999px;
-  padding:4px 14px;font-size:13px;font-family:var(--sans);cursor:pointer;white-space:nowrap}
+#selbox .etools button{background:var(--vstd-deep);color:#dff0e2;border:1px solid #2c4a35;border-radius:999px;
+  padding:4px 14px;font-size:13px;font-family:var(--vstd-sans);cursor:pointer;white-space:nowrap}
 #selbox .etools button:hover{background:#1c4229}
 #selbox .etools button.on{background:#21BF61;color:#0C2B15;border-color:#21BF61}
-#selbox .etools .cwrap{display:flex;align-items:center;gap:4px;background:var(--deep);color:#dff0e2;
-  border:1px solid #2c4a35;border-radius:999px;padding:3px 8px 3px 12px;font-size:13px;font-family:var(--sans);cursor:pointer}
+#selbox .etools .cwrap{display:flex;align-items:center;gap:4px;background:var(--vstd-deep);color:#dff0e2;
+  border:1px solid #2c4a35;border-radius:999px;padding:3px 8px 3px 12px;font-size:13px;font-family:var(--vstd-sans);cursor:pointer}
 #selbox .etools .cwrap input[type=color]{width:22px;height:22px;border:none;border-radius:6px;padding:0;background:none;cursor:pointer}
 #selbox .etools .cwrap input[type=color]::-webkit-color-swatch-wrapper{padding:1px}
 #selbox .etools .cwrap input[type=color]::-webkit-color-swatch{border:1px solid #2c4a35;border-radius:5px}
-body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--green);outline-offset:2px;cursor:text}
+body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--vstd-green);outline-offset:2px;cursor:text}
 body.editmode .slide.active{cursor:default}
 @media print{
-  #hud,#progress,#notesPanel,#menu,#overview{display:none!important}
+  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#capbar{display:none!important}
   #stage{position:static}
   #frame{width:1280px;height:720px;box-shadow:none;page-break-after:always;position:relative;margin:0 auto}
   .slide{display:block!important;position:relative;page-break-after:always}
@@ -140,14 +212,18 @@ body.editmode .slide.active{cursor:default}
   <button data-act="prev">‹ Prev</button>
   <span class="cnt" id="cnt">1 / 1</span>
   <button data-act="next">Next ›</button>
+  <button data-act="vessica" id="hudVessica" title="Start/stop Vessica (V)">Vessica</button>
   <button data-act="menu">Agenda</button>
   <button data-act="grid">Grid</button>
+  <button data-act="sticky" id="hudSticky">Sticky</button>
   <button data-act="notes">Notes</button>
   <button data-act="present" id="presentbtn">Present</button>
   <button data-act="pdf" id="pdfbtn" style="display:none" title="Download PDF (active + hidden slides)">PDF</button>
   <button id="newslidebtn" style="display:none">+ Slide</button>
   <button data-act="edit" id="editbtn">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
+  <button data-act="more" id="hudMore" style="display:none">⋯</button>
+  <div id="hudmore"></div>
 </div>
 <div id="edithint">Edit mode · click = select · click again = edit text · drag = move (snaps to align — hold &#8997;/Alt to disable) · handles = resize · arrows = nudge · <b>changes save automatically when you exit (E)</b></div>
 <div id="menu"><div class="sheet"><h2>Jump to</h2><div id="menulist"></div></div></div>
@@ -165,8 +241,19 @@ body.editmode .slide.active{cursor:default}
   const progress=document.getElementById('progress');
   let cur=0,notesOn=false,scale=1;
 
-  // auto page numbers already in markup where present; fill missing
-  slides.forEach((s,i)=>{const p=s.querySelector('.pgpill');if(p)p.textContent=i+1;});
+  // page numbers: only in-flow (non-parked) slides are numbered
+  function renumberPills(){
+    let n=0;
+    slides.forEach(s=>{
+      const parked=s.hasAttribute('data-parked');
+      if(!parked)n++;
+      const p=s.querySelector('.pgpill');
+      if(p)p.textContent=parked?'·':n;
+    });
+  }
+  renumberPills();
+  function visIdx(){return slides.map((s,i)=>i).filter(i=>!slides[i].hasAttribute('data-parked'));}
+  function dispNum(i){const k=visIdx().indexOf(i);return k<0?0:k+1;}
 
   function fit(){
     scale=Math.min(innerWidth/1280,innerHeight/720)*0.985;
@@ -174,18 +261,41 @@ body.editmode .slide.active{cursor:default}
   }
   addEventListener('resize',fit);fit();
 
+  function canEditDeck(){return !window.__vme||window.__vme.mode==='studio';}
+  function persistSlide(sec){
+    if(!canEditDeck())return;
+    if(!sec.dataset.vstd||!window.VSTD)return;
+    return saveSlide(sec).then(res=>{
+      if(res.status==='conflict')toast('⚠ Not saved — slide '+res.id+' changed on disk after this page loaded. Reload to pick it up, then re-apply.',8500);
+      return res;
+    });
+  }
   function show(i){
     stopTextEdit();clearSel();
     cur=Math.max(0,Math.min(slides.length-1,i));
+    const tgt=slides[cur];
+    if(tgt.hasAttribute('data-hidden')){ // direct navigation to a hidden slide unhides it
+      tgt.removeAttribute('data-hidden');persistSlide(tgt);toast('Slide '+(cur+1)+' unhidden');
+    }
     slides.forEach((s,j)=>s.classList.toggle('active',j===cur));
-    cnt.textContent=(cur+1)+' / '+slides.length;
+    const vn=dispNum(cur),vt=visIdx().length;
+    cnt.textContent=(vn||'·')+' / '+vt;
     document.dispatchEvent(new CustomEvent('vstd:slide',{detail:{index:cur}}));
-    progress.style.width=((cur+1)/slides.length*100)+'%';
+    progress.style.width=(vn?vn/vt*100:0)+'%';
     location.hash='#/'+(cur+1);
     const n=slides[cur].querySelector('.notes');
     notesBody.innerHTML=n?n.innerHTML:'<em>No notes.</em>';
   }
   function goto(id){const ix=slides.findIndex(s=>s.dataset.id===id);if(ix>=0)show(ix);}
+  // step: relative navigation skips hidden slides
+  function step(d){
+    let i=cur;
+    for(let k=0;k<slides.length;k++){
+      i+=d;
+      if(i<0||i>=slides.length)return;
+      if(!slides[i].hasAttribute('data-hidden')&&!slides[i].hasAttribute('data-parked')){show(i);return;}
+    }
+  }
 
   // agenda-row links (disabled while editing)
   document.querySelectorAll('[data-goto]').forEach(a=>a.addEventListener('click',()=>{if(editMode)return;menu.classList.remove('open');goto(a.dataset.goto);}));
@@ -201,26 +311,161 @@ body.editmode .slide.active{cursor:default}
   });
 
   // overview grid (rebuilt each open so edits show up)
+  let dragSrc=null;
+  const ovSel=new Set(); // multi-select (vstd ids)
+  // edge auto-scroll while dragging in the grid
+  let ovAuto=0,ovRAF=null;
+  function ovLoop(){if(ovAuto)overview.scrollTop+=ovAuto;ovRAF=requestAnimationFrame(ovLoop);}
+  function ovAutoStart(){if(!ovRAF)ovLoop();}
+  function ovAutoStop(){if(ovRAF)cancelAnimationFrame(ovRAF);ovRAF=null;ovAuto=0;}
+  overview.addEventListener('dragover',e=>{
+    const m=110;
+    if(e.clientY<m)ovAuto=-Math.ceil((m-e.clientY)/5);
+    else if(e.clientY>innerHeight-m)ovAuto=Math.ceil((e.clientY-(innerHeight-m))/5);
+    else ovAuto=0;
+  });
+  function selOrdered(){return slides.filter(x=>ovSel.has(x.dataset.vstd)).map(x=>x.dataset.vstd);}
+  async function moveSeq(ids,after){
+    let a=after;
+    for(const id of ids){
+      window.__selfSave=Date.now(); // suppress watcher-triggered reload during the operation
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/move',
+        {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({after:a})});
+      if(!r.ok)throw new Error(await r.text());
+      a=(await r.json()).id;
+      window.__selfSave=Date.now();
+    }
+  }
+  async function setParked(ids,park){
+    for(const id of ids){
+      const sec=slides.find(x=>x.dataset.vstd===id);
+      if(!sec)continue;
+      if(park)sec.setAttribute('data-parked','1');else sec.removeAttribute('data-parked');
+      await persistSlide(sec);
+    }
+  }
+  async function dropSel(target){ // {type:'after'|'front'|'park', id?}
+    let ids=selOrdered();
+    if(!ids.length&&dragSrc)ids=[dragSrc];
+    dragSrc=null;
+    if(!ids.length)return;
+    if(target.type==='after'&&ids.indexOf(target.id)>=0)return;
+    try{
+      // set BEFORE any API call: if the engine's change-broadcast reload wins
+      // the race, we still come back in Grid view, at this scroll and zoom
+      location.hash='#/grid@'+Math.round(overview.scrollTop)+'@'+ovCols;
+      window.__selfSave=Date.now();
+      if(target.type==='park'){
+        await setParked(ids,true);
+        toast(ids.length+' slide(s) parked');
+      }else{
+        await setParked(ids,false);
+        await moveSeq(ids,target.type==='front'?'':target.id);
+        toast(ids.length+' slide(s) moved');
+      }
+      ovSel.clear();
+      location.hash='#/grid';
+      setTimeout(()=>location.reload(),350);
+    }catch(err){toast('Move failed: '+err.message);}
+  }
+  let ovCols=4;
+  function ensureOvBar(){
+    if(document.getElementById('ovbar'))return;
+    const bar=document.createElement('div');bar.id='ovbar';
+    bar.innerHTML='<label>ZOOM</label><span class="zi">−</span>'+
+      '<input type="range" min="2" max="8" step="1" value="'+(10-ovCols)+'">'+
+      '<span class="zi">+</span>';
+    bar.querySelector('input').addEventListener('input',e=>{
+      const keep=overview.scrollTop/Math.max(1,ovgrid.scrollHeight);
+      ovCols=10-parseInt(e.target.value);
+      buildOv();
+      overview.scrollTop=keep*ovgrid.scrollHeight;
+    });
+    overview.insertBefore(bar,ovgrid);
+  }
   function buildOv(){
+    ensureOvBar();
+    const bi=document.querySelector('#ovbar input');
+    if(bi)bi.value=10-ovCols;
+    ovgrid.style.gridTemplateColumns='repeat('+ovCols+',1fr)';
     ovgrid.innerHTML='';
-    const ts=((innerWidth-30*2-18*3)/4)/1280;
-    slides.forEach((s,i)=>{
+    const ts=((innerWidth-30*2-18*(ovCols-1))/ovCols)/1280;
+    const canEdit=canEditDeck();
+    const mk=(s,i)=>{
       const t=document.createElement('div');t.className='thumb';t.style.setProperty('--ts',ts);
+      t.dataset.vstd=s.dataset.vstd||'';
+      if(s.hasAttribute('data-hidden'))t.classList.add('hiddenSlide');
+      if(s.hasAttribute('data-parked'))t.classList.add('parkedSlide');
+      if(ovSel.has(s.dataset.vstd))t.classList.add('selected');
       const c=s.cloneNode(true);c.classList.add('active');c.classList.add('mini');c.style.display='block';
       t.appendChild(c);
-      const cap=document.createElement('div');cap.className='cap';cap.textContent=(i+1)+' · '+(s.dataset.sec||'');
+      const cap=document.createElement('div');cap.className='cap';
+      cap.textContent=(s.hasAttribute('data-parked')?'unused':dispNum(i))+' · '+(s.dataset.sec||'');
       t.appendChild(cap);
-      t.addEventListener('click',()=>{overview.classList.remove('open');show(i);});
-      ovgrid.appendChild(t);
-    });
+      if(canEdit&&s.dataset.vstd){
+        const eye=document.createElement('button');eye.className='eye';
+        eye.textContent=s.hasAttribute('data-hidden')?'unhide':'hide';
+        eye.addEventListener('click',ev=>{
+          ev.stopPropagation();
+          if(s.hasAttribute('data-hidden'))s.removeAttribute('data-hidden');
+          else s.setAttribute('data-hidden','1');
+          persistSlide(s);buildOv();
+        });
+        t.appendChild(eye);
+        t.draggable=true;
+        t.addEventListener('dragstart',()=>{
+          ovAutoStart();
+          dragSrc=s.dataset.vstd;
+          if(!ovSel.has(dragSrc)){ovSel.clear();}
+          document.querySelectorAll('#ovgrid .thumb').forEach(x=>{
+            if(x.dataset.vstd===dragSrc||ovSel.has(x.dataset.vstd))x.classList.add('dragging');
+          });
+        });
+        t.addEventListener('dragend',()=>{ovAutoStop();document.querySelectorAll('#ovgrid .thumb.dragging').forEach(x=>x.classList.remove('dragging'));});
+        t.addEventListener('dragover',ev=>{ev.preventDefault();t.classList.add('dragover');});
+        t.addEventListener('dragleave',()=>t.classList.remove('dragover'));
+        t.addEventListener('drop',ev=>{
+          ev.preventDefault();t.classList.remove('dragover');
+          if(s.hasAttribute('data-parked')){dropSel({type:'park'});return;}
+          const rect=t.getBoundingClientRect();
+          const front=(dispNum(i)===1&&ev.clientX<rect.left+rect.width/2);
+          dropSel(front?{type:'front'}:{type:'after',id:s.dataset.vstd});
+        });
+      }
+      t.addEventListener('click',ev=>{
+        if(canEdit&&(ev.metaKey||ev.ctrlKey)&&s.dataset.vstd){
+          if(ovSel.has(s.dataset.vstd))ovSel.delete(s.dataset.vstd);
+          else ovSel.add(s.dataset.vstd);
+          t.classList.toggle('selected');
+          return;
+        }
+        ovSel.clear();
+        overview.classList.remove('open');show(i);
+      });
+      return t;
+    };
+    slides.forEach((s,i)=>{if(!s.hasAttribute('data-parked'))ovgrid.appendChild(mk(s,i));});
+    if(canEdit){
+      const br=document.createElement('div');br.className='ovbreak';br.textContent='UNUSED SLIDES — drag here to park';
+      br.addEventListener('dragover',ev=>{ev.preventDefault();br.classList.add('dragover');});
+      br.addEventListener('dragleave',()=>br.classList.remove('dragover'));
+      br.addEventListener('drop',ev=>{ev.preventDefault();br.classList.remove('dragover');dropSel({type:'park'});});
+      ovgrid.appendChild(br);
+      slides.forEach((s,i)=>{if(s.hasAttribute('data-parked'))ovgrid.appendChild(mk(s,i));});
+    }
+    if(window.__vprogApply)window.__vprogApply();
   }
 
   document.getElementById('hud').addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
     const a=b.dataset.act;
-    if(a==='prev')show(cur-1);else if(a==='next')show(cur+1);
+    if(a==='vessica'){document.dispatchEvent(new Event('vstd:vtoggle'));document.getElementById('hudmore').classList.remove('open');return;}
+    if(a==='more'){document.getElementById('hudmore').classList.toggle('open');return;}
+    document.getElementById('hudmore').classList.remove('open');
+    if(a==='prev')step(-1);else if(a==='next')step(1); // step() skips parked+hidden — show(cur±1) walked straight through the parking lot on touch devices
     else if(a==='menu')menu.classList.toggle('open');
     else if(a==='grid'){buildOv();overview.classList.add('open');}
+    else if(a==='sticky'){if(window.__stickyToggle)window.__stickyToggle();}
     else if(a==='notes'){notesOn=!notesOn;notesPanel.classList.toggle('open',notesOn);}
     else if(a==='edit')toggleEdit();
     else if(a==='save')saveHtml();
@@ -242,12 +487,13 @@ body.editmode .slide.active{cursor:default}
     }
     if(editMode&&selEl&&['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();nudge(e);return;}
     if(editMode&&e.key===' ')return;
-    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();show(cur+1);}
-    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();show(cur-1);}
+    if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();step(1);}
+    else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();step(-1);}
     else if(e.key==='Home')show(0);else if(e.key==='End')show(slides.length-1);
     else if(e.key==='n'||e.key==='N'){notesOn=!notesOn;notesPanel.classList.toggle('open',notesOn);}
+    else if(e.key==='s'||e.key==='S'){e.preventDefault();if(window.__stickyToggle)window.__stickyToggle();}
     else if(e.key==='m'||e.key==='M')menu.classList.toggle('open');
-    else if(e.key==='g'||e.key==='G'){buildOv();overview.classList.toggle('open');}
+    else if(e.key==='g'||e.key==='G'){buildOv();overview.classList.toggle('open');if(window.__vprogApply)window.__vprogApply();}
     else if(e.key==='e'||e.key==='E')toggleEdit();
     else if(e.key==='p'||e.key==='P')enterPresent();
     else if(e.key==='v'||e.key==='V')document.dispatchEvent(new Event('vstd:vtoggle'));
@@ -414,7 +660,8 @@ body.editmode .slide.active{cursor:default}
     }
     if(e.target.closest('#hud')||e.target.closest('#edithint')||e.target.closest('#menu')||e.target.closest('#overview')||e.target.closest('#notesPanel'))return;
     const slide=slides[cur];
-    const t=e.target.closest(CAND);
+    let t=e.target.closest(CAND);
+    if(!t){const el=e.target;if(el!==slide&&el.nodeType===1&&slide.contains(el)&&(el.textContent||'').trim())t=el;}
     if(t&&slide.contains(t)&&t!==slide){
       if(editingText&&(t.isContentEditable||t.closest('[contenteditable="true"]')))return;
       stopTextEdit();
@@ -720,12 +967,14 @@ body.editmode .slide.active{cursor:default}
     try{
       const es=new EventSource('/api/events');
       es.addEventListener('reload',()=>{
-        if(Date.now()-(window.__selfSave||0)<2500){/* our own save; DOM is already current */}
+        if(Date.now()-(window.__selfSave||0)<2500){/* our own write; DOM is already current */}
         else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
         else if(window.__dictating){/* our own writes; DOM is already current */}
+        else if(window.__vlive&&window.__vlive()){toast('Deck changed on disk — reload deferred while Vessica is live');}
         else if(!window.__following){
-          // survive the reload in Grid view
-          if(overview.classList.contains('open'))location.hash='#/grid';
+          // survive the reload in Grid view: stash grid state in the hash so
+          // the boot path restores overview + scroll + zoom
+          if(overview.classList.contains('open'))location.hash='#/grid@'+Math.round(overview.scrollTop)+'@'+ovCols;
           location.reload();
         }
       });
@@ -743,7 +992,7 @@ body.editmode .slide.active{cursor:default}
         if(!audience){const b=document.getElementById('pdfbtn');if(b)b.style.display='';}
         if(audience){
           window.__following=true;
-          ['editbtn','savebtn','presentbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
+          ['editbtn','savebtn','presentbtn','hudVessica'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
           const chip=document.createElement('div');
           chip.id='followchip';chip.style.display='block';
           chip.textContent='● Following the presenter — click to browse freely';
@@ -783,15 +1032,208 @@ body.editmode .slide.active{cursor:default}
   }
 
   if((location.hash||'').indexOf('#/grid')===0){
+    const parts=(location.hash||'').split('@');
+    const sc=parseInt(parts[1]||'0')||0, zc=parseInt(parts[2]||'4');
+    if(zc>=2&&zc<=8)ovCols=zc;
     show(0);buildOv();overview.classList.add('open');
+    setTimeout(()=>{overview.scrollTop=sc;},60);
+    if(window.__vprogApply)setTimeout(()=>window.__vprogApply(),900);
   }else{
     const h=parseInt((location.hash||'').replace('#/',''));
     show(isNaN(h)?0:h-1);
   }
 
   // public surface for the Vessica layer
-  window.VSTDP={show,goto:i=>show(i),cur:()=>cur,count:slides.length,
-    slideEl:()=>slides[cur],toast};
+  function gotoNum(n){const v=visIdx();if(n>=1&&n<=v.length)show(v[n-1]);}
+  window.VSTDP={show,goto:i=>show(i),gotoNum,step,cur:()=>cur,count:slides.length,
+    slideEl:()=>slides[cur],toast,persistSlide};
+})();
+
+/* ============ background-work progress (image gen + redesign queue) ============ */
+(function(){
+  if(!(window.VSTD&&location.protocol.indexOf('http')===0))return;
+  let bar,label,st={pending:{}};
+  let capbar;
+  function ui(){
+    if(bar)return;
+    bar=document.createElement('div');bar.id='vprog';bar.innerHTML='<div class="fill"></div>';document.body.appendChild(bar);
+    label=document.createElement('div');label.id='vproglabel';document.body.appendChild(label);
+    capbar=document.createElement('div');capbar.id='capbar';
+    capbar.innerHTML='<span></span><button></button>';
+    capbar.querySelector('button').addEventListener('click',async ()=>{
+      const a=(st.agent||{}),next=Math.min(100,(a.maxPerHour||12)*2);
+      try{
+        const r=await fetch('/api/agent/cap',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({maxPerHour:next})});
+        if(!r.ok)throw new Error(await r.text());
+        const j=await r.json();
+        if(window.VSTDP)window.VSTDP.toast('Agent cap raised to '+j.maxPerHour+'/hour — resets to default on restart');
+        capbar.style.display='none';
+        setTimeout(poll,400);
+      }catch(e){if(window.VSTDP)window.VSTDP.toast('Cap raise failed: '+e.message);}
+    });
+    document.body.appendChild(capbar);
+  }
+  function applyCap(){
+    if(!capbar)return;
+    const a=st.agent;
+    const canEdit=!window.__vme||window.__vme.mode==='studio';
+    if(a&&a.capped&&a.queued>0&&canEdit&&!window.__presenting){
+      capbar.querySelector('span').textContent='Agent rate cap reached ('+a.used+'/'+a.maxPerHour+' per hr) — '+a.queued+' slide'+(a.queued>1?'s':'')+' waiting';
+      capbar.querySelector('button').textContent='Raise to '+Math.min(100,a.maxPerHour*2)+'/hr';
+      capbar.style.display='flex';
+    }else capbar.style.display='none';
+  }
+  function summarize(list){
+    let pct=0,kinds={};
+    (list||[]).forEach(e=>{const k=e.kind||e,p=e.pct||15;kinds[k]=1;if(p>pct)pct=p;});
+    if(kinds.error)return {pct:15,txt:'redesign needs attention — see slide companion'};
+    const what=kinds.image&&kinds.redesign?'imagery + redesign':(kinds.image?'generating imagery':'redesign');
+    return {pct,txt:what+(kinds.image&&!kinds.redesign?'':' pass')+(pct>15?' in progress':' queued')+' — ~'+pct+'%'};
+  }
+  function cur(){const a=document.querySelector('#frame > .slide.active');return a&&a.dataset.vstd;}
+  function apply(){
+    ui();
+    const ovOpen=document.getElementById('overview').classList.contains('open');
+    const p=ovOpen?[]:((st.pending||{})[cur()]||[]);
+    if(p.length){
+      const sm=summarize(p);
+      bar.style.display='block';label.style.display='block';
+      bar.querySelector('.fill').style.width=sm.pct+'%';
+      label.textContent=sm.txt+' · this slide';
+    }else{bar.style.display='none';label.style.display='none';}
+    document.querySelectorAll('#ovgrid .thumb').forEach(t=>{
+      const list=(st.pending||{})[t.dataset.vstd]||[];
+      let b=t.querySelector('.tprog');
+      if(list.length){
+        if(!b){b=document.createElement('div');b.className='tprog';b.innerHTML='<div class="fill"></div>';t.appendChild(b);}
+        b.querySelector('.fill').style.width=summarize(list).pct+'%';
+      }else if(b)b.remove();
+    });
+  }
+  async function poll(){
+    try{const r=await fetch('/api/deck/'+window.VSTD.deck+'/status');
+      if(!r.ok)return;st=await r.json();apply();applyCap();}catch(_){}
+  }
+  document.addEventListener('vstd:slide',apply);
+  setInterval(poll,5000);setTimeout(poll,800);
+  window.__vprogApply=apply;
+  window.__vpendingState=()=>st;
+})();
+
+/* ============ sticky notes — PL-style slide instructions ============ */
+(function(){
+  if(!(window.VSTD&&location.protocol.indexOf('http')===0))return;
+  if(window.__vme&&window.__vme.mode&&window.__vme.mode!=='studio')return;
+  const P=()=>window.VSTDP;
+  let pad,ta,list,refEl=null,refDesc='';
+  const PICK='.s-title,.s-lead,.src,.card,.colcard,.chev,.demoslot,.icontile,.pill,.todo,.kpi,.statxl,.headband,.bh,li,ul,table,svg,img,.term,.phone,[data-edit]';
+  function curId(){const a=document.querySelector('#frame > .slide.active');return a&&a.dataset.vstd;}
+  function describe(el){
+    if(el.tagName==='IMG'){const src=(el.getAttribute('src')||'').split('/').pop();return 'the image '+(src||'(inline)');}
+    if(el.tagName==='SVG'||el.tagName==='svg')return 'the chart/graphic (svg)';
+    const cls=(el.classList&&el.classList[0])?'.'+el.classList[0]+' ':'';
+    const t=(el.textContent||'').trim().replace(/\s+/g,' ').slice(0,70);
+    return (cls||el.tagName.toLowerCase()+' ')+(t?'"'+t+(t.length>=70?'…':'')+'"':'');
+  }
+  function clearRef(){
+    if(refEl)refEl.classList.remove('stickyref');
+    refEl=null;refDesc='';
+    if(pad){const c=pad.querySelector('.ref');c.style.display='none';pad.querySelector('.aim').style.display='block';}
+  }
+  function setRef(el){
+    if(refEl)refEl.classList.remove('stickyref');
+    refEl=el;refEl.classList.add('stickyref');
+    refDesc=describe(el);
+    const c=pad.querySelector('.ref');
+    c.querySelector('span').textContent='Re: '+refDesc;
+    c.style.display='flex';
+    pad.querySelector('.aim').style.display='none';
+  }
+  function pickListener(e){
+    if(!pad||pad.style.display!=='block')return;
+    if(e.target.closest('#stickyPad')||e.target.closest('#hud')||e.target.closest('#vstatus')||e.target.closest('#overview'))return;
+    const slide=document.querySelector('#frame > .slide.active');
+    if(!slide||!slide.contains(e.target))return;
+    let t=e.target.closest(PICK);
+    if(!t&&e.target!==slide&&(e.target.textContent||'').trim())t=e.target;
+    if(!t||t===slide)return;
+    e.preventDefault();e.stopPropagation();
+    setRef(t);
+  }
+  function ui(){
+    if(pad)return;
+    pad=document.createElement('div');pad.id='stickyPad';
+    pad.innerHTML='<h4>NOTE TO AGENT — THIS SLIDE</h4>'+
+      '<div class="ref"><span></span><b title="clear">&times;</b></div>'+
+      '<div class="aim">click an object on the slide to reference it</div>'+
+      '<div class="open-notes"></div>'+
+      '<textarea placeholder="What should change on this slide?&#10;e.g. Make the title punchier; swap the left chart for a 2x2; add the JPMorgan number"></textarea>'+
+      '<div class="row"><span class="hint">&#8984;&#9166; to queue &middot; Esc to close</span><button>Queue edit</button></div>';
+    document.body.appendChild(pad);
+    ta=pad.querySelector('textarea');list=pad.querySelector('.open-notes');
+    pad.querySelector('button').addEventListener('click',submit);
+    pad.querySelector('.ref b').addEventListener('click',clearRef);
+    document.addEventListener('click',pickListener,true);
+    ta.addEventListener('keydown',e=>{
+      if(e.key==='Escape'){e.preventDefault();close();}
+      if((e.metaKey||e.ctrlKey)&&e.key==='Enter'){e.preventDefault();submit();}
+    });
+    setInterval(refreshBadge,5000);
+    document.addEventListener('vstd:slide',()=>{refreshBadge();clearRef();if(pad.style.display==='block')loadOpen();});
+    refreshBadge();
+  }
+  function refreshBadge(){
+    const hb=document.getElementById('hudSticky');
+    if(!hb)return;
+    const st=(window.__vpendingState&&window.__vpendingState())||{};
+    const p=(st.pending||{})[curId()]||[];
+    hb.classList.toggle('pending',p.length>0);
+  }
+  async function loadOpen(){
+    list.innerHTML='';
+    const id=curId();if(!id)return;
+    try{
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id);
+      const j=await r.json();
+      const m=(j.companion||'').match(/## Edit requests\n([\s\S]*?)(?=\n## |$)/);
+      if(!m)return;
+      m[1].split('\n').filter(l=>l.startsWith('- ')&&!l.startsWith('- resolved:')).slice(0,6).forEach(l=>{
+        const d=document.createElement('div');
+        d.textContent=l.replace(/^- /,'').slice(0,110);
+        list.appendChild(d);
+      });
+    }catch(_){}
+  }
+  function toggle(){pad.style.display==='block'?close():open();}
+  function open(){
+    if(!curId()){P().toast('This slide has no id — save it first');return;}
+    pad.style.display='block';loadOpen();ta.focus();
+  }
+  function close(){pad.style.display='none';ta.blur();clearRef();}
+  async function submit(){
+    const text=ta.value.trim();
+    if(!text)return;
+    const id=curId(),deck=window.VSTD.deck;
+    try{
+      const r=await fetch('/api/deck/'+deck+'/slide/'+id);
+      const j=await r.json();
+      const m=(j.companion||'').match(/## Edit requests\n([\s\S]*?)(?=\n## |$)/);
+      const prev=((m&&m[1])||'').split('\n').filter(l=>l.trim()&&!l.startsWith('(resolved')).join('\n');
+      const tag=refDesc?' — re: '+refDesc:'';
+      const body=(prev?prev+'\n':'')+'- '+new Date().toISOString().slice(0,10)+' (sticky note'+tag+'): '+text;
+      window.__selfSave=Date.now();
+      const pr=await fetch('/api/deck/'+deck+'/slide/'+id+'/companion/'+encodeURIComponent('Edit requests'),{method:'PUT',body:body});
+      window.__selfSave=Date.now();
+      if(!pr.ok)throw new Error('save '+pr.status);
+      ta.value='';clearRef();
+      P().toast('Note queued — agent will pick it up');
+      loadOpen();refreshBadge();
+      if(window.__vprogApply)setTimeout(window.__vprogApply,300);
+      close();
+    }catch(err){P().toast('Note failed: '+err.message);}
+  }
+  window.__stickyToggle=()=>{ui();toggle();};
+  setTimeout(ui,600);
 })();
 
 /* ================= Vessica realtime layer (Phase 3 spike) =================
@@ -846,12 +1288,27 @@ body.editmode .slide.active{cursor:default}
       S.mic.getTracks().forEach(t=>S.pc.addTrack(t,S.mic));
       S.dc=S.pc.createDataChannel('oai-events');
       S.dc.onmessage=onEvent;
-      S.dc.onopen=()=>{clearTimeout(S.watchdog);configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
+      S.dc.onclose=()=>{
+        if(S.on&&!S.intentional){
+          // unexpected drop (session timeout, network blip, post-call hiccup):
+          // restart transparently instead of dying silently
+          S.retries=(S.retries||0)+1;
+          if(S.retries<=2){
+            setState('connecting','Vessica reconnecting…');
+            cleanup();S.on=false;
+            setTimeout(start,900);
+          }else{
+            setState('error','Vessica lost the connection — press V to restart');
+            cleanup();S.on=false;
+          }
+        }
+      };
+      S.dc.onopen=()=>{clearTimeout(S.watchdog);S.retries=0;S.intentional=false;configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
       S.pc.oniceconnectionstatechange=()=>{
         const st=S.pc?S.pc.iceConnectionState:'?';
         console.log('vessica ice:',st);
         if(st==='checking')stage('establishing audio path (ICE)… — if this never completes, the network is blocking WebRTC/UDP');
-        if(st==='failed'){setState('error','Vessica: audio path FAILED — this network blocks WebRTC (UDP). Signaling worked; the code is fine. Try another network.');cleanup();}
+        if(st==='failed'){setState('error','Vessica: audio path FAILED — this network blocks WebRTC (UDP). Signaling worked; the code is fine. Try another network.');S.intentional=true;cleanup();}
         if((st==='connected'||st==='completed')&&S.pc)console.log('vessica ice connected');
       };
 
@@ -871,6 +1328,7 @@ body.editmode .slide.active{cursor:default}
       stage('establishing audio path (ICE)…');
       S.watchdog=setTimeout(()=>{
         if(S.dc&&S.dc.readyState!=='open'){
+          S.intentional=true;
           const ice=S.pc?S.pc.iceConnectionState:'?';
           setState('error','Vessica: stalled establishing the audio path (ICE state: '+ice+'). This network almost certainly blocks WebRTC/UDP — common on airplane and hotel wifi. Try another network.');
           cleanup();S.on=false;
@@ -878,12 +1336,13 @@ body.editmode .slide.active{cursor:default}
       },30000);
     }catch(err){
       setState('error','Vessica failed: '+err.message);
-      cleanup();
+      S.intentional=true;cleanup();
       setTimeout(hideState,8000);
     }
   }
 
   function stop(msg){
+    S.intentional=true;
     if(window.__vdict)try{window.__vdict.flush();}catch(_){}
     window.__dictating=false;
     cleanup();
@@ -903,7 +1362,7 @@ body.editmode .slide.active{cursor:default}
     {type:'function',name:'next_slide',description:'Advance to the next slide. Call when the speaker has clearly finished this slide and lands the opening idea of the next one.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'prev_slide',description:'Go back one slide.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'goto_slide',description:'Jump to a slide by its 1-based number.',parameters:{type:'object',properties:{number:{type:'integer'}},required:['number']}},
-    {type:'function',name:'highlight',description:'Softly glow the element on the current slide whose visible text best matches the phrase the speaker is discussing. Use sparingly — one highlight at a time, only when the speaker dwells on a specific point.',parameters:{type:'object',properties:{phrase:{type:'string'}},required:['phrase']}},
+    {type:'function',name:'highlight',description:'Softly glow one element on the current slide. phrase MUST be copied verbatim (or a distinctive fragment) from the HIGHLIGHTABLE ELEMENTS list in your instructions — never paraphrase. Use sparingly — one at a time, only when the speaker dwells on that point.',parameters:{type:'object',properties:{phrase:{type:'string'}},required:['phrase']}},
     {type:'function',name:'clear_highlight',description:'Remove any highlight.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'begin_conversation',description:'Call ONLY when the speaker says the wake word "Vessica" and wants you to respond aloud. After calling, you may speak.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'edit_text',description:'IN CONVERSATION ONLY: replace text on the current slide. find = the exact visible text (or a distinctive fragment of it); replace = the new text.',parameters:{type:'object',properties:{find:{type:'string'},replace:{type:'string'}},required:['find','replace']}},
@@ -916,9 +1375,44 @@ body.editmode .slide.active{cursor:default}
     {type:'function',name:'author_talk',description:'AUTHORING MODE: append the speaker\'s narration (cleaned sentences) to the draft slide talk track.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
     {type:'function',name:'author_lead',description:'AUTHORING MODE: set the draft slide lead-in line.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
     {type:'function',name:'done_authoring',description:'AUTHORING MODE: the speaker is done with the draft ("done with the slide", "back to the deck") — save and return to normal presenting.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'show_qr',description:'Display the deck share QR code as an overlay so the audience can scan and follow along ("show the QR", "put up the code"). position: center (default), right, or left — use right/left when the slide content should stay visible.',parameters:{type:'object',properties:{position:{type:'string',enum:['center','right','left']}}}},
+    {type:'function',name:'hide_qr',description:'Remove the QR overlay ("hide the QR", "take it down").',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'audience_ask',description:'PROJECT TOOL: set what you want to learn from the audience via the scan-to-chat channel. Each person who scans gets a one-on-one text chat with an instance of you briefed on this ask; their answers stream back to you as [INCOMING REPLY] events. Call this FIRST, then show_chat_qr.',parameters:{type:'object',properties:{ask:{type:'string'}},required:['ask']}},
+    {type:'function',name:'show_chat_qr',description:'PROJECT TOOL: display the scan-to-chat QR overlay so the audience can join one-on-one chats with you ("put up the chat code"). Use after audience_ask. position: center (default), right, or left.',parameters:{type:'object',properties:{position:{type:'string',enum:['center','right','left']}}}},
+    {type:'function',name:'hide_chat_qr',description:'PROJECT TOOL: remove the chat QR overlay.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'call_person',description:'PROJECT TOOL: place a REAL two-way phone call. A phone instance of you converses with them toward your goal and reports back. Returns immediately ("dialing"); the outcome arrives later as a [CALL REPORT] event — do NOT wait idly, continue other work. goal = what the call should accomplish/ask.',parameters:{type:'object',properties:{to:{type:'string'},to_name:{type:'string'},goal:{type:'string'}},required:['to','goal']}},
+    {type:'function',name:'send_sms',description:'PROJECT TOOL: send a REAL text message to a REAL phone. Use cell numbers from the KNOWLEDGE BASE. Short, warm, signed "— Vessica (Matt\'s AI copilot)". to = E.164 number like +15551234567.',parameters:{type:'object',properties:{to:{type:'string'},to_name:{type:'string'},body:{type:'string'}},required:['to','body']}},
+    {type:'function',name:'send_email',description:'PROJECT TOOL: send a REAL email. Use addresses from the KNOWLEDGE BASE. Plain text body.',parameters:{type:'object',properties:{to:{type:'string'},to_name:{type:'string'},subject:{type:'string'},body:{type:'string'}},required:['to','subject','body']}},
+    {type:'function',name:'web_search',description:'PROJECT TOOL: search the live web. Returns a concise, cited answer.',parameters:{type:'object',properties:{query:{type:'string'}},required:['query']}},
+    {type:'function',name:'run_code',description:'PROJECT TOOL: hand a computation/data/chart task to a code-interpreter sandbox. Returns a summary plus artifact image URLs for any produced files — show images on the Live Display via display_render with an <img> tag.',parameters:{type:'object',properties:{task:{type:'string'}},required:['task']}},
+    {type:'function',name:'kb_read',description:'PROJECT TOOL: read one knowledge-base document in full (the digest in your instructions may be truncated).',parameters:{type:'object',properties:{name:{type:'string'}},required:['name']}},
+    {type:'function',name:'tasks_create',description:'PROJECT TOOL: start a DURABLE task list for a project you have been handed. The audience sees it tick off live. items = short imperative steps.',parameters:{type:'object',properties:{project:{type:'string'},items:{type:'array',items:{type:'string'}}},required:['project','items']}},
+    {type:'function',name:'tasks_add',description:'PROJECT TOOL: append steps to the current task list.',parameters:{type:'object',properties:{items:{type:'array',items:{type:'string'}}},required:['items']}},
+    {type:'function',name:'tasks_check',description:'PROJECT TOOL: mark a task done. item = a distinctive fragment of the task text; note = optional short outcome.',parameters:{type:'object',properties:{item:{type:'string'},note:{type:'string'}},required:['item']}},
+    {type:'function',name:'tasks_list',description:'PROJECT TOOL: read the current durable task list (survives reconnects — check it when you come back).',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'check_inbox',description:'PROJECT TOOL: read all SMS/email replies received so far (new replies are also pushed to you as [INCOMING REPLY] events).',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'display_render',description:'PROJECT TOOL: render HTML to the Live Display panel on the demo slide — the audience is watching it. Full HTML: inline styles, tables, inline SVG charts, <img> for run_code artifacts. Style for a dark slide: transparent background, text #E3FDDB, accents mint #20E3AC / lime #96F977, base font 18px+. REPLACES current content.',parameters:{type:'object',properties:{html:{type:'string'}},required:['html']}},
+    {type:'function',name:'display_append',description:'PROJECT TOOL: append HTML to the Live Display without replacing what is there.',parameters:{type:'object',properties:{html:{type:'string'}},required:['html']}},
+    {type:'function',name:'display_clear',description:'PROJECT TOOL: clear the Live Display.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'end_conversation',description:'Call when the speaker asks you to stop, be quiet, or says thanks — then return to silent operation.',parameters:{type:'object',properties:{}}}
   ];
 
+  function highlightables(){
+    const seen=new Set(),out=[];
+    P().slideEl().querySelectorAll('.bh,.s-title,.s-lead,li,.chev,.kpi,.headband,.card .tiny,b').forEach(el=>{
+      const t=(el.textContent||'').trim().replace(/\s+/g,' ').slice(0,80);
+      if(t.length>3&&!seen.has(t)){seen.add(t);out.push(t);}
+    });
+    return out.slice(0,24).map(t=>'"'+t+'"').join(' | ');
+  }
+  function deckMap(){
+    let n=0;
+    return [...document.querySelectorAll('#frame > .slide')].filter(el=>!el.hasAttribute('data-parked')).map(el=>{
+      n++;
+      const t=((el.querySelector('.s-title,.serif')||{}).textContent||el.dataset.menu||el.dataset.sec||'').trim().replace(/\s+/g,' ').slice(0,70);
+      return n+': '+t+(el.hasAttribute('data-hidden')?' (hidden — goto_slide will unhide it; next_slide skips it)':'');
+    }).join('\n');
+  }
   function baseInstructions(){
     const el=P().slideEl();
     const title=(el.querySelector('.s-title,.serif')||{}).textContent||'';
@@ -934,9 +1428,16 @@ RULES:
 - Use highlight(phrase) when the speaker dwells on a specific element visible on the slide; clear_highlight when they move on.
 - LIVE EDITING (only after the wake word, in conversation): the speaker may ask you to change the slide — "change X to Y" → edit_text; "retitle this…" → set_slide_title; "add a bullet…" → add_bullet; "remove …" → remove_element. Confirm briefly aloud. For big asks (redesign, new image, restructure) use note_edit_request and say it's queued for the redesign pass.
 - BLANK-SLIDE AUTHORING (in conversation): "give me a blank slide (titled X)" → new_blank_slide. Then the speaker talks the slide into existence: distill each distinct point with author_point, stream narration with author_talk, set the lead with author_lead. When they say they're done / back to the presentation, call done_authoring and fall silent again on end_conversation if asked.
+NAVIGATION: "go to slide 12" -> goto_slide(12). "go to the slide about X" -> find the best match in the DECK MAP below and goto_slide its number. Use next_slide ONLY for natural forward progression, never for jump requests.
+DECK MAP:
+${deckMap()}
+HIGHLIGHTABLE ELEMENTS ON THIS SLIDE (for highlight(phrase) — copy one VERBATIM): ${highlightables()}
 CURRENT SLIDE ${P().cur()+1}/${P().count}: "${title.trim()}"
 SPEAKER'S TALK TRACK FOR THIS SLIDE: ${notes.trim().slice(0,600)}
-NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
+NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}
+PROJECT MODE (in conversation): the speaker may hand you a real project ("get input from the audience", "make us a visualization"). Your PROJECT TOOLS act in the REAL world — send_sms and send_email reach the actual people in the KNOWLEDGE BASE below. When handed a project: state your plan aloud in one or two sentences, create it with tasks_create (the audience watches it on the demo slide), then execute step by step — checking off tasks with tasks_check as you complete them and keeping the Live Display current with display_render. Individual SMS replies and [CALL REPORT]s arrive as their own events; weave those in. Audience-chat input arrives BATCHED as [AUDIENCE PULSE] events (totals + recent messages) — treat pulses as a stream of aggregate data: keep a running synthesis on the Live Display (themes, counts, a chart when it stabilizes) and comment aloud only on the AGGREGATE picture, briefly, at natural pauses. Never read out or reply to individual chat messages one by one, and never interrupt the presenter mid-thought for a pulse. For BROAD audience input, prefer the scan-to-chat channel: audience_ask(what you want to learn) then show_chat_qr — each scanner gets a one-on-one chat with you and their answers stream back as [INCOMING REPLY] events (use this over SMS when texting is unavailable). Text individuals for quick pulses; use call_person when a real conversation would be richer (it dials, converses, and reports back as a [CALL REPORT] while you keep working); email those with only an email address. If a tool reports "not configured", say so plainly and continue with what works.
+KNOWLEDGE BASE (this presentation's company + audience notes, may include contact details — use kb_read for full documents):
+${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents uploaded for this deck)'}`;
   }
 
   function send(o){if(S.dc&&S.dc.readyState==='open')S.dc.send(JSON.stringify(o));}
@@ -951,13 +1452,18 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
 
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
+    if(!/delta|buffer|transcript|\.added|\.created|rate_limits/.test(m.type))console.log('vessica evt:',m.type,m.name||'',(m.response&&m.response.status)||'');
+    if(m.type==='response.done'&&m.response&&m.response.status==='failed')console.warn('vessica response FAILED:',JSON.stringify(m.response.status_details||m.response).slice(0,400));
+    if(m.type==='session.updated')console.log('vessica session updated ok — tools registered:',(m.session&&m.session.tools&&m.session.tools.length)||0);
+    if(m.type==='response.created')respActive=true;
+    if(m.type==='response.done')respDone();
     if(m.type==='response.function_call_arguments.done'){
       let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
       runTool(m.name,args,m.call_id);
     }
     if(m.type==='output_audio_buffer.started'&&S.talking)setState('speaking','Vessica speaking — say "that\'s all" to end');
     if(m.type==='output_audio_buffer.stopped'&&S.on&&S.talking)setState('listening','Vessica in conversation · listening');
-    if(m.type==='error')console.warn('vessica error event',m);
+    if(m.type==='error')console.warn('vessica ERROR:',JSON.stringify(m.error||m).slice(0,500));
   }
 
   // ---- presenter-mode editing helpers ----
@@ -1026,19 +1532,129 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
     try{
       const cur=await (await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id)).json();
       const m=(cur.companion||'').match(/## Edit requests\n([\s\S]*?)(?=\n## |$)/);
-      const body=((m&&m[1].trim())?m[1].trim()+'\n':'')+'- '+new Date().toISOString().slice(0,10)+' (spoken during presentation): '+instruction;
+      const prev=((m&&m[1])||'').split('\n').filter(l=>l.trim()&&!l.startsWith('(resolved')).join('\n');
+      const body=(prev?prev+'\n':'')+'- '+new Date().toISOString().slice(0,10)+' (spoken during presentation): '+instruction;
+      window.__selfSave=Date.now();
       await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/companion/'+encodeURIComponent('Edit requests'),{method:'PUT',body:body});
+      window.__selfSave=Date.now();
       P().toast('Queued for redesign pass');
       return 'noted for the agent redesign pass';
     }catch(e){return 'failed to note: '+e.message;}
   }
+  /* single-flight response scheduler: the realtime API rejects
+     response.create while another response is active — with async tools,
+     inbound pushes and VAD all racing, collisions wedge the session. Every
+     response request goes through here instead. */
+  let respActive=false,respWanted=false;
+  function requestResponse(){
+    if(respActive){respWanted=true;return;}
+    respActive=true;
+    send({type:'response.create'});
+  }
+  function respDone(){
+    respActive=false;
+    if(respWanted){respWanted=false;setTimeout(requestResponse,300);}
+  }
+    const VTOOLS={audience_ask:1,call_person:1,send_sms:1,send_email:1,web_search:1,run_code:1,kb_read:1,tasks_create:1,tasks_add:1,tasks_check:1,tasks_list:1,check_inbox:1,display_render:1,display_append:1,display_clear:1};
+  async function vesTool(name,args){
+    const base='/api/vessica/'+window.VSTD.deck;
+    const post=async(pth,body)=>{
+      const r=await fetch(base+pth,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+      return j;
+    };
+    const get=async(pth)=>{
+      const r=await fetch(base+pth);
+      const j=await r.json().catch(()=>({}));
+      if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+      return j;
+    };
+    switch(name){
+      case 'audience_ask':{const j=await post('/ask',{ask:args.ask});return (j.note||'ask set')+' — call show_chat_qr to put the code on screen';}
+      case 'call_person':{const j=await post('/call',{to:args.to,toName:args.to_name||'',goal:args.goal});P().toast('Calling '+(args.to_name||args.to)+'…');return 'dialing '+(args.to_name||args.to)+' — keep working; the outcome arrives as a [CALL REPORT] event';}
+      case 'send_sms':{const j=await post('/sms',{to:args.to,toName:args.to_name||'',body:args.body});P().toast('Text sent to '+(args.to_name||args.to));return 'sent to '+(args.to_name||j.to);}
+      case 'send_email':{const j=await post('/email',{to:args.to,toName:args.to_name||'',subject:args.subject,body:args.body});P().toast('Email sent to '+(args.to_name||args.to));return 'sent to '+(args.to_name||j.to);}
+      case 'web_search':return (await post('/search',{query:args.query})).result||'(no result)';
+      case 'run_code':{const j=await post('/code',{task:args.task});return (j.result||'(no output)')+((j.artifacts&&j.artifacts.length)?'\nARTIFACT URLS (use in <img src=...> on the display): '+j.artifacts.join(' '):'');}
+      case 'kb_read':return (await get('/kb/'+encodeURIComponent(args.name))).content||'(empty)';
+      case 'tasks_create':return 'task list created:\n'+JSON.stringify(await post('/tasks',{op:'create',project:args.project,items:args.items||[]}));
+      case 'tasks_add':return JSON.stringify(await post('/tasks',{op:'add',items:args.items||[]}));
+      case 'tasks_check':return JSON.stringify(await post('/tasks',{op:'check',item:args.item,note:args.note||''}));
+      case 'tasks_list':return JSON.stringify(await get('/tasks'));
+      case 'check_inbox':return JSON.stringify(await get('/inbox'));
+      case 'display_render':await post('/display',{op:'render',html:args.html});return 'rendered to the Live Display';
+      case 'display_append':await post('/display',{op:'append',html:args.html});return 'appended to the Live Display';
+      case 'display_clear':await post('/display',{op:'clear'});return 'display cleared';
+    }
+    throw new Error('unknown project tool');
+  }
   function runTool(name,args,callId){
     let out='ok';
-    if(name==='next_slide')P().show(P().cur()+1);
-    else if(name==='prev_slide')P().show(P().cur()-1);
-    else if(name==='goto_slide')P().show((args.number||1)-1);
+    if(VTOOLS[name]){
+      vesTool(name,args).then(o=>{
+        send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:String(o).slice(0,8000)}});
+        requestResponse();
+      }).catch(e=>{
+        send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:'FAILED: '+e.message}});
+        requestResponse();
+      });
+      return 'working';
+    }
+    // navigating away while authoring a draft = implicit done_authoring
+    if((name==='next_slide'||name==='prev_slide'||name==='goto_slide')&&window.__dictating){
+      if(window.__vdict)try{window.__vdict.flush();}catch(_){}
+      window.__dictating=false;
+      P().toast('Draft saved — left authoring mode');
+      if(name==='prev_slide'){P().show(P().cur());
+        send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:'draft saved; back on the slide before the draft'}});
+        requestResponse();
+        return 'ok';}
+    }
+    if(name==='next_slide')P().step(1);
+    else if(name==='prev_slide')P().step(-1);
+    else if(name==='goto_slide')P().gotoNum(args.number||1);
     else if(name==='highlight')out=doHighlight(args.phrase||'')?'highlighted':'no matching element';
     else if(name==='clear_highlight')clearGlow();
+    else if(name==='show_qr'){
+      let q=document.getElementById('vqr');
+      const pos=args.position==='right'?'flex-end':(args.position==='left'?'flex-start':'center');
+      if(q){q.style.justifyContent=pos;}
+      if(!q){q=document.createElement('div');q.id='vqr';
+        q.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:'+pos+';padding:0 70px;background:rgba(6,20,10,'+(args.position&&args.position!=='center'?'.25':'.55')+');z-index:60;cursor:pointer';
+        q.innerHTML='<div style="background:#FCFBFA;border-radius:24px;padding:36px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.4)">'+
+          '<img src="/api/deck/'+window.VSTD.deck+'/share-qr.png" style="width:380px;height:380px;display:block" alt="Scan to follow along">'+
+          '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:24px;color:#0C2B15;margin-top:14px"><b>Scan to follow along live</b></div></div>';
+        q.addEventListener('click',()=>q.remove());
+        document.body.appendChild(q);}
+      out='QR shown';}
+    else if(name==='hide_qr'){const q=document.getElementById('vqr');if(q)q.remove();out='QR hidden';}
+    else if(name==='show_chat_qr'){
+      let q=document.getElementById('vchatqr');
+      const pos=args.position==='right'?'flex-end':(args.position==='left'?'flex-start':'center');
+      if(q){q.style.justifyContent=pos;}
+      if(!q){q=document.createElement('div');q.id='vchatqr';
+        q.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:'+pos+';padding:0 70px;background:rgba(6,20,10,'+(args.position&&args.position!=='center'?'.25':'.55')+');z-index:60;cursor:pointer';
+        q.innerHTML='<div style="background:#FCFBFA;border-radius:24px;padding:36px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.4)">'+
+          '<img src="/api/deck/'+window.VSTD.deck+'/chat-qr.png" style="width:380px;height:380px;display:block" alt="Scan to chat with Vessica">'+
+          '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:24px;color:#0C2B15;margin-top:14px"><b>Scan to chat with Vessica</b></div>'+
+          '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:16px;color:#52514e;margin-top:4px">tell her what you want from this session</div>'+
+          (!window.__presenting?'<button id="vchatqrtest" style="margin-top:14px;padding:9px 16px;border:1px solid #21BF61;border-radius:10px;background:none;color:#0C2B15;font-family:\'Trebuchet MS\',sans-serif;font-size:14px;cursor:pointer">&#9889; Test: simulate 20 audience chatters</button>':'')+
+          '</div>';
+        q.addEventListener('click',()=>q.remove());
+        document.body.appendChild(q);
+        const tb=q.querySelector('#vchatqrtest');
+        if(tb)tb.addEventListener('click',ev=>{
+          ev.stopPropagation();
+          tb.disabled=true;tb.textContent='Simulating…';
+          fetch('/api/vessica/'+window.VSTD.deck+'/chat-swarm',{method:'POST'})
+            .then(r=>r.json()).then(j=>{
+              tb.textContent=j.error?('Test failed: '+j.error).slice(0,60):'Swarm running — watch the pulses';
+              P().toast(j.error||j.note||'swarm started');
+            }).catch(e=>{tb.textContent='Test failed';P().toast('swarm failed: '+e.message);});
+        });}
+      out='chat QR shown';}
+    else if(name==='hide_chat_qr'){const q=document.getElementById('vchatqr');if(q)q.remove();out='chat QR hidden';}
     else if(name==='begin_conversation'){S.talking=true;S.audio.muted=false;setState('speaking','Vessica speaking');}
     else if(name==='end_conversation'){S.talking=false;S.audio.muted=true;setState('listening','Vessica listening · say "Vessica" to talk');}
     else if(name==='edit_text')out=editText(args.find,args.replace);
@@ -1057,40 +1673,168 @@ NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}`;
     else if(name==='done_authoring'){
       if(window.__vdict)window.__vdict.flush();
       window.__dictating=false;
-      out='draft saved';P().toast('Draft saved — marked for the beautify pass');
+      out='draft saved and flagged for the design pass';P().toast('Draft saved — ask Claude to beautify it (it\'s flagged in the companion)');
     }
     else out='unknown tool';
     send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:out}});
-    send({type:'response.create'});
+    requestResponse();
     return out;
   }
 
   let glowEl=null;
   function clearGlow(){if(glowEl){glowEl.classList.remove('vglow');glowEl=null;}}
   window.__vstopVessica=()=>{if(S.on)stop();};
+  window.__vlive=()=>!!S.on;
   window.__vpres={run:(n,a)=>runTool(n,a||{},'test')};
+  window.__vreconf=()=>{if(S.on)configure();};
+  window.__vpush=(text)=>{
+    if(!(S.on&&S.dc&&S.dc.readyState==='open'))return false;
+    send({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text:text}]}});
+    requestResponse();
+    return true;
+  };
+  function normTxt(x){return (x||'').toLowerCase().replace(/[\u2018\u2019\u201c\u201d]/g,"'").replace(/[\u2014\u2013]/g,'-').replace(/[^a-z0-9' -]/g,' ').replace(/\s+/g,' ').trim();}
   function doHighlight(phrase){
     clearGlow();
     if(!phrase)return false;
-    const p=phrase.toLowerCase();
+    const p=normTxt(phrase);
     const cands=P().slideEl().querySelectorAll('.bh,.s-title,.s-lead,li,.chev,.kpi,.headband,.card,.pill,td,b');
     let best=null,bestLen=Infinity;
     cands.forEach(el=>{
-      const t=(el.textContent||'').toLowerCase();
+      const t=normTxt(el.textContent);
       if(t.includes(p)&&t.length<bestLen){best=el;bestLen=t.length;}
     });
-    if(!best){ // fuzzy: majority word overlap
-      const words=p.split(/\s+/).filter(w=>w.length>3);
+    if(!best){ // fuzzy: stem-prefix overlap so "delegation"/"delegations" etc. still match
+      const stems=p.split(' ').filter(w=>w.length>3).map(w=>w.slice(0,5));
       let bestScore=0;
       cands.forEach(el=>{
-        const t=(el.textContent||'').toLowerCase();
-        const score=words.filter(w=>t.includes(w)).length;
+        const tw=normTxt(el.textContent).split(' ').map(w=>w.slice(0,5));
+        const score=stems.filter(st=>tw.indexOf(st)>=0).length;
+        const t=normTxt(el.textContent);
         if(score>bestScore||(score===bestScore&&score>0&&t.length<bestLen)){best=el;bestScore=score;bestLen=t.length;}
       });
-      if(bestScore<Math.max(1,Math.ceil(words.length/2)))best=null;
+      if(bestScore<Math.max(1,Math.ceil(stems.length/2)))best=null;
     }
-    if(best){glowEl=best;best.classList.add('vglow');return true;}
+    if(best){
+      // climb from inline text to its containing box so the glow is a clean rectangle
+      let box=best;
+      while(box&&box.parentElement&&getComputedStyle(box).display==='inline')box=box.parentElement;
+      glowEl=box;box.classList.add('vglow');return true;
+    }
     return false;
+  }
+})();
+
+/* ============ Vessica demo tools client: Live Display + KB + inbound events ============ */
+(function(){
+  if(!(window.VSTD&&location.protocol.indexOf('http')===0))return;
+  const deck=window.VSTD.deck,base='/api/vessica/'+deck;
+  const st=document.createElement('style');
+  st.textContent='.vdidle{color:#8fa79a;font-size:20px;display:flex;align-items:center;justify-content:center;height:100%;text-align:center}'
+    +'[data-vstd-tasks] .vtproj{font-family:var(--sans,sans-serif);font-size:15px;letter-spacing:.08em;color:#20E3AC;margin-bottom:8px;text-transform:uppercase}'
+    +'[data-vstd-tasks] .vtitem{font-size:18px;color:#E3FDDB;padding:5px 0;border-bottom:1px solid rgba(44,74,53,.5)}'
+    +'[data-vstd-tasks] .vtitem.done{color:#8fa79a;text-decoration:line-through}'
+    +'[data-vstd-tasks] .vtnote{color:#20E3AC;text-decoration:none;font-size:15px}';
+  document.head.appendChild(st);
+  let digest='',docs=[];
+  function refreshKB(){
+    fetch(base+'/kb').then(r=>r.json()).then(j=>{
+      digest=j.digest||'';docs=j.docs||[];
+      if(window.__vreconf)window.__vreconf();
+    }).catch(()=>{});
+  }
+  window.__vtools={digest:()=>digest.slice(0,10000),docs:()=>docs,refreshKB:refreshKB};
+  refreshKB();
+  function esc(t){return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;');}
+  function fitPanel(el){
+    el.style.zoom='';
+    let z=1;
+    // iterative shrink: zoom affects layout, so re-measure each step
+    for(let i=0;i<10&&z>0.55;i++){
+      if(el.scrollHeight<=el.clientHeight+2&&el.scrollWidth<=el.clientWidth+2)return;
+      z-=0.05;
+      el.style.zoom=z;
+    }
+  }
+  function refreshDisplay(){
+    const els=document.querySelectorAll('[data-vstd-display]');
+    if(!els.length)return;
+    fetch(base+'/display').then(r=>r.text()).then(h=>{
+      els.forEach(el=>{el.innerHTML=h||el.getAttribute('data-idle')||'<div class="vdidle">Live Display — Vessica renders here when handed a project</div>';fitPanel(el);});
+    }).catch(()=>{});
+  }
+  function refreshTasks(){
+    const els=document.querySelectorAll('[data-vstd-tasks]');
+    if(!els.length)return;
+    fetch(base+'/tasks').then(r=>r.json()).then(j=>{
+      els.forEach(el=>{
+        if(!j.project&&!(j.items||[]).length){el.innerHTML='<div class="vdidle" style="font-size:15px">no active project</div>';return;}
+        el.innerHTML='<div class="vtproj">'+esc(j.project||'Project')+'</div>'
+          +(j.items||[]).map(t=>'<div class="vtitem'+(t.done?' done':'')+'">'+(t.done?'✓':'○')+' '+esc(t.text)
+            +(t.note?' <span class="vtnote">— '+esc(t.note)+'</span>':'')+'</div>').join('');
+        fitPanel(el);
+      });
+    }).catch(()=>{});
+  }
+  document.addEventListener('vstd:slide',()=>{refreshDisplay();refreshTasks();});
+  refreshDisplay();refreshTasks();
+  if(window.EventSource){try{
+    const es=new EventSource('/api/events');
+    es.addEventListener('vdisplay',e=>{if(e.data===deck)refreshDisplay();});
+    es.addEventListener('vtasks',e=>{if(e.data===deck)refreshTasks();});
+    es.addEventListener('vkb',e=>{if(e.data===deck)refreshKB();});
+    // audience pulse: engine-debounced aggregate — ONE calm update to the
+    // stage session no matter how many people are typing at once
+    let lastPulseTotal=0;
+    es.addEventListener('vpulse',e=>{
+      let j={};try{j=JSON.parse(e.data);}catch(_){return;}
+      if(j.deck!==deck)return;
+      refreshDisplay();refreshTasks();
+      fetch(base+'/pulse').then(r=>r.json()).then(pu=>{
+        const fresh=(pu.recent||[]).slice(-(pu.total-lastPulseTotal>0?Math.min(pu.total-lastPulseTotal,12):0));
+        if(pu.total<=lastPulseTotal)return;
+        lastPulseTotal=pu.total;
+        if(window.VSTDP)window.VSTDP.toast('💬 audience pulse: '+pu.total+' replies from '+(pu.participants||[]).length+' people');
+        if(window.__vpush)window.__vpush('[AUDIENCE PULSE] '+pu.total+' chat replies so far from '+(pu.participants||[]).length+' people ('+(pu.participants||[]).join(', ')+'). New since your last update:\n'+fresh.map(m=>'- '+m.with+': "'+m.text+'"').join('\n')+'\nAggregate, don\'t itemize: refresh the Live Display with the overall themes/counts, check off tasks if warranted, and if mid-conversation give the presenter ONE brief aggregate observation — never respond to individuals one by one.');
+      }).catch(()=>{});
+    });
+    es.addEventListener('vcall',e=>{
+      let j={};try{j=JSON.parse(e.data);}catch(_){return;}
+      if(j.deck!==deck)return;
+      if(window.VSTDP)window.VSTDP.toast('📞 Call with '+(j.from||j.number)+' ended');
+      refreshDisplay();refreshTasks();
+      if(window.__vpush)window.__vpush('[CALL REPORT] Your phone call with '+(j.from||j.number)+' ('+(j.number||'')+') ended. Summary: '+(j.summary||'(none)')+' — fold this into your project: update tasks and the Live Display; mention it aloud if mid-conversation.');
+    });
+    es.addEventListener('vinbox',e=>{
+      let j={};try{j=JSON.parse(e.data);}catch(_){return;}
+      if(j.deck!==deck)return;
+      if(window.VSTDP)window.VSTDP.toast('💬 '+(j.from||j.number)+': '+(j.text||'').slice(0,60));
+      refreshDisplay();refreshTasks();
+      const via=j.channel==='chat'?'said in their chat with you':'texted';
+      if(window.__vpush)window.__vpush('[INCOMING REPLY] '+(j.from||j.number||'someone')+(j.number?' ('+j.number+')':'')+' '+via+': "'+(j.text||'')+'". Weave this in: update your task list and Live Display; if mid-conversation, acknowledge it naturally.');
+    });
+  }catch(_){}}
+  // KB upload: hud button (markdown only, straight to the engine — never git)
+  const hud=document.getElementById('hud');
+  if(hud){
+    const btn=document.createElement('button');
+    btn.textContent='KB';btn.title='Upload knowledge-base markdown for Vessica (audience + company notes)';
+    btn.addEventListener('click',ev=>{
+      ev.stopPropagation();
+      const inp=document.createElement('input');inp.type='file';inp.accept='.md,.markdown,text/markdown,text/plain';
+      inp.addEventListener('change',()=>{
+        const f=inp.files[0];if(!f)return;
+        const name=/\.md$/i.test(f.name)?f.name:f.name.replace(/\.[^.]*$/,'')+'.md';
+        f.text().then(txt=>fetch(base+'/kb/'+encodeURIComponent(name),{method:'POST',body:txt}))
+          .then(r=>r.json()).then(j=>{
+            window.VSTDP.toast(j.error?('KB upload failed: '+j.error):('KB updated: '+name+' — Vessica now knows it'));
+            refreshKB();
+          }).catch(e=>window.VSTDP.toast('KB upload failed: '+e.message));
+      });
+      inp.click();
+    });
+    const anchor=document.getElementById('hudSticky');
+    hud.insertBefore(btn,anchor?anchor.nextSibling:null);
   }
 })();
 
@@ -1218,11 +1962,21 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   // ---- draft slide model + rendering + persistence ----
   function esc(t){return (t||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
   function nextID(title){
-    const ids=window.VSTD.slides||[];
-    let mx=0;
-    ids.forEach(id=>{const n=parseInt(id);if(n>mx)mx=n;});
-    D.seq++;
+    const ids=(window.VSTD.slides||[]).slice().sort();
     const slug=(title||'dictated').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').split('-').slice(0,4).join('-')||'dictated';
+    // insert after the slide that is active right now
+    const act=document.querySelector('#frame > .slide.active');
+    const curId=act&&act.dataset.vstd;
+    const i=curId?ids.indexOf(curId):-1;
+    if(i>=0&&i<ids.length-1){
+      const a=parseInt(ids[i]),b=parseInt(ids[i+1]);
+      const mid=Math.floor((a+b)/2);
+      if(mid>a&&mid<b)return String(mid).padStart(4,'0')+'-'+slug;
+      const ap=ids[i].split('-')[0];
+      if(ap.length<5)return ap+'5-'+slug; // lexicographic midpoint: "0125" < "01255-…" < "0126"
+    }
+    let mx=0;ids.forEach(id=>{const n=parseInt(id);if(n>mx)mx=n;});
+    D.seq++;
     return String(mx+10*D.seq).padStart(4,'0')+'-'+slug;
   }
   function renderFragment(d){
@@ -1265,16 +2019,23 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     const frag=renderFragment(d).replace(' data-vstd="'+d.id+'"','');
     try{
       await fetch('/api/deck/'+deck+'/slide/'+d.id+'/fragment',{method:'PUT',headers:{'Content-Type':'text/html'},body:frag});
-      const puts=[['Talk track',d.talk.join(' ')||'-'],['Intent',d.intent||d.title],['Key ideas',d.points.map(p=>'- '+p).join('\n')||'-'],['Evidence & sources',d.evidence.map(e=>'- '+e).join('\n')||'-']];
+      const puts=[['Talk track',d.talk.join(' ')||'-'],['Intent',d.intent||d.title],['Key ideas',d.points.map(p=>'- '+p).join('\n')||'-'],['Evidence & sources',d.evidence.map(e=>'- '+e).join('\n')||'-'],['Edit requests','- BEAUTIFY: dictated draft — needs the agent design pass (layout, visual, critic)']];
       for(const [sec,body] of puts)
         await fetch('/api/deck/'+deck+'/slide/'+d.id+'/companion/'+encodeURIComponent(sec),{method:'PUT',body:body});
     }catch(err){console.warn('dictation persist failed',err);}
   }
   async function createSlide(title){
-    await flush(true);
+    // reuse a still-empty draft rather than replacing it (double new_blank_slide / racing author tools)
+    if(D.draft&&D.draft.points.length===0&&D.draft.talk.length===0){
+      if(title&&title!==D.draft.title){D.draft.title=title;mountDraft(D.draft,false);schedule();}
+      return D.draft;
+    }
+    const prev=D.draft, prevDirty=D.dirty;
     const deck=window.VSTD.deck;
     const d={id:nextID(title),title:title||'Untitled',lead:'',points:[],talk:[],intent:'',evidence:[]};
-    D.draft=d;
+    D.draft=d; // registered BEFORE any await — author tools can never race into a second draft
+    if(prev&&prevDirty){D.draft=prev;D.dirty=true;await flush(true);D.draft=d;}
+    D.dirty=false;
     try{
       await fetch('/api/deck/'+deck+'/slides',{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({id:d.id,title:d.title})});
@@ -1292,7 +2053,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   function runTool(name,args){
     const d=D.draft;
     if(name==='new_slide'){createSlide(args.title);act('new slide'+(args.title?': '+args.title:''));return {status:'created'};}
-    if(name==='goto_slide'){P().show((args.number||1)-1);return {status:'ok'};}
+    if(name==='goto_slide'){P().gotoNum(args.number||1);return {status:'ok'};}
     if(name==='finish_dictation'){act('finishing…');setTimeout(()=>end(),400);return {status:'ending'};}
     if(!d){createSlide(args.text&&name==='set_title'?args.text:'Untitled');return Object.assign({note:'auto-created draft'},state());}
     if(name==='set_title'){d.title=args.text;act('title: '+args.text);}
@@ -1333,12 +2094,12 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     '.vtap span{width:84px;height:84px;border-radius:50%;background:rgba(12,32,19,.85);border:2px solid #21BF61;'+
       'display:flex;align-items:center;justify-content:center;color:#E3FDDB;font-size:34px;padding-left:6px}'+
     '.vunmute{position:absolute;right:28px;bottom:56px;z-index:41;background:rgba(12,32,19,.92);color:#dff0e2;'+
-      'border:1px solid #21BF61;border-radius:999px;padding:8px 18px;font-size:14px;font-family:var(--sans);cursor:pointer}'+
+      'border:1px solid #21BF61;border-radius:999px;padding:8px 18px;font-size:14px;font-family:var(--vstd-sans);cursor:pointer}'+
     'body.editmode.vdrop #frame{outline:3px solid #20E3AC;outline-offset:6px}'+
     '#vinspect{position:fixed;bottom:64px;left:50%;transform:translateX(-50%);z-index:96;display:none;gap:6px;'+
-      'background:rgba(12,20,15,.94);border:1px solid #2c4a35;border-radius:999px;padding:7px 12px;font-family:var(--sans)}'+
+      'background:rgba(12,20,15,.94);border:1px solid #2c4a35;border-radius:999px;padding:7px 12px;font-family:var(--vstd-sans)}'+
     '#vinspect button{background:none;border:1px solid #2c4a35;color:#cfe6d4;border-radius:999px;padding:4px 13px;'+
-      'font-size:13px;cursor:pointer;font-family:var(--sans);white-space:nowrap}'+
+      'font-size:13px;cursor:pointer;font-family:var(--vstd-sans);white-space:nowrap}'+
     '#vinspect button.on{background:#21BF61;color:#0C2B15;border-color:#21BF61}'+
     '#vinspect button.danger{color:#FE7C2B;border-color:#5a3a2a}';
   document.head.appendChild(css);
@@ -1602,6 +2363,28 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   document.addEventListener('vstd:slide',hideInspector);
 
   activate(); // initial slide is already active by the time this layer loads
+})();
+
+/* ============ mobile-friendly HUD ============ */
+(function(){
+  const coarse=matchMedia('(pointer:coarse)').matches;
+  const small=Math.min(innerWidth,innerHeight)<820&&innerWidth<900;
+  if(!(coarse&&small))return; // desktops and large tablets keep the full bar
+  document.body.classList.add('mobilehud');
+  const hud=document.getElementById('hud'),more=document.getElementById('hudmore');
+  if(!hud||!more)return;
+  document.getElementById('hudMore').style.display='';
+  // primary bar keeps: Prev · count · Next · Vessica · ⋯ — everything else
+  // moves into the ⋯ popover (same delegated handlers keep working because
+  // the popover lives inside #hud)
+  const keep=new Set(['prev','next','vessica','more']);
+  [...hud.querySelectorAll(':scope > button')].forEach(b=>{
+    if(!keep.has(b.dataset.act||''))more.appendChild(b);
+  });
+  // dismiss the popover on any outside tap
+  addEventListener('pointerdown',e=>{
+    if(!e.target.closest('#hud'))more.classList.remove('open');
+  },true);
 })();
 </script>
 </body>
