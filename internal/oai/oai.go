@@ -20,6 +20,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/vessica-labs/vessica-studio/internal/library"
 )
 
 type Client struct {
@@ -89,73 +91,14 @@ func (c *Client) post(path string, payload any) ([]byte, int, error) {
 	return body, res.StatusCode, nil
 }
 
-// ---- image generation + library ----
-
-type Manifest struct {
-	Version       int                    `json:"version"`
-	StyleFamilies map[string]StyleFamily `json:"styleFamilies"`
-	Assets        []Asset                `json:"assets"`
-	Videos        []VideoAsset           `json:"videos,omitempty"`
-}
-
-// VideoAsset is a library video: bytes live at video/<hash>.mp4 (gitignored,
-// synced to S3-compatible storage for hosted serving), the poster frame at
-// video-posters/<id>.jpg (small, committed). Slides reference the ID only;
-// the engine resolves /assets/video/<id> per serving mode.
-type VideoAsset struct {
-	ID       string   `json:"id"`
-	File     string   `json:"file"`             // video/<sha256>.<ext>
-	Poster   string   `json:"poster,omitempty"` // video-posters/<id>.jpg
-	Hash     string   `json:"hash"`             // full sha256 of the bytes (bucket object key)
-	Bytes    int64    `json:"bytes"`
-	Duration float64  `json:"duration,omitempty"` // seconds
-	Width    int      `json:"width,omitempty"`
-	Height   int      `json:"height,omitempty"`
-	Source   string   `json:"source,omitempty"` // original filename
-	Tags     []string `json:"tags,omitempty"`
-	Created  string   `json:"created"`
-	Usage    []string `json:"usage,omitempty"`
-}
-
-type StyleFamily struct {
-	PromptPrefix string `json:"promptPrefix"`
-}
-
-type Asset struct {
-	ID      string   `json:"id"`
-	File    string   `json:"file"`
-	Prompt  string   `json:"prompt"`
-	Family  string   `json:"family,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
-	Model   string   `json:"model"`
-	Size    string   `json:"size"`
-	Created string   `json:"created"`
-	Hash    string   `json:"hash"`
-	Usage   []string `json:"usage,omitempty"`
-}
-
-func LoadManifest(libDir string) (*Manifest, error) {
-	m := &Manifest{Version: 1, StyleFamilies: map[string]StyleFamily{}}
-	b, err := os.ReadFile(filepath.Join(libDir, "manifest.json"))
-	if err == nil {
-		if err := json.Unmarshal(b, m); err != nil {
-			return nil, fmt.Errorf("library manifest: %w", err)
-		}
-	}
-	return m, nil
-}
-
-func (m *Manifest) Save(libDir string) error {
-	b, _ := json.MarshalIndent(m, "", "  ")
-	return os.WriteFile(filepath.Join(libDir, "manifest.json"), b, 0o644)
-}
+// ---- image generation ----
 
 var slugRe = regexp.MustCompile(`[^a-z0-9]+`)
 
 // GenerateAsset calls the images API and stores the result in the library,
 // applying the style family's prompt prefix for cross-asset consistency.
-func (c *Client) GenerateAsset(libDir, model, prompt, family, size, slug string, tags []string, dryRun bool) (*Asset, error) {
-	man, err := LoadManifest(libDir)
+func (c *Client) GenerateAsset(libDir, model, prompt, family, size, slug string, tags []string, dryRun bool) (*library.Asset, error) {
+	man, err := library.Load(libDir)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +116,7 @@ func (c *Client) GenerateAsset(libDir, model, prompt, family, size, slug string,
 	}
 	id := fmt.Sprintf("%s-%s", slug, time.Now().Format("0102-1504"))
 	if dryRun {
-		return &Asset{ID: id, Prompt: full, Family: family, Tags: tags, Model: model, Size: size}, nil
+		return &library.Asset{ID: id, Prompt: full, Family: family, Tags: tags, Model: model, Size: size}, nil
 	}
 	if !c.HasKey() {
 		return nil, fmt.Errorf("no OpenAI key: set OPENAI_API_KEY")
@@ -224,7 +167,7 @@ func (c *Client) GenerateAsset(libDir, model, prompt, family, size, slug string,
 		return nil, err
 	}
 	h := sha256.Sum256(img)
-	asset := &Asset{ID: id, File: file, Prompt: full, Family: family, Tags: tags,
+	asset := &library.Asset{ID: id, File: file, Prompt: full, Family: family, Tags: tags,
 		Model: model, Size: size, Created: time.Now().Format(time.RFC3339),
 		Hash: hex.EncodeToString(h[:8])}
 	man.Assets = append(man.Assets, *asset)

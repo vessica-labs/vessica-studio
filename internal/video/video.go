@@ -6,7 +6,7 @@
 //
 //	video/<sha256>.mp4          the bytes — gitignored, synced to the bucket
 //	video-posters/<id>.jpg      small poster frames — committed to git
-//	manifest.json               gains a "videos" array (see oai.Manifest)
+//	manifest.json               gains a "videos" array (see library.Manifest)
 //
 // Slides reference videos by asset id only (data-vstd-video="<id>"); the
 // engine resolves /assets/video/<id> per serving mode. Bytes never enter git
@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vessica-labs/vessica-studio/internal/oai"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 )
 
 // Dir names under the library root.
@@ -102,7 +102,7 @@ func probe(path string) (*Probe, error) {
 
 // Options for Ingest.
 type Options struct {
-	Slug        string   // asset id; derived from the filename when empty
+	Slug        string // asset id; derived from the filename when empty
 	Tags        []string
 	Source      string // original filename, recorded in the manifest
 	NoTranscode bool   // store bytes as-is even when ffmpeg is present
@@ -110,7 +110,7 @@ type Options struct {
 
 // Result of an ingest.
 type Result struct {
-	Asset      *oai.VideoAsset
+	Asset      *library.VideoAsset
 	Transcoded bool     // true when ffmpeg re-encoded (vs remux/copy)
 	Warnings   []string // e.g. "ffmpeg not found — stored as-is, no poster"
 }
@@ -205,7 +205,7 @@ func Ingest(libDir, srcPath string, opts Options) (*Result, error) {
 		}
 	}
 
-	asset := &oai.VideoAsset{
+	asset := &library.VideoAsset{
 		ID: id, File: file, Poster: posterRel, Hash: hash, Bytes: size,
 		Source: source, Tags: opts.Tags, Created: time.Now().Format(time.RFC3339),
 	}
@@ -214,7 +214,7 @@ func Ingest(libDir, srcPath string, opts Options) (*Result, error) {
 		asset.Width, asset.Height = pr.Width, pr.Height
 	}
 
-	man, err := oai.LoadManifest(libDir)
+	man, err := library.Load(libDir)
 	if err != nil {
 		return nil, err
 	}
@@ -274,8 +274,8 @@ func normalize(src string, pr *Probe) (string, bool, error) {
 }
 
 // Find returns the manifest entry for a video id, or nil.
-func Find(libDir, id string) (*oai.VideoAsset, error) {
-	man, err := oai.LoadManifest(libDir)
+func Find(libDir, id string) (*library.VideoAsset, error) {
+	man, err := library.Load(libDir)
 	if err != nil {
 		return nil, err
 	}

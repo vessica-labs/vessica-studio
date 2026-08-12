@@ -27,7 +27,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vessica-labs/vessica-studio/internal/oai"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 )
 
 var imgSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -52,7 +52,7 @@ func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 	hash := hex.EncodeToString(sum[:8])
 
 	libDir := s.libDir()
-	man, err := oai.LoadManifest(libDir)
+	man, err := library.Load(libDir)
 	if err != nil {
 		jsonErr(w, err, 500)
 		return
@@ -99,7 +99,7 @@ func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, err, 500)
 		return
 	}
-	asset := oai.Asset{
+	asset := library.Asset{
 		ID: id, File: file, Prompt: "(uploaded: " + filepath.Base(filename) + ")",
 		Tags: tags, Model: "upload", Size: size,
 		Created: time.Now().Format(time.RFC3339), Hash: hash,

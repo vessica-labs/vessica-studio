@@ -1,0 +1,102 @@
+# Vessica Studio contributor guide
+
+This repository contains the `vstd` engine. It is not a deck-content
+repository. If you are authoring slides in a studio created by `vstd init`, use
+the downstream guide at `codex/AGENTS.md` and load the canonical workflow with
+`vstd skill <name>`.
+
+## Architecture
+
+Vessica Studio is local-first: a deck is a directory of HTML slide fragments
+paired with Markdown companions. The engine reads and writes that file contract;
+the browser is a view and structured editing surface over it.
+
+- `cmd/vstd`: CLI parsing and orchestration. Keep business rules in internal
+  packages when they can be expressed independently of flags and terminal I/O.
+- `internal/studio`: studio configuration, decks, slides, builds, forks, and
+  static export. This package owns the on-disk content model.
+- `internal/library`: shared image/video manifest types and persistence.
+- `internal/oai`: OpenAI HTTP calls and key resolution. It may depend on the
+  library domain, but the library and video packages must not depend on OpenAI.
+- `internal/video`: local video inspection, normalization, poster extraction,
+  and catalog registration.
+- `internal/s3`: S3-compatible media storage and request signing.
+- `internal/server`: HTTP routes, serving modes, auth, editing, audience
+  interaction, external actions, exports, and background workers.
+- `plugin`: the canonical embedded deck-authoring skills and conventions.
+- `codex`: thin prompt launchers plus the agent guide installed into downstream
+  content repositories.
+
+Dependency direction should run from the CLI/server adapters toward these
+domain packages. Do not move shared domain types into an external-service
+adapter for convenience.
+
+## Invariants
+
+- Preserve the file contract: `studio.yaml`, `deck.yaml`, and paired
+  `decks/<deck>/slides/<id>.html` plus `<id>.md` files.
+- A slide fragment contains one root `<section class="slide">`. Companion
+  Markdown remains the evidence, intent, talk-track, and edit-log record.
+- The player/HUD is engine-owned at `internal/studio/templates/player.html`.
+  Themes contribute presentation styling, not alternate player implementations.
+- `studio` mode may edit content. `present` and `public` are read-only content
+  modes. Treat any change to authorization or route exposure as security work.
+- Never put credentials in built decks, manifests, logs, fixtures, or commits.
+  Preserve environment-first secret resolution and redact values in diagnostics.
+- `decks/*/build/`, `dist/`, local video bytes, request archives, and local
+  Vessica/audience state are generated or runtime data. Do not hand-edit or
+  commit generated output unless a fixture explicitly requires it.
+- Public CLI commands, HTTP routes, YAML/JSON fields, and the deck format are
+  compatibility surfaces. Add tests and documentation for intentional changes.
+
+## Agent workflows
+
+`plugin/skills/*/SKILL.md` and `plugin/docs/conventions.md` are the single source
+of truth for deck-authoring workflows. Claude reads them through the plugin;
+Codex launchers in `codex/prompts/` call `vstd skill` to read the same embedded
+content. Change the canonical files first and keep the packaging parity test
+green. Do not duplicate full workflow instructions in launchers or README files.
+
+The root `AGENTS.md` governs engine contributions. `codex/AGENTS.md` is a
+distribution artifact for content repositories; do not expand it into an engine
+architecture guide.
+
+## Development workflow
+
+Prefer focused tests while iterating:
+
+```sh
+go test ./internal/studio
+go test ./internal/server
+go test ./internal/library
+go test ./plugin
+```
+
+Use test-driven development for behavior changes and regressions. Tests should
+exercise observable behavior with real files and handlers where practical.
+Avoid source-text assertions unless the text itself is the public artifact.
+
+Before reporting completion, run the full gate from the repository root:
+
+```sh
+test -z "$(gofmt -l $(find cmd internal plugin -name '*.go' -type f))"
+go test ./...
+go test -race ./...
+go vet ./...
+go build ./cmd/vstd
+git diff --check
+```
+
+Optional tools are feature-specific: Chrome/Chromium powers PDF export, FFmpeg
+and FFprobe power the full video pipeline, and the Railway CLI powers hosted
+deployment. Core builds and unit tests must not require their network services.
+
+## Change discipline
+
+- Keep edits scoped; the larger CLI and server files are not permission for an
+  unrelated rewrite.
+- Preserve user changes in a dirty worktree and avoid destructive Git commands.
+- Update `README.md` when user-facing setup, commands, dependencies, or behavior
+  changes.
+- Security reviews may identify changes without authorizing them. Do not turn a
+  report-only recommendation into code or deployment configuration.

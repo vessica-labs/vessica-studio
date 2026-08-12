@@ -18,6 +18,7 @@ import (
 	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 	"github.com/vessica-labs/vessica-studio/internal/oai"
 	"github.com/vessica-labs/vessica-studio/internal/s3"
 	"github.com/vessica-labs/vessica-studio/internal/server"
@@ -89,6 +90,7 @@ Usage:
   vstd fork <deck> <client>           fork a deck for a client (deck--client)
   vstd diff-upstream <fork>           slides changed upstream since fork
   vstd build <deck>|--all             assemble build/index.html
+  vstd agent                          run one headless redesign-queue sweep
   vstd serve [deck] [flags]           serve studio (watch, live reload, edit API)
   vstd asset gen --prompt P [flags]   generate a library image (gpt-image-2)
   vstd asset list|find [--tags a,b --family F]   browse/reuse the library
@@ -109,13 +111,17 @@ Serve flags:
   --root DIR      studio root (default ".")
   --port N        (default from studio.yaml / PORT env, 4400)
   --mode M        studio | present | public   (default studio)
+  --agent         run the optional redesign worker alongside the server
 
 Asset gen flags:
   --root DIR  --prompt P  --family F  --tags a,b  --size 1024x1024  --slug S  --dry-run
 
 Environment:
   OPENAI_API_KEY        image generation + realtime token minting
-  VSTD_PRESENTER_KEY    interim presenter auth for --mode public
+  VSTD_SECRET           session + share-link signing in public mode
+  VSTD_GITHUB_CLIENT_ID / VSTD_ALLOWED_GITHUB
+                        GitHub Device Flow presenter authentication
+  VSTD_AGENT=1          enable the optional headless redesign worker
   PORT                  overrides port (Railway sets this)
   VSTD_S3_ENDPOINT / _BUCKET / _ACCESS_KEY / _SECRET_KEY / _REGION
                         S3-compatible bucket for video assets (Railway
@@ -397,7 +403,7 @@ func cmdAssetList(args []string, find bool) error {
 	if err != nil {
 		return err
 	}
-	man, err := oai.LoadManifest(st.Root + "/library")
+	man, err := library.Load(st.Root + "/library")
 	if err != nil {
 		return err
 	}
@@ -588,7 +594,7 @@ func cmdAssetSync(dir string, args []string) error {
 	if c == nil {
 		return fmt.Errorf("no bucket configured: set VSTD_S3_ENDPOINT/_BUCKET/_ACCESS_KEY/_SECRET_KEY (or studio.yaml storage:)")
 	}
-	man, err := oai.LoadManifest(st.Root + "/library")
+	man, err := library.Load(st.Root + "/library")
 	if err != nil {
 		return err
 	}
@@ -665,7 +671,7 @@ func cmdBundle(args []string) error {
 	if err := os.WriteFile(dir+"/index.html", html, 0o644); err != nil {
 		return err
 	}
-	man, err := oai.LoadManifest(st.Root + "/library")
+	man, err := library.Load(st.Root + "/library")
 	if err != nil {
 		return err
 	}
