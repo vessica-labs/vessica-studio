@@ -261,7 +261,8 @@ body.editmode .slide.active{cursor:default}
   }
   addEventListener('resize',fit);fit();
 
-  function canEditDeck(){return !window.__vme||window.__vme.mode==='studio';}
+  function canEditDeck(){return !window.__vme||window.__vme.editable===true;}
+  window.__vcanEdit=canEditDeck;
   function persistSlide(sec){
     if(!canEditDeck())return;
     if(!sec.dataset.vstd||!window.VSTD)return;
@@ -531,7 +532,7 @@ body.editmode .slide.active{cursor:default}
     document.getElementById('editbtn').style.color=editMode?'#20E3AC':'';
     if(!editMode){stopTextEdit();clearSel();}
     // exiting edit mode auto-saves changed slides (engine present + editable)
-    if(!editMode&&window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0&&(!window.__vme||window.__vme.mode==='studio')){
+    if(!editMode&&window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0&&canEditDeck()){
       saveDirty().then(out=>{if(out.saved||out.conflicts.length||out.errors.length)reportSave(out);}).catch(()=>{});
     }
   }
@@ -881,13 +882,27 @@ body.editmode .slide.active{cursor:default}
     if(out.conflicts.length)
       toast('⚠ Not saved: slide(s) '+out.conflicts.join(', ')+' changed on disk (redesign pass or another tab) after this page loaded. Reload to see the newer version, then re-apply your edit.',9500);
     else if(out.errors.length)toast('Save failed for '+out.errors.join(', '));
-    else if(out.saved)toast('Saved '+out.saved+' changed slide(s)'+(ctx||''));
+    else if(out.saved){toast('Saved '+out.saved+' changed slide(s)'+(ctx||''));reportHostedSync();}
     return out;
   }
+  async function reportHostedSync(){
+    if(!(window.__vme&&window.__vme.mode==='public'&&window.__vme.editable))return;
+    toast('Saved live · syncing to GitHub');
+    for(let i=0;i<25;i++){
+      await new Promise(r=>setTimeout(r,800));
+      try{
+        const st=await (await fetch('/api/content-sync/status')).json();
+        if(st.state==='synced'){toast('Saved live · synced to GitHub');return;}
+        if(st.state==='error'){toast('Saved live · GitHub sync will retry: '+(st.error||'sync error'),8500);return;}
+      }catch(_){/* the live save is already complete; status is best effort */}
+    }
+    toast('Saved live · GitHub sync still pending');
+  }
+  window.__vreportHostedSync=reportHostedSync;
   // ---- "+ Slide": blank slide inserted right after the current one ----
   async function newSlide(){
     if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast('New slide needs the engine (vstd serve)');return;}
-    if(window.__vme&&window.__vme.mode&&window.__vme.mode!=='studio'){toast('Read-only mode — new slides need local studio serving');return;}
+    if(!canEditDeck()){toast('Read-only mode — new slides require presenter editing access');return;}
     try{await saveDirty();}catch(_){} // a reload follows; don't lose open edits
     const ids=window.VSTD.slides||[];
     let mx=0;ids.forEach(id=>{const n=parseInt(id);if(n>mx)mx=n;});
@@ -986,7 +1001,7 @@ body.editmode .slide.active{cursor:default}
       });
       fetch('/api/me').then(r=>r.json()).then(me=>{
         window.__vme=me;
-        if(me.mode==='studio'){const b=document.getElementById('newslidebtn');if(b)b.style.display='';}
+        if(me.editable){const b=document.getElementById('newslidebtn');if(b)b.style.display='';}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
         // presenter-only: starts hidden so an audience tab never flashes it
         if(!audience){const b=document.getElementById('pdfbtn');if(b)b.style.display='';}
@@ -1076,7 +1091,7 @@ body.editmode .slide.active{cursor:default}
   function applyCap(){
     if(!capbar)return;
     const a=st.agent;
-    const canEdit=!window.__vme||window.__vme.mode==='studio';
+    const canEdit=!window.__vme||window.__vme.editable===true;
     if(a&&a.capped&&a.queued>0&&canEdit&&!window.__presenting){
       capbar.querySelector('span').textContent='Agent rate cap reached ('+a.used+'/'+a.maxPerHour+' per hr) — '+a.queued+' slide'+(a.queued>1?'s':'')+' waiting';
       capbar.querySelector('button').textContent='Raise to '+Math.min(100,a.maxPerHour*2)+'/hr';
@@ -1123,7 +1138,7 @@ body.editmode .slide.active{cursor:default}
 /* ============ sticky notes — PL-style slide instructions ============ */
 (function(){
   if(!(window.VSTD&&location.protocol.indexOf('http')===0))return;
-  if(window.__vme&&window.__vme.mode&&window.__vme.mode!=='studio')return;
+  if(window.__vme&&window.__vme.editable!==true)return;
   const P=()=>window.VSTDP;
   let pad,ta,list,refEl=null,refDesc='';
   const PICK='.s-title,.s-lead,.src,.card,.colcard,.chev,.demoslot,.icontile,.pill,.todo,.kpi,.statxl,.headband,.bh,li,ul,table,svg,img,.term,.phone,[data-edit]';
@@ -1227,6 +1242,7 @@ body.editmode .slide.active{cursor:default}
       if(!pr.ok)throw new Error('save '+pr.status);
       ta.value='';clearRef();
       P().toast('Note queued — agent will pick it up');
+      if(window.__vreportHostedSync)window.__vreportHostedSync();
       loadOpen();refreshBadge();
       if(window.__vprogApply)setTimeout(window.__vprogApply,300);
       close();
@@ -1467,7 +1483,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   }
 
   // ---- presenter-mode editing helpers ----
-  function editable(){return !window.__vme||window.__vme.mode==='studio';}
+  function editable(){return !window.__vme||window.__vme.editable===true;}
   function activeSec(){return document.querySelector('#frame > .slide.active');}
   async function persistActive(){
     const sec=activeSec();if(!sec)return 'no active slide';
@@ -1869,7 +1885,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     if(D.on)return;
     if(!(window.VSTD&&location.protocol.indexOf('http')===0)){P().toast('Dictation needs the engine (vstd serve, studio mode)');return;}
     const me=window.__vme;
-    if(me&&me.mode&&me.mode!=='studio'){P().toast('Dictation is a studio-mode feature');return;}
+    if(me&&me.editable!==true){P().toast('Dictation requires presenter editing access');return;}
     if(window.__vstopVessica)window.__vstopVessica();
     ui();
     bar.style.display='flex';
@@ -2242,7 +2258,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   }
 
   // ---- edit mode: drag-drop upload ----
-  function canUpload(){return document.body.classList.contains('editmode')&&httpMode&&window.VSTD&&window.VSTD.deck&&(!window.__vme||window.__vme.mode==='studio');}
+  function canUpload(){return document.body.classList.contains('editmode')&&httpMode&&window.VSTD&&window.VSTD.deck&&(!window.__vme||window.__vme.editable===true);}
   addEventListener('dragover',e=>{
     if(!canUpload())return;
     if([...(e.dataTransfer.items||[])].some(i=>i.kind==='file')){e.preventDefault();document.body.classList.add('vdrop');}

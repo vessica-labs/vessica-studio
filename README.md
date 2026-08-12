@@ -27,8 +27,9 @@ Part of [Vessica Labs](https://github.com/vessica-labs). Licensed under MIT.
   live audience pulse, and optional Telnyx/Resend actions.
 - **Portable output:** build static deck HTML, export PDF through headless
   Chrome, or create a self-contained folder bundle with referenced media.
-- **Hosted presentation mode:** deploy a read-only presenter/audience surface to
-  Railway with GitHub presenter sign-in and expiring deck-scoped share links.
+- **Hosted presentation mode:** deploy a presenter/audience surface to Railway
+  with GitHub sign-in, presenter-only Git-backed editing, and expiring
+  deck-scoped share links.
 
 ## Requirements
 
@@ -236,6 +237,9 @@ Important hosted settings include:
 | `VSTD_SECRET` | HMAC secret for presenter sessions and audience share links |
 | `VSTD_GITHUB_CLIENT_ID` | GitHub OAuth application with Device Flow enabled |
 | `VSTD_ALLOWED_GITHUB` | Comma-separated presenter login allowlist |
+| `VSTD_CONTENT_SYNC` | Set to `1` to allow authenticated presenters to edit hosted content |
+| `VSTD_GIT_REPO`, `VSTD_GIT_BRANCH`, `VSTD_GIT_TOKEN` | Content repository, branch, and repository-scoped write token for hosted sync |
+| `VSTD_GIT_DEBOUNCE_SECONDS`, `VSTD_GIT_POLL_SECONDS` | Optional hosted push batching and remote polling intervals |
 | `VSTD_AGENT`, `VSTD_AGENT_CMD` | Enable and select the optional headless redesign worker |
 | `VSTD_S3_ENDPOINT`, `VSTD_S3_BUCKET`, `VSTD_S3_ACCESS_KEY`, `VSTD_S3_SECRET_KEY`, `VSTD_S3_REGION` | S3-compatible video storage |
 | `PUBLIC_URL` | Public base URL used by audience and call links |
@@ -248,8 +252,20 @@ precedence.
 
 ## Public hosting
 
-`public` mode serves deck content read-only. Presenters authenticate through
-GitHub Device Flow and must appear in `VSTD_ALLOWED_GITHUB`; audiences enter
+`public` mode keeps audiences read-only. Presenters authenticate through GitHub
+Device Flow and must appear in `VSTD_ALLOWED_GITHUB`. When
+`VSTD_CONTENT_SYNC=1`, an authenticated presenter can use the same sticky-note
+and direct-edit controls as a local studio: saves update the running instance
+immediately, then a background worker batches and pushes content-only commits
+to `VSTD_GIT_REPO`. It also polls the configured branch for remote changes.
+
+The Git token is supplied to Git through an ephemeral authorization header; it
+is not written into the remote URL, command arguments, or `.git/config`. Scope
+it to Contents read/write on the content repository only. Configure Railway
+watch paths so content commits do not rebuild the service; keep deployment
+files such as `Dockerfile` and `railway.json` as the rebuild triggers.
+
+Without content sync, `public` mode remains read-only. Audiences always enter
 through expiring, deck-scoped signed links. `vstd railway up` assists a content
 repository that already contains its deployment files, sets the core Railway
 variables, deploys it, and records the assigned public host.

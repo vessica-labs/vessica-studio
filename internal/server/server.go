@@ -6,8 +6,8 @@
 //
 //	studio  — localhost authoring: everything enabled (default)
 //	present — localhost presenting: read-only content + realtime tokens
-//	public  — hosted (Railway): read-only; realtime tokens require the
-//	          presenter key until GitHub OAuth lands (Phase 4)
+//	public  — hosted (Railway): audiences are read-only; authenticated
+//	          presenters may edit when Git-backed content sync is enabled
 package server
 
 import (
@@ -51,9 +51,10 @@ type Server struct {
 	allowed    map[string]bool
 	flows      map[string]githubFlow
 
-	tokenMints []time.Time         // realtime-token rate limiting
-	printJobs  map[string]printJob // one-time keys for in-flight PDF exports (export.go)
-	Agent      *agentWorker
+	tokenMints  []time.Time         // realtime-token rate limiting
+	printJobs   map[string]printJob // one-time keys for in-flight PDF exports (export.go)
+	Agent       *agentWorker
+	ContentSync *ContentSync
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
@@ -63,7 +64,12 @@ func New(st *studio.Studio, mode Mode) *Server {
 	return s
 }
 
-func (s *Server) canEdit() bool { return s.Mode == ModeStudio }
+func (s *Server) canEdit(r *http.Request) bool {
+	if s.Mode == ModeStudio {
+		return true
+	}
+	return s.Mode == ModePublic && s.ContentSync.Editable() && s.isPresenter(r)
+}
 
 // ---- SSE hub ----
 
@@ -163,6 +169,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/deck/{deck}/share", s.handleMintShare)
 	mux.HandleFunc("GET /api/deck/{deck}/share-qr.png", s.handleShareQR)
 	mux.HandleFunc("POST /api/deck/{deck}/presenting", s.handlePresenting)
+	mux.HandleFunc("GET /api/content-sync/status", s.handleContentSyncStatus)
 	s.VessicaRoutes(mux)      // demo tools: kb, tasks, display, sms, email, search, code
 	s.AudienceChatRoutes(mux) // QR-scanned per-person audience chat
 	return mux
@@ -170,12 +177,27 @@ func (s *Server) Routes() *http.ServeMux {
 
 func (s *Server) editOnly(h http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if !s.canEdit() {
+		if !s.canEdit(r) {
 			http.Error(w, `{"error":"read-only mode"}`, http.StatusForbidden)
 			return
 		}
-		h(w, r)
+		cw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+		h(cw, r)
+		if cw.status < http.StatusBadRequest {
+			s.ContentSync.Notify()
+			s.Broadcast("reload")
+		}
 	}
+}
+
+type statusCapture struct {
+	http.ResponseWriter
+	status int
+}
+
+func (w *statusCapture) WriteHeader(code int) {
+	w.status = code
+	w.ResponseWriter.WriteHeader(code)
 }
 
 func (s *Server) handleSwitcher(w http.ResponseWriter, r *http.Request) {
@@ -534,7 +556,7 @@ func (s *Server) Watch(interval time.Duration) {
 			log.Printf("change detected — broadcasting reload")
 			s.Broadcast("reload")
 		}
-		if s.canEdit() {
+		if s.Mode == ModeStudio {
 			s.processRequests()
 		}
 	}

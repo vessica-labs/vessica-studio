@@ -392,7 +392,9 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 		}
 	}
 	log.Printf("agent: pass complete — %s/%s", deck, id)
-	if w.push {
+	if w.s.ContentSync != nil {
+		w.s.ContentSync.Notify()
+	} else if w.push {
 		w.gitPush(deck, id)
 	}
 	w.s.Broadcast("reload")

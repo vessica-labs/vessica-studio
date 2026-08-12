@@ -230,9 +230,19 @@ func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
-		"mode":      string(s.Mode),
-		"presenter": s.isPresenter(r),
+		"mode":         string(s.Mode),
+		"presenter":    s.isPresenter(r),
+		"editable":     s.canEdit(r),
+		"content_sync": s.ContentSync.Status(),
 	})
+}
+
+func (s *Server) handleContentSyncStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.isPresenter(r) {
+		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
+		return
+	}
+	writeJSON(w, s.ContentSync.Status())
 }
 
 func (s *Server) handlePresenting(w http.ResponseWriter, r *http.Request) {

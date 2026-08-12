@@ -121,6 +121,9 @@ Environment:
   VSTD_SECRET           session + share-link signing in public mode
   VSTD_GITHUB_CLIENT_ID / VSTD_ALLOWED_GITHUB
                         GitHub Device Flow presenter authentication
+  VSTD_CONTENT_SYNC=1   enable presenter-only hosted content editing
+  VSTD_GIT_REPO / _BRANCH / _TOKEN
+                        content repository and scoped write credential
   VSTD_AGENT=1          enable the optional headless redesign worker
   PORT                  overrides port (Railway sets this)
   VSTD_S3_ENDPOINT / _BUCKET / _ACCESS_KEY / _SECRET_KEY / _REGION
@@ -321,6 +324,9 @@ func cmdServe(args []string) error {
 		return fmt.Errorf("invalid mode %q", *mode)
 	}
 	srv := server.New(st, m)
+	if err := srv.StartContentSync(); err != nil {
+		return err
+	}
 	p := st.Config.Port
 	if *port != 0 {
 		p = *port
