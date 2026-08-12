@@ -258,12 +258,19 @@ func (c *ContentSync) syncOnce() error {
 	startGeneration := c.generation
 	c.mu.Unlock()
 
-	status, err := c.git(append([]string{"status", "--porcelain", "--"}, contentSyncPaths...)...)
+	paths, err := c.availableContentPaths()
+	if err != nil {
+		return err
+	}
+	if len(paths) == 0 {
+		return fmt.Errorf("content sync found none of the allowed content paths")
+	}
+	status, err := c.git(append([]string{"status", "--porcelain", "--"}, paths...)...)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(status) != "" {
-		if _, err := c.git(append([]string{"add", "--"}, contentSyncPaths...)...); err != nil {
+		if _, err := c.git(append([]string{"add", "--"}, paths...)...); err != nil {
 			return err
 		}
 		if _, err := c.git("-c", "user.name=Vessica Studio", "-c", "user.email=studio@vessica.dev",
@@ -326,6 +333,29 @@ func (c *ContentSync) syncOnce() error {
 	}
 	log.Printf("content sync: synchronized branch %s", c.branch)
 	return nil
+}
+
+// A content root may legitimately omit an optional directory such as
+// requests/. Include paths that exist now or have tracked deletions waiting to
+// be staged; never hand Git a pathspec that matches nothing.
+func (c *ContentSync) availableContentPaths() ([]string, error) {
+	paths := make([]string, 0, len(contentSyncPaths))
+	for _, path := range contentSyncPaths {
+		if _, err := os.Stat(filepath.Join(c.root, path)); err == nil {
+			paths = append(paths, path)
+			continue
+		} else if !os.IsNotExist(err) {
+			return nil, err
+		}
+		tracked, err := c.git("ls-files", "--", path)
+		if err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(tracked) != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths, nil
 }
 
 func (c *ContentSync) recordError(err error) {

@@ -37,7 +37,6 @@ func seedRemote(t *testing.T) (origin, seed string) {
 		"decks/demo/slides/0010-a.md":   "# Demo\n\n## Edit requests\n\n## Log\n",
 		"themes/default/theme.css":      ".slide{}\n",
 		"library/manifest.json":         "{\"version\":1}\n",
-		"requests/.gitkeep":             "",
 	}
 	for name, body := range files {
 		path := filepath.Join(seed, name)
@@ -62,7 +61,7 @@ func TestContentSyncPushesHostedEditsAndPullsRemoteContent(t *testing.T) {
 	}
 	// Represents the content baked into the Railway image before .git is
 	// excluded by .dockerignore.
-	for _, name := range []string{"studio.yaml", "Dockerfile", "decks", "themes", "library", "requests"} {
+	for _, name := range []string{"studio.yaml", "Dockerfile", "decks", "themes", "library"} {
 		runGit(t, seed, "checkout", "--", name)
 		src := filepath.Join(seed, name)
 		dst := filepath.Join(runtime, name)
@@ -85,7 +84,6 @@ func TestContentSyncPushesHostedEditsAndPullsRemoteContent(t *testing.T) {
 			}
 		}
 	}
-
 	syncer := newContentSync(nil, contentSyncConfig{
 		Root: runtime, Remote: origin, Branch: "main",
 		Debounce: time.Millisecond, Poll: time.Hour,
