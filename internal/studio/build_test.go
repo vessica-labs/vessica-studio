@@ -51,6 +51,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`c.removeAttribute('data-vstd')`, // engine-only slide id is not persisted
 		`name:'open_companion'`,          // Vessica can open the narrative editor
 		`addEventListener('paste'`,       // clipboard images can be placed on slides
+		`keyTargetIsTextEntry`,           // typing surfaces suppress deck hotkeys
+		`pad.addEventListener('keydown'`, // Sticky keystrokes cannot bubble to the player
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)

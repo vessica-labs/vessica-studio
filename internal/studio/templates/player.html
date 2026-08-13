@@ -516,8 +516,13 @@ body.editmode .slide.active{cursor:default}
     if(!e.target.closest('#downloadMenu,#downloadbtn'))document.getElementById('downloadMenu').classList.remove('open');
   },true);
   menu.addEventListener('click',e=>{if(e.target===menu)menu.classList.remove('open');});
+  function keyTargetIsTextEntry(e){
+    const selector='input,textarea,select,[contenteditable="true"],[contenteditable=""],[role="textbox"]';
+    return [e&&e.target,document.activeElement].some(el=>el&&el.nodeType===1&&
+      (el.isContentEditable||(el.matches&&el.matches(selector))||(el.closest&&el.closest(selector))));
+  }
   addEventListener('keydown',e=>{
-    if(e.target&&(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT'))return;
+    if(keyTargetIsTextEntry(e))return;
     if(editingText){if(e.key==='Escape'){e.preventDefault();stopTextEdit();}return;}
     if(editMode&&(e.metaKey||e.ctrlKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();doUndo();return;}
     if(editMode&&selEl&&(e.key==='Delete'||e.key==='Backspace')){
@@ -1063,6 +1068,7 @@ body.editmode .slide.active{cursor:default}
           });
           document.body.appendChild(chip);
           addEventListener('keydown',e=>{
+            if(keyTargetIsTextEntry(e))return;
             if(['ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(e.key)&&window.__following){
               window.__following=false;chip.classList.add('paused');
               chip.textContent='○ Browsing freely — click to rejoin the presenter';
@@ -1321,6 +1327,7 @@ body.editmode .slide.active{cursor:default}
       '<div class="row"><span class="hint">&#8984;&#9166; to queue &middot; Esc to close</span><button>Queue edit</button></div>';
     document.body.appendChild(pad);
     ta=pad.querySelector('textarea');list=pad.querySelector('.open-notes');
+    pad.addEventListener('keydown',e=>e.stopPropagation());
     pad.querySelector('button').addEventListener('click',submit);
     pad.querySelector('.ref b').addEventListener('click',clearRef);
     document.addEventListener('click',pickListener,true);
