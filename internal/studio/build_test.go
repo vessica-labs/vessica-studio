@@ -40,6 +40,10 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`id="hudmore"`,                   // ⋯ overflow popover
 		`id="downloadbtn"`,               // PDF/PPTX download menu
 		`data-download="pptx"`,           // editable PowerPoint export
+		`id="editRibbon"`,                // fixed, shared object-editing ribbon
+		`role="toolbar"`,                 // accessible PowerPoint-style control surface
+		`id="videoRibbonTools"`,          // media options share the same ribbon
+		`body.editmode #stage{top:62px}`, // ribbon reserves canvas space instead of covering it
 		`data-act="sticky"`,              // sticky notes
 		`data-act="companion"`,           // companion drawer
 		`data-act="vessica"`,             // vessica toggle
@@ -60,6 +64,12 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	}
 	if strings.Contains(html, "<!--VSTD:") {
 		t.Error("unsubstituted VSTD marker left in output")
+	}
+	if strings.Contains(html, `#selbox .etools`) {
+		t.Error("object tools must live in the top ribbon, not on the selection box")
+	}
+	if strings.Contains(html, `id="vinspect"`) {
+		t.Error("video controls must share the top ribbon, not use a floating inspector")
 	}
 	// chrome must not depend on theme-overridable tokens: every var(--x)
 	// outside the injected theme/deck CSS block is engine-owned (--vstd-*)
