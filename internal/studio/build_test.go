@@ -36,16 +36,17 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 
 	// the full engine control plane must be present
 	for _, want := range []string{
-		`id="hud"`,                // HUD bar
-		`id="hudmore"`,            // ⋯ overflow popover
-		`id="pdfbtn"`,             // PDF export button
-		`data-act="sticky"`,       // sticky notes
-		`data-act="vessica"`,      // vessica toggle
-		`data-parked`,             // hide/park handling in the runtime
-		`--vstd-green`,            // engine-owned chrome tokens
-		`<h1>Hi</h1>`,             // slides injected
-		`"deck":"demo"`,           // runtime meta injected
-		`.slide{background:#fff}`, // theme.css injected
+		`id="hud"`,                       // HUD bar
+		`id="hudmore"`,                   // ⋯ overflow popover
+		`id="pdfbtn"`,                    // PDF export button
+		`data-act="sticky"`,              // sticky notes
+		`data-act="vessica"`,             // vessica toggle
+		`data-parked`,                    // hide/park handling in the runtime
+		`--vstd-green`,                   // engine-owned chrome tokens
+		`<h1>Hi</h1>`,                    // slides injected
+		`"deck":"demo"`,                  // runtime meta injected
+		`.slide{background:#fff}`,        // theme.css injected
+		`c.removeAttribute('data-vstd')`, // engine-only slide id is not persisted
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)

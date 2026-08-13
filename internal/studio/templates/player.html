@@ -833,6 +833,7 @@ body.editmode .slide.active{cursor:default}
   function cleanSlideHTML(sec){
     const c=sec.cloneNode(true);
     c.classList.remove('active','mini');c.style.display='';
+    c.removeAttribute('data-vstd');
     c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
     if(window.__vclean)window.__vclean(c);
     return c.outerHTML;
