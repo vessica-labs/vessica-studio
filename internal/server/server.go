@@ -16,6 +16,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -151,7 +152,10 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
+	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion", s.editOnly(s.handlePutFullCompanion))
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion/{section}", s.editOnly(s.handlePutCompanion))
+	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/attachment", s.editOnly(s.handleSourceAttachmentUpload))
+	mux.HandleFunc("GET /api/deck/{deck}/source/{name}", s.handleSourceAttachment)
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/title", s.editOnly(s.handlePutTitle))
 	mux.HandleFunc("POST /api/deck/{deck}/slides", s.editOnly(s.handleNewSlide))
 	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/move", s.editOnly(s.handleMoveSlide))
@@ -294,7 +298,16 @@ func (s *Server) handleGetSlide(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, err, 404)
 		return
 	}
-	writeJSON(w, map[string]string{"fragment": frag, "companion": comp})
+	attachments, _ := s.St.CompanionAttachments(r.PathValue("deck"), r.PathValue("id"))
+	for i := range attachments {
+		attachments[i].URL = "/api/deck/" + r.PathValue("deck") + "/source/" +
+			url.PathEscape(filepath.Base(attachments[i].Path))
+	}
+	writeJSON(w, map[string]any{
+		"fragment": frag, "companion": comp,
+		"companion_hash": s.St.HashCompanion(r.PathValue("deck"), r.PathValue("id")),
+		"attachments":    attachments,
+	})
 }
 
 // handlePutFragment writes a slide fragment. When the caller supplies
@@ -342,6 +355,31 @@ func (s *Server) handlePutCompanion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]string{"status": "ok"})
+}
+
+func (s *Server) handlePutFullCompanion(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
+	if err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	deck, id := r.PathValue("deck"), r.PathValue("id")
+	if base := r.Header.Get("X-VSTD-Companion-Hash"); base != "" {
+		if cur := s.St.HashCompanion(deck, id); cur != "" && cur != base {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]string{
+				"error":   "conflict: the companion changed after the drawer loaded",
+				"current": cur,
+			})
+			return
+		}
+	}
+	if err := s.St.WriteCompanion(deck, id, string(body)); err != nil {
+		jsonErr(w, err, 400)
+		return
+	}
+	writeJSON(w, map[string]string{"status": "ok", "hash": s.St.HashCompanion(deck, id)})
 }
 
 func (s *Server) handlePutTitle(w http.ResponseWriter, r *http.Request) {

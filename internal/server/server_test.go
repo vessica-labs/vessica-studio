@@ -178,3 +178,73 @@ func TestDeckStatusReportsDisabledAgentForQueuedRedesign(t *testing.T) {
 		t.Fatalf("pending = %#v, want queued redesign", got.Pending)
 	}
 }
+
+func TestFullCompanionEditAndSourceAttachment(t *testing.T) {
+	st := testStudio(t)
+	s := New(st, ModeStudio)
+	h := s.Routes()
+
+	updated := "---\nslide: 0010-a\n---\n# Revised narrative\n\n## Intent\nSharper intent.\n"
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPut,
+		"/api/deck/demo/slide/0010-a/companion", strings.NewReader(updated)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("companion PUT status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost,
+		"/api/deck/demo/slide/0010-a/attachment?filename=source%20deck.pdf&page=3",
+		strings.NewReader("%PDF-1.4 test source"))
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("attachment POST status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+	var attachment struct {
+		Attachment studio.CompanionAttachment `json:"attachment"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &attachment); err != nil {
+		t.Fatal(err)
+	}
+	if attachment.Attachment.Name != "source deck.pdf" || attachment.Attachment.Page != 3 {
+		t.Fatalf("attachment = %#v", attachment.Attachment)
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/deck/demo/slide/0010-a", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("slide GET status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+	var slide struct {
+		Companion     string                       `json:"companion"`
+		CompanionHash string                       `json:"companion_hash"`
+		Attachments   []studio.CompanionAttachment `json:"attachments"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &slide); err != nil {
+		t.Fatal(err)
+	}
+	if slide.CompanionHash == "" || len(slide.Attachments) != 1 {
+		t.Fatalf("slide response = %#v", slide)
+	}
+	if !strings.Contains(slide.Companion, "attachments:") || !strings.Contains(slide.Companion, attachment.Attachment.Path) {
+		t.Fatalf("companion missing attachment frontmatter:\n%s", slide.Companion)
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, attachment.Attachment.URL, nil))
+	if rr.Code != http.StatusOK || rr.Body.String() != "%PDF-1.4 test source" {
+		t.Fatalf("source GET status = %d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
+func TestFullCompanionEditRejectsStaleHash(t *testing.T) {
+	st := testStudio(t)
+	s := New(st, ModeStudio)
+	req := httptest.NewRequest(http.MethodPut, "/api/deck/demo/slide/0010-a/companion", strings.NewReader("# stale"))
+	req.Header.Set("X-VSTD-Companion-Hash", "stale")
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, req)
+	if rr.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409; body=%s", rr.Code, rr.Body.String())
+	}
+}

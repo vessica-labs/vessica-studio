@@ -17,4 +17,8 @@ Read `../../docs/conventions.md`. Locate the studio root and target deck (`vstd 
    `POST /api/deck/{d}/slides` when the engine is running.
 3. **Generate** with the same four-step loop as deck-new: companion → fragment →
    required visual element → critic pass.
+   If the slide is based on a PDF, PPT/PPTX, or image, preserve that original under
+   `decks/<deck>/sources/` and list it in companion frontmatter `attachments:` with
+   the relevant `page`. Render and compare the finished slide to that source,
+   correct fidelity issues, and record the critic result in Log.
 4. **Verify** the deck still builds; report the slide id and what the critic flagged/fixed.

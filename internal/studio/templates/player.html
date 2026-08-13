@@ -99,6 +99,28 @@ body.mobilehud #hud .cnt{font-size:14px;min-width:52px}
 #stickyPad .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
 #stickyPad .hint{font-size:10.5px;color:#a08c3e}
 #stickyPad button{background:#0C2B15;color:#E3FDDB;border:none;border-radius:999px;padding:7px 18px;font:600 13px var(--vstd-sans);cursor:pointer}
+#companionDrawer{position:fixed;right:0;top:0;bottom:0;z-index:145;width:min(560px,94vw);background:#f8faf8;color:#14251a;
+  box-shadow:-18px 0 55px rgba(0,0,0,.34);transform:translateX(105%);transition:transform .22s ease;display:flex;flex-direction:column;font-family:var(--vstd-sans)}
+#companionDrawer.open{transform:translateX(0)}
+#companionDrawer .chead{display:flex;align-items:center;gap:10px;padding:15px 18px;background:#0c2b15;color:#e3fddb;border-bottom:1px solid #2c4a35}
+#companionDrawer .ctitle{font-size:16px;font-weight:800;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#companionDrawer button,#companionDrawer .attachbtn{border:1px solid #2c4a35;background:#fff;color:#0c2b15;border-radius:999px;padding:7px 13px;font:700 12px var(--vstd-sans);cursor:pointer}
+#companionDrawer .chead button{background:transparent;color:#e3fddb;border-color:#54735e}
+#companionDrawer .tabs{display:flex;gap:8px;padding:10px 16px;border-bottom:1px solid #d7e1d9;background:#eef4ef}
+#companionDrawer .tabs button.active{background:#0c2b15;color:#fff}
+#companionDrawer .attachments{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid #d7e1d9;background:#fff}
+#companionDrawer .attachments a{display:inline-flex;gap:5px;align-items:center;padding:6px 10px;border-radius:999px;background:#e3fddb;color:#0c2b15;text-decoration:none;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#companionDrawer .attachbtn input{display:none}
+#companionDrawer .cbody{position:relative;flex:1;min-height:0}
+#companionDrawer .preview,#companionDrawer textarea{position:absolute;inset:0;width:100%;height:100%;box-sizing:border-box;overflow:auto}
+#companionDrawer .preview{padding:18px 24px 80px;line-height:1.5;font-size:15px}
+#companionDrawer .preview h1{font-size:28px;margin:4px 0 18px}#companionDrawer .preview h2{font-size:20px;margin:24px 0 9px;color:#0c2b15}#companionDrawer .preview h3{font-size:17px}
+#companionDrawer .preview p{margin:8px 0}#companionDrawer .preview ul{padding-left:22px}#companionDrawer .preview li{margin:5px 0}#companionDrawer .preview code{background:#e8eeea;border-radius:4px;padding:2px 5px}
+#companionDrawer .preview .frontmatter{font:12px ui-monospace,monospace;background:#edf2ee;border:1px solid #d7e1d9;border-radius:8px;padding:10px;white-space:pre-wrap;color:#54705c}
+#companionDrawer textarea{display:none;resize:none;border:0;outline:0;padding:18px 20px 90px;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;color:#14251a;background:#fbfdfb;tab-size:2}
+#companionDrawer.editing textarea{display:block}#companionDrawer.editing .preview{display:none}
+#companionDrawer .cfoot{display:flex;align-items:center;gap:10px;padding:11px 16px;border-top:1px solid #d7e1d9;background:#fff}
+#companionDrawer .cstate{flex:1;font-size:12px;color:#65776a}#companionDrawer .save{background:#0c2b15;color:#fff}
 #dictbar{position:fixed;left:0;right:0;bottom:0;z-index:110;display:none;align-items:center;gap:16px;
   background:rgba(12,32,19,.96);border-top:2px solid #20E3AC;padding:12px 22px;font-family:var(--vstd-sans)}
 #dictbar .dot{width:12px;height:12px;border-radius:50%;background:#20E3AC;animation:vpulse 1.4s infinite;flex:0 0 12px}
@@ -190,7 +212,7 @@ body.editmode section.slide img,body.editmode section.slide video{pointer-events
 body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--vstd-green);outline-offset:2px;cursor:text}
 body.editmode .slide.active{cursor:default}
 @media print{
-  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#capbar{display:none!important}
+  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#capbar{display:none!important}
   #stage{position:static}
   #frame{width:1280px;height:720px;box-shadow:none;page-break-after:always;position:relative;margin:0 auto}
   .slide{display:block!important;position:relative;page-break-after:always}
@@ -216,6 +238,7 @@ body.editmode .slide.active{cursor:default}
   <button data-act="menu">Agenda</button>
   <button data-act="grid">Grid</button>
   <button data-act="sticky" id="hudSticky">Sticky</button>
+  <button data-act="companion" id="companionbtn" style="display:none">Companion</button>
   <button data-act="notes">Notes</button>
   <button data-act="present" id="presentbtn">Present</button>
   <button data-act="pdf" id="pdfbtn" style="display:none" title="Download PDF (active + hidden slides)">PDF</button>
@@ -230,6 +253,13 @@ body.editmode .slide.active{cursor:default}
 <div id="notesPanel"><div class="lbl">Speaker notes</div><div id="notesBody"></div></div>
 <div id="vstatus"><span class="dot"></span><span id="vlabel">Vessica off</span></div>
 <div id="overview"><div class="gridwrap" id="ovgrid"></div></div>
+<aside id="companionDrawer" aria-label="Slide companion">
+  <div class="chead"><div class="ctitle">Slide companion</div><button class="cclose" title="Close">&#10005;</button></div>
+  <div class="tabs"><button class="previewtab active">Rendered</button><button class="edittab">Edit Markdown</button></div>
+  <div class="attachments"><span class="attachlist"></span><label class="attachbtn">+ Source file<input type="file" accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv"></label></div>
+  <div class="cbody"><article class="preview"></article><textarea spellcheck="true" aria-label="Companion Markdown"></textarea></div>
+  <div class="cfoot"><span class="cstate">Loaded</span><button class="save">Save companion</button></div>
+</aside>
 
 <script>
 (function(){
@@ -467,6 +497,7 @@ body.editmode .slide.active{cursor:default}
     else if(a==='menu')menu.classList.toggle('open');
     else if(a==='grid'){buildOv();overview.classList.add('open');}
     else if(a==='sticky'){if(window.__stickyToggle)window.__stickyToggle();}
+    else if(a==='companion'){if(window.__companionDrawer)window.__companionDrawer.toggle();}
     else if(a==='notes'){notesOn=!notesOn;notesPanel.classList.toggle('open',notesOn);}
     else if(a==='edit')toggleEdit();
     else if(a==='save')saveHtml();
@@ -1002,7 +1033,7 @@ body.editmode .slide.active{cursor:default}
       });
       fetch('/api/me').then(r=>r.json()).then(me=>{
         window.__vme=me;
-        if(me.editable){const b=document.getElementById('newslidebtn');if(b)b.style.display='';}
+        if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
         // presenter-only: starts hidden so an audience tab never flashes it
         if(!audience){const b=document.getElementById('pdfbtn');if(b)b.style.display='';}
@@ -1063,6 +1094,96 @@ body.editmode .slide.active{cursor:default}
   function gotoNum(n){const v=visIdx();if(n>=1&&n<=v.length)show(v[n-1]);}
   window.VSTDP={show,goto:i=>show(i),gotoNum,step,cur:()=>cur,count:slides.length,
     slideEl:()=>slides[cur],toast,persistSlide};
+})();
+
+/* ============ companion Markdown drawer ============ */
+(function(){
+  if(!(window.VSTD&&location.protocol.indexOf('http')===0))return;
+  const drawer=document.getElementById('companionDrawer');
+  const preview=drawer.querySelector('.preview'),ta=drawer.querySelector('textarea');
+  const title=drawer.querySelector('.ctitle'),state=drawer.querySelector('.cstate'),attachList=drawer.querySelector('.attachlist');
+  let slideId='',hash='',markdown='',dirty=false,loading=null;
+  const editable=()=>!window.__vme||window.__vme.editable===true;
+  const currentId=()=>{const s=document.querySelector('#frame > .slide.active');return s&&s.dataset.vstd;};
+  const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  function inline(s){
+    return esc(s).replace(/`([^`]+)`/g,'<code>$1</code>').replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>').replace(/\*([^*]+)\*/g,'<em>$1</em>')
+      .replace(/(https?:\/\/[^\s<]+)/g,'<a href="$1" target="_blank" rel="noopener">$1</a>');
+  }
+  function render(md){
+    let front='';
+    if(md.startsWith('---\n')){const e=md.indexOf('\n---',4);if(e>=0){front=md.slice(4,e);md=md.slice(e+4).replace(/^\r?\n/,'');}}
+    const out=[];let list=false,code=false,codeLines=[];
+    if(front)out.push('<details><summary>Metadata</summary><div class="frontmatter">'+esc(front)+'</div></details>');
+    const closeList=()=>{if(list){out.push('</ul>');list=false;}};
+    md.split(/\r?\n/).forEach(line=>{
+      if(/^```/.test(line)){if(code){out.push('<pre><code>'+esc(codeLines.join('\n'))+'</code></pre>');codeLines=[];code=false;}else{closeList();code=true;}return;}
+      if(code){codeLines.push(line);return;}
+      const h=line.match(/^(#{1,3})\s+(.*)$/);if(h){closeList();out.push('<h'+h[1].length+'>'+inline(h[2])+'</h'+h[1].length+'>');return;}
+      const li=line.match(/^\s*[-*]\s+(.*)$/);if(li){if(!list){out.push('<ul>');list=true;}out.push('<li>'+inline(li[1])+'</li>');return;}
+      closeList();if(!line.trim()){out.push('');return;}out.push('<p>'+inline(line)+'</p>');
+    });
+    closeList();if(code)out.push('<pre><code>'+esc(codeLines.join('\n'))+'</code></pre>');
+    preview.innerHTML=out.join('\n');
+  }
+  function attachments(items){
+    attachList.innerHTML='';
+    (items||[]).forEach(a=>{const el=document.createElement('a');el.href=a.url;el.target='_blank';el.rel='noopener';
+      el.title=(a.media_type||'source')+(a.page?' · page/slide '+a.page:'');el.textContent='📎 '+a.name+(a.page?' · '+a.page:'');attachList.appendChild(el);});
+    if(!(items||[]).length){const e=document.createElement('span');e.style.cssText='font-size:12px;color:#758579';e.textContent='No source files';attachList.appendChild(e);}
+  }
+  function setMode(edit){drawer.classList.toggle('editing',edit);drawer.querySelector('.previewtab').classList.toggle('active',!edit);drawer.querySelector('.edittab').classList.toggle('active',edit);if(edit)setTimeout(()=>ta.focus(),0);}
+  async function load(id){
+    id=id||currentId();if(!id)return;
+    state.textContent='Loading…';slideId=id;
+    const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id);
+    if(!r.ok)throw new Error('load '+r.status);
+    const j=await r.json();markdown=j.companion||'';hash=j.companion_hash||'';dirty=false;
+    ta.value=markdown;render(markdown);attachments(j.attachments||[]);title.textContent=id+' · companion';state.textContent='Saved';
+  }
+  async function ensureLoaded(){const id=currentId();if(!id)throw new Error('no current slide');if(slideId!==id||!markdown){if(loading)await loading;else{loading=load(id).finally(()=>loading=null);await loading;}}}
+  async function save(){
+    if(!editable())throw new Error('read-only mode');await ensureLoaded();
+    markdown=ta.value;state.textContent='Saving…';window.__selfSave=Date.now();
+    const headers={'Content-Type':'text/markdown'};if(hash)headers['X-VSTD-Companion-Hash']=hash;
+    const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/companion',{method:'PUT',headers,body:markdown});
+    window.__selfSave=Date.now();
+    if(r.status===409){state.textContent='Conflict — reload required';throw new Error('companion changed on disk; reload it before saving');}
+    if(!r.ok)throw new Error('save '+r.status);
+    const j=await r.json();hash=j.hash||hash;dirty=false;render(markdown);state.textContent='Saved live';
+    if(window.__vreportHostedSync)window.__vreportHostedSync();
+    return 'companion saved';
+  }
+  async function open(edit){drawer.classList.add('open');await ensureLoaded();setMode(!!edit);return 'companion opened';}
+  function close(){drawer.classList.remove('open');}
+  function sectionBounds(md,name){
+    const re=new RegExp('^## '+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$','m');const m=re.exec(md);if(!m)return null;
+    const start=m.index+m[0].length;const rest=md.slice(start);const n=/\n##\s+/.exec(rest);return {start,end:n?start+n.index:md.length};
+  }
+  async function editCompanion(op,args){
+    await open(true);let next=ta.value;
+    if(op==='edit_companion'){
+      const find=args.find||'';if(!find)throw new Error('find text is required');const i=next.toLowerCase().indexOf(find.toLowerCase());if(i<0)throw new Error('text not found in companion');next=next.slice(0,i)+(args.replace||'')+next.slice(i+find.length);
+    }else{
+      const name=args.section||'Talk track',b=sectionBounds(next,name),text=(args.text||'').trim();
+      if(b){const before=next.slice(0,b.start),after=next.slice(b.end);const old=next.slice(b.start,b.end).trim();const body=op==='append_companion_section'?(old?old+'\n\n'+text:text):text;next=before+'\n'+body+'\n'+after.replace(/^\n*/,'\n');}
+      else next=stringsTrim(next)+'\n\n## '+name+'\n'+text+'\n';
+    }
+    ta.value=next;markdown=next;dirty=true;render(next);state.textContent='Vessica editing…';await save();return 'companion updated and visible in the drawer';
+  }
+  function stringsTrim(s){return (s||'').replace(/\s+$/,'');}
+  ta.addEventListener('input',()=>{dirty=true;markdown=ta.value;render(markdown);state.textContent='Unsaved changes';});
+  ta.addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='s'){e.preventDefault();save().catch(x=>window.VSTDP&&window.VSTDP.toast(x.message));}});
+  drawer.querySelector('.previewtab').addEventListener('click',()=>{render(ta.value);setMode(false);});
+  drawer.querySelector('.edittab').addEventListener('click',()=>setMode(true));
+  drawer.querySelector('.save').addEventListener('click',()=>save().catch(e=>window.VSTDP&&window.VSTDP.toast('Companion save failed: '+e.message)));
+  drawer.querySelector('.cclose').addEventListener('click',close);
+  drawer.querySelector('input[type=file]').addEventListener('change',async e=>{
+    const f=e.target.files&&e.target.files[0];if(!f)return;
+    try{await ensureLoaded();state.textContent='Attaching '+f.name+'…';const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/attachment?filename='+encodeURIComponent(f.name),{method:'POST',body:f});if(!r.ok)throw new Error(await r.text());await load(slideId);window.VSTDP&&window.VSTDP.toast('Source attached to companion');}catch(x){window.VSTDP&&window.VSTDP.toast('Attach failed: '+x.message);}finally{e.target.value='';}
+  });
+  document.addEventListener('vstd:slide',()=>{if(!drawer.classList.contains('open'))return;if(dirty){save().then(()=>load(currentId())).catch(e=>window.VSTDP&&window.VSTDP.toast(e.message));}else load(currentId()).catch(()=>{});});
+  window.__companionDrawer={toggle:()=>drawer.classList.contains('open')?close():open(false),open:()=>open(true),save,run:(name,args)=>name==='open_companion'?open(true):editCompanion(name,args||{})};
 })();
 
 /* ============ background-work progress (image gen + redesign queue) ============ */
@@ -1388,6 +1509,10 @@ body.editmode .slide.active{cursor:default}
     {type:'function',name:'add_bullet',description:'IN CONVERSATION ONLY: add a bullet/point to the current slide.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
     {type:'function',name:'remove_element',description:'IN CONVERSATION ONLY: remove the element on the current slide whose text best matches the phrase.',parameters:{type:'object',properties:{match:{type:'string'}},required:['match']}},
     {type:'function',name:'note_edit_request',description:'IN CONVERSATION ONLY: for changes too large to do live (redesigns, new imagery, restructures) — record the request in the slide companion for the agent redesign pass, and tell the speaker it is noted.',parameters:{type:'object',properties:{instruction:{type:'string'}},required:['instruction']}},
+    {type:'function',name:'open_companion',description:'IN CONVERSATION ONLY: open the current slide companion Markdown in its side drawer for narrative editing. Use when the speaker says they want to view or edit the companion, narrative, intent, evidence, talk track, visual direction, or notes.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'edit_companion',description:'IN CONVERSATION ONLY: replace exact existing prose in the current slide companion Markdown while keeping the drawer open so dictated edits appear live.',parameters:{type:'object',properties:{find:{type:'string'},replace:{type:'string'}},required:['find','replace']}},
+    {type:'function',name:'set_companion_section',description:'IN CONVERSATION ONLY: replace one companion Markdown section in full. section is the heading text without ##, such as Intent, Key ideas, Evidence & sources, Talk track, or Visual direction.',parameters:{type:'object',properties:{section:{type:'string'},text:{type:'string'}},required:['section','text']}},
+    {type:'function',name:'append_companion_section',description:'IN CONVERSATION ONLY: append dictated prose to one companion Markdown section, saving after each chunk so it appears in the open drawer.',parameters:{type:'object',properties:{section:{type:'string'},text:{type:'string'}},required:['section','text']}},
     {type:'function',name:'new_blank_slide',description:'IN CONVERSATION ONLY: create a fresh draft slide after the current one ("give me a blank slide [titled X]"). Then AUTHORING MODE begins: treat subsequent speech as content — distill points with author_point, capture narration with author_talk — until the speaker says done/back to the presentation.',parameters:{type:'object',properties:{title:{type:'string'}}}},
     {type:'function',name:'author_point',description:'AUTHORING MODE: add a distilled bullet to the draft slide as the speaker talks.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
     {type:'function',name:'author_talk',description:'AUTHORING MODE: append the speaker\'s narration (cleaned sentences) to the draft slide talk track.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
@@ -1445,6 +1570,7 @@ RULES:
 - Advance slides with next_slide when the speaker finishes the current slide's material and begins the next slide's opening idea. Be conservative — never advance mid-thought. Obey explicit commands ("next slide", "go back", "go to slide 12") immediately via tools.
 - Use highlight(phrase) when the speaker dwells on a specific element visible on the slide; clear_highlight when they move on.
 - LIVE EDITING (only after the wake word, in conversation): the speaker may ask you to change the slide — "change X to Y" → edit_text; "retitle this…" → set_slide_title; "add a bullet…" → add_bullet; "remove …" → remove_element. Confirm briefly aloud. For big asks (redesign, new image, restructure) use note_edit_request and say it's queued for the redesign pass.
+- COMPANION NARRATIVE EDITING: "open/edit the companion/narrative/talk track" → open_companion. While the speaker dictates narrative changes, use edit_companion for exact replacements, set_companion_section for a complete rewrite, or append_companion_section for additional prose. Each call saves immediately and visibly updates the drawer. Source attachments shown above the Markdown are part of the companion contract and may be referenced in edit requests.
 - BLANK-SLIDE AUTHORING (in conversation): "give me a blank slide (titled X)" → new_blank_slide. Then the speaker talks the slide into existence: distill each distinct point with author_point, stream narration with author_talk, set the lead with author_lead. When they say they're done / back to the presentation, call done_authoring and fall silent again on end_conversation if asked.
 NAVIGATION: "go to slide 12" -> goto_slide(12). "go to the slide about X" -> find the best match in the DECK MAP below and goto_slide its number. Use next_slide ONLY for natural forward progression, never for jump requests.
 DECK MAP:
@@ -1574,6 +1700,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     if(respWanted){respWanted=false;setTimeout(requestResponse,300);}
   }
     const VTOOLS={audience_ask:1,call_person:1,send_sms:1,send_email:1,web_search:1,run_code:1,kb_read:1,tasks_create:1,tasks_add:1,tasks_check:1,tasks_list:1,check_inbox:1,display_render:1,display_append:1,display_clear:1};
+  const CTOOLS={open_companion:1,edit_companion:1,set_companion_section:1,append_companion_section:1};
   async function vesTool(name,args){
     const base='/api/vessica/'+window.VSTD.deck;
     const post=async(pth,body)=>{
@@ -1609,6 +1736,15 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   }
   function runTool(name,args,callId){
     let out='ok';
+    if(CTOOLS[name]){
+      if(!window.__companionDrawer){out='companion drawer unavailable';}
+      else{
+        window.__companionDrawer.run(name,args).then(o=>{
+          send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:String(o)}});requestResponse();
+        }).catch(e=>{send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:'FAILED: '+e.message}});requestResponse();});
+        return 'working';
+      }
+    }
     if(VTOOLS[name]){
       vesTool(name,args).then(o=>{
         send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:String(o).slice(0,8000)}});
@@ -2281,6 +2417,18 @@ If narration starts with no draft slide, call new_slide first (infer a working t
       if(im.size>100*1024*1024){P().toast('Image too large (100MB max)');return;}
       uploadImage(im);
     }
+  },true);
+
+  addEventListener('paste',e=>{
+    if(!canUpload())return;
+    const item=[...(e.clipboardData&&e.clipboardData.items||[])].find(i=>i.kind==='file'&&/^image\//.test(i.type));
+    if(!item)return;
+    const blob=item.getAsFile();if(!blob)return;
+    e.preventDefault();e.stopPropagation();
+    const ext=(blob.type.split('/')[1]||'png').replace('jpeg','jpg');
+    const file=new File([blob],'pasted-image-'+new Date().toISOString().replace(/[:.]/g,'-')+'.'+ext,{type:blob.type});
+    if(file.size>100*1024*1024){P().toast('Pasted image is too large (100MB max)');return;}
+    uploadImage(file);
   },true);
 
   function uploadVideo(f){

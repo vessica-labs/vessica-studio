@@ -17,6 +17,20 @@ Each slide is TWO files with the same basename in `slides/`:
   `## Intent`, `## Key ideas`, `## Evidence & sources`, `## Talk track`,
   `## Visual direction`, `## Log`.
 
+Source artifacts used to create a slide live under `decks/<deck>/sources/` and
+are listed in that slide's companion frontmatter:
+
+```yaml
+attachments:
+  - name: source-deck.pptx
+    path: sources/0030-source-deck-a1b2c3.pptx
+    media_type: application/vnd.openxmlformats-officedocument.presentationml.presentation
+    page: 3
+```
+
+Keep the original source attached when recreating an exhibit. Agents must read
+the attachment directly; `page` identifies the relevant PDF page or PPT slide.
+
 ## The companion contract (absolute)
 
 1. NEVER edit a fragment without reading its companion first — it holds the why,
@@ -62,8 +76,9 @@ Every generated slide gets AT LEAST one visual element. Priority order:
    file exists.
 3. **Inline SVG** (thin-line icons, gradient/aurora art) when a raster image adds nothing.
 
-Users can also drag-drop image (png/jpg/gif/webp) and video files onto a slide
-in the player's edit mode — the engine registers them in the manifest
+Users can also drag-drop image (png/jpg/gif/webp) and video files onto a slide,
+or copy/paste an image from the clipboard while slide edit mode is active. The
+engine registers them in the manifest
 (content-hash deduped) exactly like generated/ingested assets, so check the
 manifest for `model: upload` entries before assuming an asset must be generated.
 
@@ -103,3 +118,7 @@ served URL, viewport 1280×720, hash `#/<n>`), then review against the checklist
 - Content accurate to Evidence & sources
 Fix and re-screenshot (max 2 iterations); log unresolved items in the companion `## Log`.
 For high-stakes decks run the critic as a separate subagent for an independent eye.
+When the companion has source attachments, the critic must compare a 1280×720
+render of the result against a rendered preview of the cited source page/slide,
+then correct fidelity problems before declaring the edit complete. Check values,
+labels, geometry, hierarchy, omissions, and source attribution—not only style.

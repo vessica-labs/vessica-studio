@@ -21,14 +21,17 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"gopkg.in/yaml.v3"
 )
 
@@ -331,6 +334,11 @@ a yaml into requests/ with deck: and slide: fields and rewrite that bullet
 prefixed "- awaiting imagery: …" so the queue knows it is on hold; complete
 everything else.
 
+If the companion frontmatter lists attachments, those files live at the
+deck-relative paths shown there. They are primary source material: inspect
+them directly and preserve their attachment metadata. The engine will run a
+separate visual source-fidelity critic after your pass.
+
 Progress: update the "(in progress — cloud agent — NN%%)" marker line in the
 companion as you work — 60 while editing, 90 before finishing.
 
@@ -385,6 +393,9 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 			return
 		}
 	}
+	if ok := w.runSourceCritic(deck, id, preexisting); !ok {
+		return
+	}
 	log.Printf("agent: pass complete — %s/%s", deck, id)
 	if w.s.ContentSync != nil {
 		w.s.ContentSync.Notify()
@@ -395,10 +406,19 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 }
 
 func agentCommand(ctx context.Context, bin, root, prompt string) *exec.Cmd {
+	return agentCommandWithImages(ctx, bin, root, prompt, nil)
+}
+
+func agentCommandWithImages(ctx context.Context, bin, root, prompt string, images []string) *exec.Cmd {
 	if filepath.Base(bin) == "codex" {
-		cmd := exec.CommandContext(ctx, bin, "exec",
+		args := []string{"exec",
 			"--dangerously-bypass-approvals-and-sandbox",
-			"--skip-git-repo-check", "--ephemeral", "-C", root, prompt)
+			"--skip-git-repo-check", "--ephemeral", "-C", root}
+		for _, image := range images {
+			args = append(args, "-i", image)
+		}
+		args = append(args, prompt)
+		cmd := exec.CommandContext(ctx, bin, args...)
 		cmd.Dir = root
 		cmd.Env = os.Environ()
 		if os.Getenv("CODEX_API_KEY") == "" && os.Getenv("OPENAI_API_KEY") != "" {
@@ -417,6 +437,160 @@ func agentCommand(ctx context.Context, bin, root, prompt string) *exec.Cmd {
 	cmd.Dir = root
 	cmd.Env = os.Environ()
 	return cmd
+}
+
+func (w *agentWorker) runSourceCritic(deck, id string, preexisting map[string]bool) bool {
+	companion, err := w.s.St.ReadCompanion(deck, id)
+	if err == nil {
+		if match := editReqRe.FindStringSubmatch(companion); match != nil && strings.Contains(match[1], "- awaiting") {
+			// A source-backed slide can also be waiting for generated imagery. Let
+			// that request resolve before comparing a deliberately incomplete slide.
+			return true
+		}
+	}
+	attachments, err := w.s.St.CompanionAttachments(deck, id)
+	if err != nil || len(attachments) == 0 {
+		return true
+	}
+	w.mark(deck, id, "- (in progress — source fidelity critic — 90%)")
+	tmp, err := os.MkdirTemp("", "vstd-source-critic-*")
+	if err != nil {
+		log.Printf("agent: source critic skipped %s/%s: %v", deck, id, err)
+		w.mark(deck, id, "")
+		return true
+	}
+	defer os.RemoveAll(tmp)
+	current, err := w.renderSlide(deck, id, tmp)
+	if err != nil {
+		log.Printf("agent: source critic skipped %s/%s: render current slide: %v", deck, id, err)
+		w.mark(deck, id, "")
+		return true
+	}
+	images := []string{current}
+	var sourceNames []string
+	for i, attachment := range attachments {
+		if i >= 3 {
+			break
+		}
+		preview, err := w.renderSourceAttachment(deck, attachment, tmp, i)
+		if err != nil {
+			log.Printf("agent: source preview unavailable %s/%s (%s): %v", deck, id, attachment.Name, err)
+			continue
+		}
+		images = append(images, preview)
+		sourceNames = append(sourceNames, attachment.Name)
+	}
+	if len(images) == 1 {
+		w.mark(deck, id, "")
+		return true
+	}
+	prompt := fmt.Sprintf(`You are the independent Vessica Studio source-fidelity critic.
+
+The FIRST attached image is the current rendered slide %q in deck %q. The remaining images are previews of its source attachment(s), in this order: %s.
+The same visual inputs are available as local files, current slide first: %s. If your runner does not surface attached images, read those files directly.
+
+Compare the current slide visually and substantively with the source. Inspect the original files listed in the companion frontmatter under attachments: when useful for precise text, labels, values, or context. Correct the slide until it is a high-fidelity native recreation while preserving the deck theme and the companion's intent. Check geometry, hierarchy, labels, values, omissions, source attribution, legibility, and the 1280x720 footer safe zone.
+
+Modify only decks/%s/slides/%s.html and its paired Markdown companion. Do not alter source attachments. Append a dated Log entry describing the critic adjustments. Do not add an Edit requests bullet or leave an in-progress marker. If the current result already has high fidelity, leave the fragment unchanged and only add a concise critic-verified Log entry.`, id, deck, strings.Join(sourceNames, ", "), strings.Join(images, ", "), deck, id)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+	defer cancel()
+	cmd := agentCommandWithImages(ctx, w.bin, w.s.St.Root, prompt, images)
+	out, runErr := cmd.CombinedOutput()
+	w.enforceScope(preexisting)
+	logDir := filepath.Join(w.s.St.Root, "_agent-logs")
+	os.MkdirAll(logDir, 0o755)
+	logFile := filepath.Join(logDir, deck+"-"+id+"-source-critic.log")
+	os.WriteFile(logFile, out, 0o644)
+	if runErr != nil {
+		tail := strings.TrimSpace(strings.ReplaceAll(string(out), "\n", " · "))
+		if len(tail) > 180 {
+			tail = tail[len(tail)-180:]
+		}
+		log.Printf("agent: source critic FAILED %s/%s: %v", deck, id, runErr)
+		w.mark(deck, id, fmt.Sprintf("- (worker error: source fidelity critic failed: %v — %s — clear this line to retry)\n- SOURCE CRITIC RETRY: compare this slide to its companion source attachments and correct fidelity issues", runErr, tail))
+		return false
+	}
+	w.mark(deck, id, "")
+	log.Printf("agent: source critic complete — %s/%s", deck, id)
+	return true
+}
+
+func (w *agentWorker) renderSlide(deck, id, tmp string) (string, error) {
+	index, err := w.s.St.Build(deck)
+	if err != nil {
+		return "", err
+	}
+	ids, err := w.s.St.SlideIDs(deck)
+	if err != nil {
+		return "", err
+	}
+	n := 0
+	for i, slideID := range ids {
+		if slideID == id {
+			n = i + 1
+			break
+		}
+	}
+	if n == 0 {
+		return "", fmt.Errorf("slide not found")
+	}
+	chromium := os.Getenv("VSTD_CHROMIUM")
+	if chromium == "" {
+		for _, candidate := range []string{"chromium", "chromium-browser", "google-chrome"} {
+			if path, lookErr := exec.LookPath(candidate); lookErr == nil {
+				chromium = path
+				break
+			}
+		}
+	}
+	if chromium == "" {
+		return "", fmt.Errorf("Chromium not found")
+	}
+	out := filepath.Join(tmp, "current-slide.png")
+	target := (&url.URL{Scheme: "file", Path: index}).String() + "#/" + strconv.Itoa(n)
+	cmd := exec.Command(chromium, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+		"--window-size=1280,720", "--virtual-time-budget=2500", "--screenshot="+out, target)
+	if data, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("chromium: %v — %s", err, strings.TrimSpace(string(data)))
+	}
+	return out, nil
+}
+
+func (w *agentWorker) renderSourceAttachment(deck string, attachment studio.CompanionAttachment, tmp string, index int) (string, error) {
+	source := filepath.Join(w.s.St.DeckDir(deck), filepath.FromSlash(attachment.Path))
+	ext := strings.ToLower(filepath.Ext(source))
+	if imgExts[ext] {
+		return source, nil
+	}
+	pdf := source
+	if ext == ".ppt" || ext == ".pptx" {
+		libreoffice, err := exec.LookPath("libreoffice")
+		if err != nil {
+			return "", fmt.Errorf("libreoffice not found")
+		}
+		cmd := exec.Command(libreoffice, "--headless", "--convert-to", "pdf", "--outdir", tmp, source)
+		if data, err := cmd.CombinedOutput(); err != nil {
+			return "", fmt.Errorf("libreoffice: %v — %s", err, strings.TrimSpace(string(data)))
+		}
+		pdf = filepath.Join(tmp, strings.TrimSuffix(filepath.Base(source), filepath.Ext(source))+".pdf")
+	}
+	if strings.ToLower(filepath.Ext(pdf)) != ".pdf" {
+		return "", fmt.Errorf("no visual preview renderer for %s", ext)
+	}
+	pdftoppm, err := exec.LookPath("pdftoppm")
+	if err != nil {
+		return "", fmt.Errorf("pdftoppm not found")
+	}
+	page := attachment.Page
+	if page < 1 {
+		page = 1
+	}
+	prefix := filepath.Join(tmp, fmt.Sprintf("source-%d", index))
+	cmd := exec.Command(pdftoppm, "-f", strconv.Itoa(page), "-l", strconv.Itoa(page), "-singlefile", "-png", "-r", "144", pdf, prefix)
+	if data, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("pdftoppm: %v — %s", err, strings.TrimSpace(string(data)))
+	}
+	return prefix + ".png", nil
 }
 
 func setCommandEnv(env []string, key, value string) []string {

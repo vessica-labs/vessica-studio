@@ -40,6 +40,7 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`id="hudmore"`,                   // ⋯ overflow popover
 		`id="pdfbtn"`,                    // PDF export button
 		`data-act="sticky"`,              // sticky notes
+		`data-act="companion"`,           // companion drawer
 		`data-act="vessica"`,             // vessica toggle
 		`data-parked`,                    // hide/park handling in the runtime
 		`--vstd-green`,                   // engine-owned chrome tokens
@@ -47,6 +48,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`"deck":"demo"`,                  // runtime meta injected
 		`.slide{background:#fff}`,        // theme.css injected
 		`c.removeAttribute('data-vstd')`, // engine-only slide id is not persisted
+		`name:'open_companion'`,          // Vessica can open the narrative editor
+		`addEventListener('paste'`,       // clipboard images can be placed on slides
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)

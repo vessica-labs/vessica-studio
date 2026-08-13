@@ -23,6 +23,11 @@ Part of [Vessica Labs](https://github.com/vessica-labs). Licensed under MIT.
   editing controls, live follow, and OpenAI Realtime integration across themes.
 - **Reusable media:** generate images, upload or normalize video, maintain a
   shared asset manifest, and sync large video bytes to S3-compatible storage.
+- **Narrative editing:** open the current slide companion in a rendered Markdown
+  drawer, edit it directly or through Vessica dictation, and attach original PDF,
+  PowerPoint, spreadsheet, document, or image sources for agent reference.
+- **Source-aware quality:** source-backed redesigns get a separate visual critic
+  pass that compares the rendered slide with the attached source before completion.
 - **Audience interaction:** signed deck links, QR entry, per-person web chat,
   live audience pulse, and optional Telnyx/Resend actions.
 - **Portable output:** build static deck HTML, export PDF through headless
@@ -258,6 +263,8 @@ Device Flow and must appear in `VSTD_ALLOWED_GITHUB`. When
 and direct-edit controls as a local studio: saves update the running instance
 immediately, then a background worker batches and pushes content-only commits
 to `VSTD_GIT_REPO`. It also polls the configured branch for remote changes.
+The companion drawer and source attachments use the same immediate-save path.
+In slide edit mode, copied images can also be pasted directly onto the canvas.
 
 The Git token is supplied to Git through an ephemeral authorization header; it
 is not written into the remote URL, command arguments, or `.git/config`. Scope

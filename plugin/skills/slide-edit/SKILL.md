@@ -20,5 +20,8 @@ context-aware**.
    message changed (keep next-slide cue); dated Log line describing the edit and why.
 4. **Critic-check when warranted**: layout changes and redesigns get a screenshot pass;
    pure text tweaks may skip it (state that you did).
+   If companion frontmatter has `attachments:`, render the cited source page/slide
+   too, compare it directly with the 1280×720 result, and correct fidelity issues
+   before finishing.
 5. If the user is renumbering/reordering: move BOTH files of each slide together, and fix
    the surrounding Talk-track cues.

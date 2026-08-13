@@ -42,3 +42,16 @@ func TestAgentCommandKeepsClaudeInvocation(t *testing.T) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, want)
 	}
 }
+
+func TestAgentCommandAddsCriticImagesForCodex(t *testing.T) {
+	t.Setenv("CODEX_API_KEY", "test-key")
+	cmd := agentCommandWithImages(context.Background(), "codex", "/studio", "compare them", []string{"/tmp/current.png", "/tmp/source.png"})
+	want := []string{
+		"codex", "exec", "--dangerously-bypass-approvals-and-sandbox",
+		"--skip-git-repo-check", "--ephemeral", "-C", "/studio",
+		"-i", "/tmp/current.png", "-i", "/tmp/source.png", "compare them",
+	}
+	if !reflect.DeepEqual(cmd.Args, want) {
+		t.Fatalf("args = %#v, want %#v", cmd.Args, want)
+	}
+}

@@ -29,6 +29,9 @@ For every slide, in order:
 1. **Companion first**: write `NNNN-slug.md` — Intent, Key ideas (the full argument),
    Evidence & sources (with URLs/dates when researched), Talk track (ending with the next
    slide's opening cue), Visual direction, Log line.
+   For any source-backed slide, copy the original into `decks/<deck>/sources/`
+   and add companion frontmatter `attachments:` with the relevant PDF page or
+   PowerPoint slide number.
 2. **Fragment**: write `NNNN-slug.html` implementing the companion at the formatting
    standard, varying layout patterns for pacing (light/dark, columns, statements, dividers).
 3. **Visual element** (required): follow the Visual element rule in conventions —
@@ -36,6 +39,8 @@ For every slide, in order:
    companion frontmatter `visuals:`.
 4. **Critic pass**: run the critic loop (screenshot + checklist + fix ≤2 rounds).
    Batch: generate all slides, then screenshot/review in one Playwright pass.
+   Source-backed slides require side-by-side visual comparison with the attached
+   source preview and correction for values, labels, geometry, and omissions.
 
 ## 5. Finish
 
