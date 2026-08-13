@@ -355,7 +355,6 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 	cmd := agentCommand(ctx, w.bin, w.s.St.Root, prompt)
-	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
 	w.enforceScope(preexisting)
 	// full output always lands in a log file for diagnosis
@@ -402,6 +401,9 @@ func agentCommand(ctx context.Context, bin, root, prompt string) *exec.Cmd {
 			"--skip-git-repo-check", "--ephemeral", "-C", root, prompt)
 		cmd.Dir = root
 		cmd.Env = os.Environ()
+		if os.Getenv("CODEX_API_KEY") == "" && os.Getenv("OPENAI_API_KEY") != "" {
+			cmd.Env = setCommandEnv(cmd.Env, "CODEX_API_KEY", os.Getenv("OPENAI_API_KEY"))
+		}
 		return cmd
 	}
 	// Managed machines (e.g. BCG policy) set disableBypassPermissionsMode,
@@ -415,6 +417,26 @@ func agentCommand(ctx context.Context, bin, root, prompt string) *exec.Cmd {
 	cmd.Dir = root
 	cmd.Env = os.Environ()
 	return cmd
+}
+
+func setCommandEnv(env []string, key, value string) []string {
+	prefix := key + "="
+	out := make([]string, 0, len(env)+1)
+	replaced := false
+	for _, entry := range env {
+		if strings.HasPrefix(entry, prefix) {
+			if !replaced {
+				out = append(out, prefix+value)
+				replaced = true
+			}
+			continue
+		}
+		out = append(out, entry)
+	}
+	if !replaced {
+		out = append(out, prefix+value)
+	}
+	return out
 }
 
 // dirtyPaths snapshots the working tree's modified paths.
