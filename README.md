@@ -240,7 +240,7 @@ Important hosted settings include:
 | `VSTD_CONTENT_SYNC` | Set to `1` to allow authenticated presenters to edit hosted content |
 | `VSTD_GIT_REPO`, `VSTD_GIT_BRANCH`, `VSTD_GIT_TOKEN` | Content repository, branch, and repository-scoped write token for hosted sync |
 | `VSTD_GIT_DEBOUNCE_SECONDS`, `VSTD_GIT_POLL_SECONDS` | Optional hosted push batching and remote polling intervals |
-| `VSTD_AGENT`, `VSTD_AGENT_CMD` | Enable and select the optional headless redesign worker |
+| `VSTD_AGENT`, `VSTD_AGENT_CMD` | Enable the optional headless redesign worker; defaults to `claude`, or use `codex` with `OPENAI_API_KEY` |
 | `VSTD_S3_ENDPOINT`, `VSTD_S3_BUCKET`, `VSTD_S3_ACCESS_KEY`, `VSTD_S3_SECRET_KEY`, `VSTD_S3_REGION` | S3-compatible video storage |
 | `PUBLIC_URL` | Public base URL used by audience and call links |
 | `TELNYX_API_KEY`, `TELNYX_FROM_NUMBER`, `TELNYX_CONNECTION_ID` | Optional SMS and call actions |

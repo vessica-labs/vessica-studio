@@ -1102,6 +1102,7 @@ body.editmode .slide.active{cursor:default}
     let pct=0,kinds={};
     (list||[]).forEach(e=>{const k=e.kind||e,p=e.pct||15;kinds[k]=1;if(p>pct)pct=p;});
     if(kinds.error)return {pct:15,txt:'redesign needs attention — see slide companion'};
+    if(kinds.redesign&&(!st.agent||st.agent.enabled!==true))return {pct:0,txt:'redesign waiting — cloud agent is disabled'};
     const what=kinds.image&&kinds.redesign?'imagery + redesign':(kinds.image?'generating imagery':'redesign');
     return {pct,txt:what+(kinds.image&&!kinds.redesign?'':' pass')+(pct>15?' in progress':' queued')+' — ~'+pct+'%'};
   }

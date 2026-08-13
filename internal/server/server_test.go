@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -148,5 +149,32 @@ func TestMeReportsHostedEditCapability(t *testing.T) {
 				t.Fatalf("response %s does not contain %s", body, tc.editable)
 			}
 		})
+	}
+}
+
+func TestDeckStatusReportsDisabledAgentForQueuedRedesign(t *testing.T) {
+	st := testStudio(t)
+	companion := "# Before\n\n## Edit requests\n- simplify the curve\n\n## Log\n"
+	if err := os.WriteFile(st.SlidePath("demo", "0010-a", ".md"), []byte(companion), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s := New(st, ModeStudio)
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/deck/demo/status", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+	var got struct {
+		Agent   map[string]any              `json:"agent"`
+		Pending map[string][]map[string]any `json:"pending"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if enabled, ok := got.Agent["enabled"].(bool); !ok || enabled {
+		t.Fatalf("agent status = %#v, want enabled=false", got.Agent)
+	}
+	if len(got.Pending["0010-a"]) != 1 {
+		t.Fatalf("pending = %#v, want queued redesign", got.Pending)
 	}
 }

@@ -286,8 +286,8 @@ func cmdBuild(args []string) error {
 	return nil
 }
 
-// cmdAgent sweeps the redesign queue once, synchronously, using the local
-// claude CLI (VSTD_AGENT_CMD to override). `vstd serve` with VSTD_AGENT=1
+// cmdAgent sweeps the redesign queue once, synchronously, using the configured
+// coding-agent CLI (Claude by default; VSTD_AGENT_CMD to override). `vstd serve` with VSTD_AGENT=1
 // runs the same worker continuously in the background.
 func cmdAgent(args []string) error {
 	fs := flag.NewFlagSet("agent", flag.ExitOnError)

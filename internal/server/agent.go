@@ -1,13 +1,14 @@
 // Agent worker: executes queued redesign requests by running a headless
-// Claude session inside the studio root. The queue is the file contract
+// coding-agent session inside the studio root. The queue is the file contract
 // itself — unresolved "## Edit requests" bullets in slide companions.
 // Progress is reported through the same "(in progress — NN%)" markers the
 // status endpoint already reads, so the player's progress bars track the
 // worker for free. Scope is enforced post-hoc with git: any change outside
 // decks/, library/ or requests/ is reverted.
 //
-// Enable with VSTD_AGENT=1 (requires the claude CLI on PATH and
-// ANTHROPIC_API_KEY or existing CLI auth). Optional:
+// Enable with VSTD_AGENT=1. The default Claude runner requires the claude CLI
+// and ANTHROPIC_API_KEY (or existing CLI auth); set VSTD_AGENT_CMD=codex to use
+// the Codex CLI with OPENAI_API_KEY. Optional:
 //
 //	VSTD_AGENT_CMD          agent executable (default "claude")
 //	VSTD_AGENT_MAX_PER_HOUR rate cap (default 6)
@@ -22,6 +23,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
@@ -320,8 +322,9 @@ func (w *agentWorker) runPass(deck, id string) {
 TASK: run the redesign pass for deck %q, slide %q — and ONLY that slide.
 
 Read decks/%s/slides/%s.md. The "## Edit requests" section lists the work
-(ignore "- resolved:" lines and the "(in progress" marker). Follow the repo
-contract in CLAUDE.md strictly: companion-first, update the companion with
+(ignore "- resolved:" lines and the "(in progress" marker). Read the repo's
+agent guide and run "vstd skill slide-edit" before editing. Follow the content
+contract strictly: companion-first, update the companion with
 every change, meet the formatting standard, reuse library assets
 (library/manifest.json) before generating. If new imagery is required, drop
 a yaml into requests/ with deck: and slide: fields and rewrite that bullet
@@ -351,15 +354,7 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 
 	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
-	// Managed machines (e.g. BCG policy) set disableBypassPermissionsMode,
-	// silently ignoring --dangerously-skip-permissions — headless Edit/Write
-	// then stall on approvals nobody can grant. An explicit allow-list is
-	// honored in default permission mode under any policy, so pass both.
-	cmd := exec.CommandContext(ctx, w.bin,
-		"--dangerously-skip-permissions",
-		"--allowedTools", "Edit,Write,MultiEdit,NotebookEdit,Read,Glob,Grep,Bash",
-		"-p", prompt)
-	cmd.Dir = w.s.St.Root
+	cmd := agentCommand(ctx, w.bin, w.s.St.Root, prompt)
 	cmd.Env = os.Environ()
 	out, err := cmd.CombinedOutput()
 	w.enforceScope(preexisting)
@@ -398,6 +393,28 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 		w.gitPush(deck, id)
 	}
 	w.s.Broadcast("reload")
+}
+
+func agentCommand(ctx context.Context, bin, root, prompt string) *exec.Cmd {
+	if filepath.Base(bin) == "codex" {
+		cmd := exec.CommandContext(ctx, bin, "exec",
+			"--dangerously-bypass-approvals-and-sandbox",
+			"--skip-git-repo-check", "--ephemeral", "-C", root, prompt)
+		cmd.Dir = root
+		cmd.Env = os.Environ()
+		return cmd
+	}
+	// Managed machines (e.g. BCG policy) set disableBypassPermissionsMode,
+	// silently ignoring --dangerously-skip-permissions — headless Edit/Write
+	// then stall on approvals nobody can grant. An explicit allow-list is
+	// honored in default permission mode under any policy, so pass both.
+	cmd := exec.CommandContext(ctx, bin,
+		"--dangerously-skip-permissions",
+		"--allowedTools", "Edit,Write,MultiEdit,NotebookEdit,Read,Glob,Grep,Bash",
+		"-p", prompt)
+	cmd.Dir = root
+	cmd.Env = os.Environ()
+	return cmd
 }
 
 // dirtyPaths snapshots the working tree's modified paths.

@@ -463,7 +463,10 @@ func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	resp := map[string]any{"pending": pending, "imageQueue": queued}
+	resp := map[string]any{
+		"pending": pending, "imageQueue": queued,
+		"agent": map[string]any{"enabled": false},
+	}
 	if s.Agent != nil {
 		resp["agent"] = s.Agent.Info()
 	}
