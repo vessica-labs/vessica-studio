@@ -38,7 +38,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	for _, want := range []string{
 		`id="hud"`,                       // HUD bar
 		`id="hudmore"`,                   // ⋯ overflow popover
-		`id="pdfbtn"`,                    // PDF export button
+		`id="downloadbtn"`,               // PDF/PPTX download menu
+		`data-download="pptx"`,           // editable PowerPoint export
 		`data-act="sticky"`,              // sticky notes
 		`data-act="companion"`,           // companion drawer
 		`data-act="vessica"`,             // vessica toggle

@@ -5,7 +5,9 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"html"
 	"io"
 	"net"
 	"net/http"
@@ -30,6 +32,123 @@ import (
 type printJob struct {
 	html string
 	exp  time.Time
+}
+
+const pptxCaptureScript = `<script>
+(async()=>{
+  const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+  if(document.fonts&&document.fonts.ready)await document.fonts.ready;
+  const images=[...document.images];
+  await Promise.race([Promise.all(images.map(i=>i.complete?Promise.resolve():i.decode().catch(()=>{}))),sleep(2500)]);
+  await sleep(250);
+  const out={title:document.title||'Vessica deck',slides:[]};
+  const visible=(el,cs,r)=>cs.display!=='none'&&cs.visibility!=='hidden'&&parseFloat(cs.opacity||1)>0&&r.width>.3&&r.height>.3;
+  const colors=s=>(s||'').match(/rgba?\([^)]*\)|#[0-9a-fA-F]{3,8}/g)||[];
+  const opaque=c=>c&&c!=='transparent'&&!/rgba\([^)]*,\s*0(?:\.0+)?\s*\)/.test(c);
+  const opacity=el=>{let o=1,n=el;while(n&&n.nodeType===1){o*=parseFloat(getComputedStyle(n).opacity||1);n=n.parentElement;}return o;};
+  function geom(r,sr){const sx=1280/sr.width,sy=720/sr.height;return{x:(r.left-sr.left)*sx,y:(r.top-sr.top)*sy,w:r.width*sx,h:r.height*sy};}
+  function rotation(cs){const m=(cs.transform||'').match(/^matrix\(([^)]+)\)$/);if(!m)return 0;const p=m[1].split(',').map(Number);return Math.atan2(p[1],p[0])*180/Math.PI;}
+  function svgRotation(el){const m=el.getCTM&&el.getCTM();return m?Math.atan2(m.b,m.a)*180/Math.PI:0;}
+  function svgColor(el,prop){let v=getComputedStyle(el)[prop]||'';const m=v.match(/url\(["']?#([^"')]+)["']?\)/);if(m){const paint=el.ownerSVGElement&&el.ownerSVGElement.querySelector('#'+CSS.escape(m[1]));const stop=paint&&paint.querySelector(prop==='stroke'?'stop:last-child':'stop');if(stop)v=getComputedStyle(stop).stopColor||stop.getAttribute('stop-color')||v;}return v;}
+  function styleBase(el,cs,r,sr){return{...geom(r,sr),rotation:rotation(cs),opacity:opacity(el),fill:cs.backgroundColor,gradient:colors(cs.backgroundImage),stroke:cs.borderTopColor,stroke_width:Math.max(parseFloat(cs.borderTopWidth)||0,parseFloat(cs.borderRightWidth)||0,parseFloat(cs.borderBottomWidth)||0,parseFloat(cs.borderLeftWidth)||0)};}
+  function point(svg,x,y,sr){const p=svg.ownerSVGElement.createSVGPoint();p.x=x;p.y=y;const q=p.matrixTransform(svg.getScreenCTM());return{x:(q.x-sr.left)*1280/sr.width,y:(q.y-sr.top)*720/sr.height};}
+  async function pictureData(img,r,cs){
+    try{
+      if(img.decode)await Promise.race([img.decode().catch(()=>{}),sleep(1200)]);
+      const nw=img.naturalWidth||img.videoWidth,nh=img.naturalHeight||img.videoHeight;if(!nw||!nh)return '';
+      const scale=Math.min(2,1800/Math.max(r.width,r.height));const w=Math.max(1,Math.round(r.width*scale)),h=Math.max(1,Math.round(r.height*scale));
+      const c=document.createElement('canvas');c.width=w;c.height=h;const x=c.getContext('2d');
+      const fit=cs.objectFit||'fill',src=nw/nh,dst=w/h;let sx=0,sy=0,sw=nw,sh=nh,dx=0,dy=0,dw=w,dh=h;
+      if(fit==='cover'){if(src>dst){sw=nh*dst;sx=(nw-sw)/2}else{sh=nw/dst;sy=(nh-sh)/2}}
+      else if(fit==='contain'){if(src>dst){dh=w/src;dy=(h-dh)/2}else{dw=h*src;dx=(w-dw)/2}}
+      x.drawImage(img,sx,sy,sw,sh,dx,dy,dw,dh);return c.toDataURL('image/png');
+    }catch(_){return ''}
+  }
+  async function backgroundPicture(el,r,cs){
+    const m=(cs.backgroundImage||'').match(/url\(["']?([^"')]+)["']?\)/);if(!m)return '';
+    try{const img=new Image();img.crossOrigin='anonymous';img.src=m[1];await Promise.race([img.decode(),sleep(1200)]);return pictureData(img,r,{objectFit:cs.backgroundSize==='contain'?'contain':'cover'});}catch(_){return ''}
+  }
+  function textValue(el,cs){let t=(el.innerText||el.textContent||'').replace(/\u00a0/g,' ').trim();if(el.tagName==='LI'&&cs.listStyleType!=='none')t='• '+t;if(cs.textTransform==='uppercase')t=t.toUpperCase();if(cs.textTransform==='lowercase')t=t.toLowerCase();return t;}
+  function wantsText(el){
+    const tag=el.tagName;const semantic=/^(H[1-6]|P|LI|TD|TH|DT|DD|LABEL|BUTTON|FIGCAPTION)$/.test(tag);
+    const role=/(s-title|s-lead|kpi|bh|headband|chev|tiny|eyebrow|quote|caption|label|title|subtitle)/.test(el.className||'');
+    const direct=[...el.childNodes].some(n=>n.nodeType===3&&n.nodeValue.trim());
+    const block=[...el.children].some(c=>/^(DIV|P|H[1-6]|UL|OL|LI|TABLE|SECTION|ARTICLE|FIGURE)$/.test(c.tagName)&&(c.textContent||'').trim());
+    return semantic||role||(direct&&!block)||(!el.children.length&&(el.textContent||'').trim());
+  }
+  for(const page of document.querySelectorAll('.vstd-page')){
+    const slide=page.querySelector('.slide'),sr=slide.getBoundingClientRect();const elements=[];
+    async function walk(el,textBlocked=false){
+      if(!(el instanceof Element)||el.matches('.notes,script,style'))return;
+      const cs=getComputedStyle(el),r=el.getBoundingClientRect();if(!visible(el,cs,r))return;
+      if(el!==slide){
+        const base=styleBase(el,cs,r,sr);const radius=parseFloat(cs.borderTopLeftRadius)||0;
+        if(opaque(cs.backgroundColor)||base.gradient.length>=2||base.stroke_width>0)elements.push({kind:radius>8?'roundRect':'rect',name:(el.className||el.tagName).toString().slice(0,80),...base});
+        if(/url\(/.test(cs.backgroundImage)){const data=await backgroundPicture(el,r,cs);if(data)elements.push({kind:'image',name:'Background image',...geom(r,sr),rotation:base.rotation,opacity:base.opacity,image_data:data});}
+      }
+      if(el.tagName==='IMG'){
+        const data=await pictureData(el,r,cs);elements.push({kind:'image',name:el.alt||'Image',...geom(r,sr),rotation:rotation(cs),opacity:opacity(el),image_data:data});return;
+      }
+      if(el.tagName==='VIDEO'){
+        let source=el;if(el.poster){const p=new Image();p.src=el.poster;await Promise.race([p.decode().catch(()=>{}),sleep(1800)]);source=p}const data=await pictureData(source,r,cs);elements.push({kind:'image',name:'Video poster',...geom(r,sr),rotation:rotation(cs),opacity:opacity(el),image_data:data});return;
+      }
+      if(el.localName==='svg'){
+        for(const n of el.querySelectorAll('rect,circle,ellipse,line,polyline,polygon,path,text')){
+          const ns=getComputedStyle(n),nr=n.getBoundingClientRect();if(ns.display==='none'||ns.visibility==='hidden'||opacity(n)<=0||(nr.width<=.3&&nr.height<=.3))continue;
+          const tag=(n.localName||n.tagName).toLowerCase();
+          const common={name:(n.getAttribute('class')||n.tagName).toString().slice(0,80),stroke:svgColor(n,'stroke'),stroke_width:parseFloat(ns.strokeWidth)||1,fill:svgColor(n,'fill'),opacity:opacity(n)};
+          if(tag==='text'){let g=geom(nr,sr),rot=svgRotation(n);if(Math.abs(rot%180)>45){const cx=g.x+g.w/2,cy=g.y+g.h/2,t=g.w;g.w=g.h;g.h=t;g.x=cx-g.w/2;g.y=cy-g.h/2;}g.x-=2;g.w+=4;elements.push({kind:'text',...g,...common,rotation:rot,nowrap:true,text:(n.textContent||'').trim(),font_family:ns.fontFamily,font_size:parseFloat(ns.fontSize)||16,bold:parseInt(ns.fontWeight)>=600,italic:ns.fontStyle==='italic',align:ns.textAnchor==='middle'?'center':(ns.textAnchor==='end'?'right':'left'),color:svgColor(n,'fill'),valign:'middle'});continue;}
+          if(tag==='rect')elements.push({kind:parseFloat(n.getAttribute('rx')||0)>4?'roundRect':'rect',...geom(nr,sr),...common});
+          else if(tag==='circle'||tag==='ellipse')elements.push({kind:'ellipse',...geom(nr,sr),...common});
+          else if(tag==='line')elements.push({kind:'line',...common,points:[point(n,+n.getAttribute('x1'),+n.getAttribute('y1'),sr),point(n,+n.getAttribute('x2'),+n.getAttribute('y2'),sr)]});
+          else if(tag==='polyline'||tag==='polygon'){const pts=[...n.points].map(p=>point(n,p.x,p.y,sr));if(tag==='polygon'&&pts.length)pts.push(pts[0]);elements.push({kind:'path',...common,points:pts});}
+          else if(tag==='path'){try{const len=n.getTotalLength(),count=Math.max(2,Math.min(100,Math.ceil(len/12)));const pts=[];for(let i=0;i<=count;i++){const p=n.getPointAtLength(len*i/count);pts.push(point(n,p.x,p.y,sr));}elements.push({kind:'path',...common,points:pts});}catch(_){}}
+        }
+        return;
+      }
+      const takeText=!textBlocked&&wantsText(el),txt=takeText?textValue(el,cs):'';
+      if(txt)elements.push({kind:'text',name:(el.className||el.tagName).toString().slice(0,80),...geom(r,sr),rotation:rotation(cs),opacity:opacity(el),nowrap:cs.whiteSpace==='nowrap',text:txt,font_family:cs.fontFamily,font_size:parseFloat(cs.fontSize)||16,bold:parseInt(cs.fontWeight)>=600,italic:cs.fontStyle==='italic',align:cs.textAlign,valign:cs.verticalAlign,color:cs.color});
+      for(const child of el.children)await walk(child,textBlocked||!!txt);
+    }
+    for(const video of slide.querySelectorAll('video[data-vstd-video]'))if(!video.poster)video.poster='/assets/video/'+encodeURIComponent(video.dataset.vstdVideo)+'/poster';
+    const scs=getComputedStyle(slide);elements.push({kind:'rect',name:'Slide background',x:0,y:0,w:1280,h:720,fill:scs.backgroundColor,gradient:colors(scs.backgroundImage),stroke_width:0,opacity:1});
+    for(const child of slide.children)await walk(child,false);
+    out.slides.push({id:slide.dataset.vstd||'',elements});
+  }
+  const pre=document.createElement('pre');pre.id='vstd-pptx-json';pre.textContent=JSON.stringify(out);document.body.replaceChildren(pre);
+})().catch(e=>{const pre=document.createElement('pre');pre.id='vstd-pptx-error';pre.textContent=String(e&&e.stack||e);document.body.replaceChildren(pre)});
+</script>`
+
+func injectPPTXCapture(page string) string {
+	return strings.Replace(page, "</body>", pptxCaptureScript+"</body>", 1)
+}
+
+func parsePPTXCapture(dump []byte) (studio.PPTXDeck, error) {
+	const marker = `<pre id="vstd-pptx-json">`
+	s := string(dump)
+	start := strings.Index(s, marker)
+	if start < 0 {
+		if e := strings.Index(s, `<pre id="vstd-pptx-error">`); e >= 0 {
+			e += len(`<pre id="vstd-pptx-error">`)
+			if end := strings.Index(s[e:], "</pre>"); end >= 0 {
+				return studio.PPTXDeck{}, fmt.Errorf("browser capture: %s", html.UnescapeString(s[e:e+end]))
+			}
+		}
+		return studio.PPTXDeck{}, fmt.Errorf("browser did not produce PPTX object data")
+	}
+	start += len(marker)
+	end := strings.Index(s[start:], "</pre>")
+	if end < 0 {
+		return studio.PPTXDeck{}, fmt.Errorf("truncated PPTX object data")
+	}
+	var deck studio.PPTXDeck
+	if err := json.Unmarshal([]byte(html.UnescapeString(s[start:start+end])), &deck); err != nil {
+		return studio.PPTXDeck{}, fmt.Errorf("decode PPTX object data: %w", err)
+	}
+	if len(deck.Slides) == 0 {
+		return studio.PPTXDeck{}, fmt.Errorf("browser captured no slides")
+	}
+	return deck, nil
 }
 
 // findChrome locates a Chrome-family binary for headless PDF rendering.
@@ -242,4 +361,127 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-VSTD-Pages", strconv.Itoa(pages))
 	w.Write(pdf)
+}
+
+func (s *Server) capturePPTXDeck(r *http.Request, deck string) (studio.PPTXDeck, error) {
+	page, _, err := s.St.BuildPrintHTML(deck)
+	if err != nil {
+		return studio.PPTXDeck{}, err
+	}
+	chrome := findChrome()
+	if chrome == "" {
+		return studio.PPTXDeck{}, fmt.Errorf("PPTX export needs Chrome or Chromium on this machine — install one, or point VSTD_CHROME at a browser binary")
+	}
+	la, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
+	if la == nil {
+		return studio.PPTXDeck{}, fmt.Errorf("cannot determine local server address")
+	}
+	_, port, err := net.SplitHostPort(la.String())
+	if err != nil {
+		return studio.PPTXDeck{}, fmt.Errorf("cannot determine local server port: %v", err)
+	}
+	key := s.putPrintJob(injectPPTXCapture(page))
+	defer s.dropPrintJob(key)
+	pageURL := fmt.Sprintf("http://127.0.0.1:%s/api/deck/%s/print.html?key=%s", port, deck, key)
+
+	tmp, err := os.MkdirTemp("", "vstd-pptx-capture-*")
+	if err != nil {
+		return studio.PPTXDeck{}, err
+	}
+	defer os.RemoveAll(tmp)
+	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, chrome,
+		"--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
+		"--no-first-run", "--no-default-browser-check", "--disable-component-update",
+		"--disable-background-networking", "--disable-sync", "--hide-scrollbars",
+		"--window-size=1280,720", "--virtual-time-budget=20000",
+		"--run-all-compositor-stages-before-draw", "--user-data-dir="+filepath.Join(tmp, "profile"),
+		"--dump-dom", pageURL)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	dumpPath := filepath.Join(tmp, "capture.html")
+	dumpFile, err := os.Create(dumpPath)
+	if err != nil {
+		return studio.PPTXDeck{}, err
+	}
+	defer dumpFile.Close()
+	cmd.Stdout = dumpFile
+	if err := cmd.Start(); err != nil {
+		return studio.PPTXDeck{}, fmt.Errorf("chrome object capture failed to start: %v", err)
+	}
+	exited := make(chan error, 1)
+	go func() { exited <- cmd.Wait() }()
+	var dump []byte
+	for dump == nil {
+		select {
+		case runErr := <-exited:
+			dumpFile.Sync()
+			dump, _ = os.ReadFile(dumpPath)
+			if runErr != nil && len(dump) == 0 {
+				err = runErr
+			}
+		case <-ctx.Done():
+			cmd.Process.Kill()
+			err = ctx.Err()
+			dump = []byte{}
+		case <-time.After(250 * time.Millisecond):
+			dumpFile.Sync()
+			candidate, _ := os.ReadFile(dumpPath)
+			if bytes.Contains(candidate, []byte(`<pre id="vstd-pptx-json">`)) && bytes.Contains(candidate, []byte(`</pre>`)) && bytes.Contains(candidate, []byte(`</html>`)) {
+				dump = candidate
+				cmd.Process.Kill() // Chrome can linger after --dump-dom on macOS.
+			}
+		}
+	}
+	if err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if len(msg) > 500 {
+			msg = msg[len(msg)-500:]
+		}
+		return studio.PPTXDeck{}, fmt.Errorf("chrome object capture failed: %v — %s", err, msg)
+	}
+	return parsePPTXCapture(dump)
+}
+
+// handleExportPPTX converts the rendered DOM to native PresentationML
+// objects. It deliberately does not take slide screenshots: text remains text,
+// HTML/SVG geometry remains shapes/lines, and each source image is a distinct
+// editable picture object.
+func (s *Server) handleExportPPTX(w http.ResponseWriter, r *http.Request) {
+	if !s.isPresenter(r) {
+		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
+		return
+	}
+	deck := r.PathValue("deck")
+	if !studio.ValidDeckName(deck) {
+		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
+		return
+	}
+	model, err := s.capturePPTXDeck(r, deck)
+	if err != nil {
+		jsonErr(w, err, http.StatusInternalServerError)
+		return
+	}
+	pptx, err := studio.BuildPPTX(model)
+	if err != nil {
+		jsonErr(w, err, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+deck+`.pptx"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-VSTD-Pages", strconv.Itoa(len(model.Slides)))
+	total, paths := 0, 0
+	for _, slide := range model.Slides {
+		total += len(slide.Elements)
+		for _, element := range slide.Elements {
+			if element.Kind == "path" || element.Kind == "line" {
+				paths++
+			}
+		}
+	}
+	w.Header().Set("X-VSTD-Objects", strconv.Itoa(total))
+	w.Header().Set("X-VSTD-Vector-Paths", strconv.Itoa(paths))
+	w.Write(pptx)
 }

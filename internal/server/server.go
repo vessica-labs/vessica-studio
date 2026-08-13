@@ -148,6 +148,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/asset/image", s.editOnly(s.handleImageUpload))
 
 	mux.HandleFunc("GET /api/deck/{deck}/export.pdf", s.handleExportPDF)
+	mux.HandleFunc("GET /api/deck/{deck}/export.pptx", s.handleExportPPTX)
 	mux.HandleFunc("GET /api/deck/{deck}/print.html", s.handlePrintHTML)
 	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)

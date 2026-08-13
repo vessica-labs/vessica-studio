@@ -30,8 +30,9 @@ Part of [Vessica Labs](https://github.com/vessica-labs). Licensed under MIT.
   pass that compares the rendered slide with the attached source before completion.
 - **Audience interaction:** signed deck links, QR entry, per-person web chat,
   live audience pulse, and optional Telnyx/Resend actions.
-- **Portable output:** build static deck HTML, export PDF through headless
-  Chrome, or create a self-contained folder bundle with referenced media.
+- **Portable output:** build static deck HTML, export a fixed-layout PDF or an
+  editable PowerPoint deck through headless Chrome, or create a self-contained
+  folder bundle with referenced media.
 - **Hosted presentation mode:** deploy a presenter/audience surface to Railway
   with GitHub sign-in, presenter-only Git-backed editing, and expiring
   deck-scoped share links.
@@ -39,7 +40,7 @@ Part of [Vessica Labs](https://github.com/vessica-labs). Licensed under MIT.
 ## Requirements
 
 - [Go 1.22 or newer](https://go.dev/doc/install)
-- Optional: Chrome or Chromium for PDF export
+- Optional: Chrome or Chromium for PDF and editable PowerPoint export
 - Optional: FFmpeg and FFprobe for normalized video and poster extraction
 - Optional: an OpenAI API key for generated images, Realtime, audience chat,
   web search, and code-interpreter features

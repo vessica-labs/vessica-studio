@@ -46,6 +46,12 @@ body:hover #hud{opacity:1}
   background:rgba(12,20,15,.96);border:1px solid #2c4a35;border-radius:16px;padding:8px;min-width:150px}
 #hudmore.open{display:flex}
 #hudmore button{text-align:left;padding:11px 16px;font-size:16px}
+#downloadMenu{display:none;position:absolute;bottom:48px;right:42px;flex-direction:column;gap:3px;
+  background:rgba(12,20,15,.97);border:1px solid #2c4a35;border-radius:14px;padding:7px;min-width:178px;box-shadow:0 12px 34px rgba(0,0,0,.35)}
+#downloadMenu.open{display:flex}
+#downloadMenu button{text-align:left;padding:9px 13px;font-size:13px}
+#downloadMenu small{display:block;color:#86a78e;font-size:10px;font-weight:400;margin-top:2px}
+#downloadbtn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 /* touch devices: hud always visible, bigger targets, secondary items behind ⋯ */
 body.mobilehud #hud{opacity:1;gap:2px;padding:8px 10px;bottom:calc(10px + env(safe-area-inset-bottom));max-width:96vw}
 body.mobilehud #hud>button{font-size:16px;padding:9px 13px}
@@ -212,7 +218,7 @@ body.editmode section.slide img,body.editmode section.slide video{pointer-events
 body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--vstd-green);outline-offset:2px;cursor:text}
 body.editmode .slide.active{cursor:default}
 @media print{
-  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#capbar{display:none!important}
+  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#capbar{display:none!important}
   #stage{position:static}
   #frame{width:1280px;height:720px;box-shadow:none;page-break-after:always;position:relative;margin:0 auto}
   .slide{display:block!important;position:relative;page-break-after:always}
@@ -241,11 +247,12 @@ body.editmode .slide.active{cursor:default}
   <button data-act="companion" id="companionbtn" style="display:none">Companion</button>
   <button data-act="notes">Notes</button>
   <button data-act="present" id="presentbtn">Present</button>
-  <button data-act="pdf" id="pdfbtn" style="display:none" title="Download PDF (active + hidden slides)">PDF</button>
+  <button data-act="download" id="downloadbtn" style="display:none" title="Download deck" aria-label="Download deck"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg></button>
   <button id="newslidebtn" style="display:none">+ Slide</button>
   <button data-act="edit" id="editbtn">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
   <button data-act="more" id="hudMore" style="display:none">⋯</button>
+  <div id="downloadMenu"><button data-download="pdf">PDF<small>Fixed-layout document</small></button><button data-download="pptx">PowerPoint (.pptx)<small>Editable text, shapes, chart elements, and images</small></button></div>
   <div id="hudmore"></div>
 </div>
 <div id="edithint">Edit mode · click = select · click again = edit text · drag = move (snaps to align — hold &#8997;/Alt to disable) · handles = resize · arrows = nudge · <b>changes save automatically when you exit (E)</b></div>
@@ -489,6 +496,7 @@ body.editmode .slide.active{cursor:default}
 
   document.getElementById('hud').addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.download){document.getElementById('downloadMenu').classList.remove('open');downloadDeck(b.dataset.download);return;}
     const a=b.dataset.act;
     if(a==='vessica'){document.dispatchEvent(new Event('vstd:vtoggle'));document.getElementById('hudmore').classList.remove('open');return;}
     if(a==='more'){document.getElementById('hudmore').classList.toggle('open');return;}
@@ -501,9 +509,12 @@ body.editmode .slide.active{cursor:default}
     else if(a==='notes'){notesOn=!notesOn;notesPanel.classList.toggle('open',notesOn);}
     else if(a==='edit')toggleEdit();
     else if(a==='save')saveHtml();
-    else if(a==='pdf')downloadPdf();
+    else if(a==='download'){document.getElementById('downloadMenu').classList.toggle('open');}
     else if(a==='present')enterPresent();
   });
+  addEventListener('pointerdown',e=>{
+    if(!e.target.closest('#downloadMenu,#downloadbtn'))document.getElementById('downloadMenu').classList.remove('open');
+  },true);
   menu.addEventListener('click',e=>{if(e.target===menu)menu.classList.remove('open');});
   addEventListener('keydown',e=>{
     if(e.target&&(e.target.tagName==='TEXTAREA'||e.target.tagName==='INPUT'))return;
@@ -987,25 +998,26 @@ body.editmode .slide.active{cursor:default}
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   }
 
-  // ---- PDF export: engine renders active + hidden (not unused) slides ----
-  let __pdfBusy=false;
-  async function downloadPdf(){
-    if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast('PDF export needs the engine (vstd serve)');return;}
-    if(__pdfBusy)return;
-    __pdfBusy=true;
-    toast('Generating PDF…',120000);
+  // ---- deck export: PDF or native editable PowerPoint ----
+  let __downloadBusy=false;
+  async function downloadDeck(format){
+    format=format==='pptx'?'pptx':'pdf';
+    if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast(format.toUpperCase()+' export needs the engine (vstd serve)');return;}
+    if(__downloadBusy)return;
+    __downloadBusy=true;
+    toast(format==='pptx'?'Building editable PowerPoint objects…':'Generating PDF…',120000);
     try{
-      const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.pdf');
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.'+format);
       if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
       const blob=await r.blob();
       const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);a.download=window.VSTD.deck+'.pdf';
+      a.href=URL.createObjectURL(blob);a.download=window.VSTD.deck+'.'+format;
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(a.href),2000);
       const n=r.headers.get('X-VSTD-Pages');
-      toast('PDF downloaded'+(n?' — '+n+' slides':''));
-    }catch(e){toast('PDF export failed: '+e.message,7000);}
-    finally{__pdfBusy=false;}
+      toast((format==='pptx'?'Editable PowerPoint':'PDF')+' downloaded'+(n?' — '+n+' slides':''));
+    }catch(e){toast(format.toUpperCase()+' export failed: '+e.message,7000);}
+    finally{__downloadBusy=false;}
   }
 
   // engine link: SSE (reload + live-follow), identity, presenter broadcast
@@ -1036,7 +1048,7 @@ body.editmode .slide.active{cursor:default}
         if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
         // presenter-only: starts hidden so an audience tab never flashes it
-        if(!audience){const b=document.getElementById('pdfbtn');if(b)b.style.display='';}
+        if(!audience){const b=document.getElementById('downloadbtn');if(b)b.style.display='';}
         if(audience){
           window.__following=true;
           ['editbtn','savebtn','presentbtn','hudVessica'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
