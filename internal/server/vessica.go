@@ -687,6 +687,7 @@ func postJSON(url, bearer string, payload any) ([]byte, int, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+bearer)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("User-Agent", "Vessica-Studio/1.0")
 	cl := &http.Client{Timeout: 30 * time.Second}
 	res, err := cl.Do(req)
 	if err != nil {
