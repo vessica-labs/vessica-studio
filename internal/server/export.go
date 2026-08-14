@@ -22,7 +22,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
-// PDF export: GET /api/deck/{deck}/export.pdf (presenter-only) builds a
+// PDF export: GET /api/deck/{deck}/export.pdf (any authorized viewer) builds a
 // static print page of the deck's active + hidden slides (parked/"unused"
 // excluded), renders it through a locally installed Chrome/Chromium
 // (--headless --print-to-pdf — no Go dependency), and streams the PDF back
@@ -343,13 +343,13 @@ func (s *Server) renderDeckPDF(r *http.Request, deck string) ([]byte, int, error
 }
 
 func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
-	if !s.isPresenter(r) {
-		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
-		return
-	}
 	deck := r.PathValue("deck")
 	if !studio.ValidDeckName(deck) {
 		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
+		return
+	}
+	if !s.canView(r, deck) {
+		jsonErr(w, fmt.Errorf("deck share access or presenter auth required"), http.StatusUnauthorized)
 		return
 	}
 	pdf, pages, err := s.renderDeckPDF(r, deck)

@@ -75,6 +75,9 @@ func (s *Studio) Build(deck string) (string, error) {
 			"base":  s.Config.OpenAI.BaseURL,
 		},
 	}
+	if s.Config.FollowDeck != "" && s.Config.PublicHost != "" {
+		rt["follow_url"] = strings.TrimRight(s.Config.PublicHost, "/") + "/follow"
+	}
 	rtJSON, _ := json.Marshal(rt)
 
 	out := string(player)

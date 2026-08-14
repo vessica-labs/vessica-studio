@@ -135,6 +135,28 @@ func (s *Server) shareValid(deck, tok string) bool {
 
 func shareCookieName(deck string) string { return "vstd_share_" + deck }
 
+func shareCookieMaxAge(tok string) int {
+	parts := strings.SplitN(tok, ".", 2)
+	if len(parts) != 2 {
+		return 0
+	}
+	exp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0
+	}
+	maxAge := int(time.Until(time.Unix(exp, 0)).Seconds())
+	if maxAge < 1 {
+		return 1
+	}
+	return maxAge
+}
+
+func (s *Server) setShareCookie(w http.ResponseWriter, r *http.Request, deck, tok string) {
+	http.SetCookie(w, &http.Cookie{Name: shareCookieName(deck), Value: tok, Path: "/",
+		HttpOnly: true, Secure: r.TLS != nil || s.Mode == ModePublic, SameSite: http.SameSiteLaxMode,
+		MaxAge: shareCookieMaxAge(tok)})
+}
+
 func (s *Server) hasShare(r *http.Request, deck string) bool {
 	if c, err := r.Cookie(shareCookieName(deck)); err == nil && s.shareValid(deck, c.Value) {
 		return true
@@ -174,19 +196,28 @@ func (s *Server) handleShareLanding(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "This share link is invalid or has expired.", http.StatusForbidden)
 		return
 	}
-	maxAge := 0
-	if parts := strings.SplitN(tok, ".", 2); len(parts) == 2 {
-		if exp, err := strconv.ParseInt(parts[0], 10, 64); err == nil {
-			maxAge = int(time.Until(time.Unix(exp, 0)).Seconds())
-			if maxAge < 1 {
-				maxAge = 1
-			}
-		}
-	}
-	http.SetCookie(w, &http.Cookie{Name: shareCookieName(deck), Value: tok, Path: "/",
-		HttpOnly: true, Secure: r.TLS != nil || s.Mode == ModePublic, SameSite: http.SameSiteLaxMode,
-		MaxAge: maxAge})
+	s.setShareCookie(w, r, deck, tok)
 	http.Redirect(w, r, "/d/"+deck+"/", http.StatusFound)
+}
+
+// handleFollowLanding is an opt-in, memorable audience entrance for the one
+// deck configured as follow_deck in studio.yaml. It never puts a share token
+// in browser history: the route grants a 24-hour, deck-scoped cookie and then
+// joins the same live-follow experience used by QR visitors.
+func (s *Server) handleFollowLanding(w http.ResponseWriter, r *http.Request) {
+	deck := strings.TrimSpace(s.St.Config.FollowDeck)
+	if !studio.ValidDeckName(deck) {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.St.LoadDeckMeta(deck); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	tok := s.MintShare(deck, 24*time.Hour)
+	s.setShareCookie(w, r, deck, tok)
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "/d/"+deck+"/?follow=1", http.StatusFound)
 }
 
 func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {

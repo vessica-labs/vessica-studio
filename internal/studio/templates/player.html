@@ -1163,8 +1163,15 @@ body.editmode .slide.active{cursor:default}
         if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
         window.__vaudience=audience;
-        // presenter-only: starts hidden so an audience tab never flashes it
-        if(!audience){['downloadbtn','sharebtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
+        // All authorized viewers may download the fixed-layout PDF. PowerPoint
+        // and share-link controls stay presenter-only at both the HUD and API.
+        if(audience){
+          const b=document.getElementById('downloadbtn');
+          if(b){b.style.display='';b.title='Download PDF';b.setAttribute('aria-label','Download PDF');}
+          document.querySelectorAll('#downloadMenu [data-download^="pptx"]').forEach(b=>b.hidden=true);
+        }else{
+          ['downloadbtn','sharebtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});
+        }
         if(audience){
           window.__following=true;
           if(window.__lastPresenterIdx!=null)show(window.__lastPresenterIdx);
@@ -1917,7 +1924,10 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
         q.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:'+pos+';padding:0 70px;background:rgba(6,20,10,'+(args.position&&args.position!=='center'?'.25':'.55')+');z-index:60;cursor:pointer';
         q.innerHTML='<div style="background:#FCFBFA;border-radius:24px;padding:36px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.4)">'+
           '<img src="/api/deck/'+window.VSTD.deck+'/share-qr.png" style="width:380px;height:380px;display:block" alt="Scan to follow along">'+
-          '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:24px;color:#0C2B15;margin-top:14px"><b>Scan to follow along live</b></div></div>';
+          '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:24px;color:#0C2B15;margin-top:14px"><b>Scan to follow along live</b></div>'+
+          '<div data-follow-url style="font-family:\'Trebuchet MS\',sans-serif;font-size:18px;color:#54735e;margin-top:6px"></div></div>';
+        const followURL=(window.VSTD&&window.VSTD.follow_url)||location.origin+'/follow';
+        q.querySelector('[data-follow-url]').textContent=followURL.replace(/^https?:\/\//,'');
         q.addEventListener('click',()=>q.remove());
         document.body.appendChild(q);}
       out='QR shown';}

@@ -25,6 +25,7 @@ type Config struct {
 	ThemeDefault   string `yaml:"theme_default"`
 	Port           int    `yaml:"port"`
 	PublicHost     string `yaml:"public_host,omitempty"`
+	FollowDeck     string `yaml:"follow_deck,omitempty"`
 	ShareSecretCmd string `yaml:"share_secret_cmd,omitempty"`
 	OpenAI         struct {
 		BaseURL           string `yaml:"base_url"`

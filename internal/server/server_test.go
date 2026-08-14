@@ -221,6 +221,71 @@ func TestPresenterMintsAbsoluteDeckScopedShareLink(t *testing.T) {
 	}
 }
 
+func TestFollowLandingGrantsOnlyConfiguredDeck(t *testing.T) {
+	st := testStudio(t)
+	st.Config.FollowDeck = "demo"
+	s := New(st, ModePublic)
+	s.secret = "test-secret"
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/follow", nil))
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/d/demo/?follow=1" {
+		t.Fatalf("follow status=%d location=%q body=%s", rr.Code, rr.Header().Get("Location"), rr.Body.String())
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("follow cache control = %q", rr.Header().Get("Cache-Control"))
+	}
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != shareCookieName("demo") || !cookies[0].HttpOnly || !cookies[0].Secure {
+		t.Fatalf("follow cookie = %#v", cookies)
+	}
+	if !s.shareValid("demo", cookies[0].Value) || s.shareValid("other", cookies[0].Value) {
+		t.Fatal("follow cookie was not scoped to the configured deck")
+	}
+}
+
+func TestFollowLandingIsDisabledWithoutConfiguredDeck(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/follow", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d, want 404; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPDFDownloadAuthorizationAllowsShareButPPTXStaysPresenterOnly(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	s.secret = "test-secret"
+	h := s.Routes()
+	share := s.MintShare("demo", time.Hour)
+	shared := httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pdf", nil)
+	shared.AddCookie(&http.Cookie{Name: shareCookieName("demo"), Value: share})
+	if !s.canView(shared, "demo") {
+		t.Fatal("share-cookie holder cannot download the authorized deck PDF")
+	}
+	if s.isPresenter(shared) {
+		t.Fatal("share-cookie holder unexpectedly has presenter/PPTX authority")
+	}
+	if s.canView(httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pdf", nil), "demo") {
+		t.Fatal("anonymous viewer unexpectedly has PDF authority")
+	}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pdf", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous PDF status=%d, want 401; body=%s", rr.Code, rr.Body.String())
+	}
+
+	sharedPPTX := httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pptx", nil)
+	sharedPPTX.AddCookie(&http.Cookie{Name: shareCookieName("demo"), Value: share})
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, sharedPPTX)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("shared-viewer PPTX status=%d, want 401; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestDeckStatusReportsDisabledAgentForQueuedRedesign(t *testing.T) {
 	st := testStudio(t)
 	companion := "# Before\n\n## Edit requests\n- simplify the curve\n\n## Log\n"

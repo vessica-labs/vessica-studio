@@ -12,7 +12,7 @@ import (
 // engine's embedded control plane, identical for every theme.
 func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	root := t.TempDir()
-	writeFile(t, filepath.Join(root, "studio.yaml"), "theme_default: default\n")
+	writeFile(t, filepath.Join(root, "studio.yaml"), "theme_default: default\npublic_host: https://talk.example\nfollow_deck: demo\n")
 	writeFile(t, filepath.Join(root, "themes", "default", "theme.css"),
 		":root{--sans:sans-serif}.slide{background:#fff}")
 	writeFile(t, filepath.Join(root, "decks", "demo", "deck.yaml"),
@@ -46,6 +46,9 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`if(window.__lastPresenterIdx!=null)show`, // late audience joins catch up immediately
 		`data-download="pptx"`,                    // visual-exact PowerPoint export
 		`data-download="pptx-editable"`,           // explicit best-effort editable fallback
+		`document.querySelectorAll('#downloadMenu [data-download^="pptx"]')`, // audience never sees PowerPoint
+		`b.title='Download PDF'`,                   // audience HUD exposes PDF directly
+		`"follow_url":"https://talk.example/follow"`, // stable laptop entry is available to the QR overlay
 		`id="editRibbon"`,                         // fixed, shared object-editing ribbon
 		`role="toolbar"`,                          // accessible PowerPoint-style control surface
 		`id="videoRibbonTools"`,                   // media options share the same ribbon
