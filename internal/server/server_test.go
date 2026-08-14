@@ -152,6 +152,75 @@ func TestMeReportsHostedEditCapability(t *testing.T) {
 	}
 }
 
+func TestPresenterMintsAbsoluteDeckScopedShareLink(t *testing.T) {
+	st := testStudio(t)
+	write := func(rel, body string) {
+		path := filepath.Join(st.Root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("decks/other/deck.yaml", "title: Other\ntheme: default\n")
+	write("decks/other/slides/0010-a.html", `<section class="slide">Other</section>`)
+	write("decks/other/slides/0010-a.md", "# Other\n")
+	st.Config.PublicHost = "https://mattkropp.vessica.ai/"
+	s := New(st, ModePublic)
+	s.secret = "test-secret"
+	s.allowed = map[string]bool{"matt-kropp": true}
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	req := presenterRequest(s, http.MethodPost, "/api/deck/demo/share", `{"ttl_hours":168}`)
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("share status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+	var share struct {
+		URL       string `json:"url"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &share); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(share.URL, "https://mattkropp.vessica.ai/v/demo/") || share.ExpiresAt == "" {
+		t.Fatalf("share response = %#v", share)
+	}
+
+	landing := httptest.NewRequest(http.MethodGet, share.URL, nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, landing)
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/d/demo/" {
+		t.Fatalf("landing status=%d location=%q body=%s", rr.Code, rr.Header().Get("Location"), rr.Body.String())
+	}
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge <= 6*24*60*60 {
+		t.Fatalf("share cookie = %#v, want token-matched lifetime", cookies)
+	}
+
+	for _, tc := range []struct {
+		deck string
+		want int
+	}{{"demo", http.StatusOK}, {"other", http.StatusForbidden}} {
+		r := httptest.NewRequest(http.MethodGet, "/d/"+tc.deck+"/", nil)
+		r.AddCookie(cookies[0])
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, r)
+		if rr.Code != tc.want {
+			t.Fatalf("shared viewer status for %s = %d, want %d; body=%s", tc.deck, rr.Code, tc.want, rr.Body.String())
+		}
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/deck/demo/share", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous mint status = %d, want 401", rr.Code)
+	}
+}
+
 func TestDeckStatusReportsDisabledAgentForQueuedRedesign(t *testing.T) {
 	st := testStudio(t)
 	companion := "# Before\n\n## Edit requests\n- simplify the curve\n\n## Log\n"

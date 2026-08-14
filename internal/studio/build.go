@@ -59,7 +59,7 @@ func (s *Studio) Build(deck string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		slides.WriteString(stampFragment(frag, id))
+		slides.WriteString(stampFragment(ensurePagePill(frag), id))
 		slides.WriteString("\n")
 	}
 
@@ -107,6 +107,25 @@ func warnThemePlayerOnce(theme string) {
 }
 
 var sectionTagRe = regexp.MustCompile(`<section\s`)
+var pagePillClassRe = regexp.MustCompile(`class\s*=\s*["'][^"']*\bpgpill\b[^"']*["']`)
+
+// ensurePagePill makes slide numbering an engine guarantee instead of
+// requiring every author (or agent) to remember presentation chrome. Existing
+// pills are preserved so custom placement and styling remain intact.
+func ensurePagePill(frag string) string {
+	if pagePillClassRe.MatchString(frag) {
+		return frag
+	}
+	i := strings.LastIndex(strings.ToLower(frag), "</section>")
+	if i < 0 {
+		return frag
+	}
+	prefix := ""
+	if i > 0 && frag[i-1] != '\n' {
+		prefix = "\n"
+	}
+	return frag[:i] + prefix + `  <div class="pgpill" data-vstd-generated="page-number" aria-label="Slide number"></div>` + "\n" + frag[i:]
+}
 
 // stampFragment injects data-vstd="<id>" into the first <section> tag so the
 // player can map DOM sections back to fragment files for save-back.

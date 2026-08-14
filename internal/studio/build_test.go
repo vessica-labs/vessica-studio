@@ -39,6 +39,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`id="hud"`,                       // HUD bar
 		`id="hudmore"`,                   // ⋯ overflow popover
 		`id="downloadbtn"`,               // PDF/PPTX download menu
+		`id="sharebtn"`,                  // presenter-only deck sharing
+		`data-share="generate"`,          // expiring share-link dialog
 		`data-download="pptx"`,           // editable PowerPoint export
 		`id="editRibbon"`,                // fixed, shared object-editing ribbon
 		`role="toolbar"`,                 // accessible PowerPoint-style control surface
@@ -71,6 +73,9 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	if strings.Contains(html, `id="vinspect"`) {
 		t.Error("video controls must share the top ribbon, not use a floating inspector")
 	}
+	if got := strings.Count(html, `aria-label="Slide number"`); got != 1 {
+		t.Fatalf("built slide has %d page-number pills, want 1", got)
+	}
 	// chrome must not depend on theme-overridable tokens: every var(--x)
 	// outside the injected theme/deck CSS block is engine-owned (--vstd-*)
 	// except the runtime-set --ts thumbnail scale
@@ -83,6 +88,21 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		if m != "var(--ts" && !strings.HasPrefix(m, "var(--vstd-") {
 			t.Errorf("chrome uses theme-overridable token %s", m)
 		}
+	}
+}
+
+func TestEnsurePagePillPreservesExistingPill(t *testing.T) {
+	frag := `<section class="slide"><div class="pgpill custom">9</div></section>`
+	if got := ensurePagePill(frag); got != frag {
+		t.Fatalf("existing page pill changed:\n%s", got)
+	}
+}
+
+func TestEnsurePagePillAddsMissingPill(t *testing.T) {
+	frag := `<section class="slide"><h1>Title</h1></section>`
+	got := ensurePagePill(frag)
+	if !strings.Contains(got, `data-vstd-generated="page-number"`) || strings.Count(got, `pgpill`) != 1 {
+		t.Fatalf("generated page pill missing or duplicated:\n%s", got)
 	}
 }
 

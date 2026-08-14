@@ -29,6 +29,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
 const sessionCookie = "vstd_session"
@@ -168,13 +170,22 @@ func (s *Server) hasAnyAccess(r *http.Request) bool {
 
 func (s *Server) handleShareLanding(w http.ResponseWriter, r *http.Request) {
 	deck, tok := r.PathValue("deck"), r.PathValue("token")
-	if !s.shareValid(deck, tok) {
+	if !studio.ValidDeckName(deck) || !s.shareValid(deck, tok) {
 		http.Error(w, "This share link is invalid or has expired.", http.StatusForbidden)
 		return
 	}
+	maxAge := 0
+	if parts := strings.SplitN(tok, ".", 2); len(parts) == 2 {
+		if exp, err := strconv.ParseInt(parts[0], 10, 64); err == nil {
+			maxAge = int(time.Until(time.Unix(exp, 0)).Seconds())
+			if maxAge < 1 {
+				maxAge = 1
+			}
+		}
+	}
 	http.SetCookie(w, &http.Cookie{Name: shareCookieName(deck), Value: tok, Path: "/",
 		HttpOnly: true, Secure: r.TLS != nil || s.Mode == ModePublic, SameSite: http.SameSiteLaxMode,
-		MaxAge: 60 * 60 * 24 * 7})
+		MaxAge: maxAge})
 	http.Redirect(w, r, "/d/"+deck+"/", http.StatusFound)
 }
 
@@ -191,24 +202,23 @@ func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {
 		req.TTLHours = 72
 	}
 	deck := r.PathValue("deck")
-	tok := s.MintShare(deck, time.Duration(req.TTLHours)*time.Hour)
-	writeJSON(w, map[string]string{"url": "/v/" + deck + "/" + tok, "token": tok})
-}
-
-// handleShareQR renders a QR code for a freshly-minted share link — embed
-// it on a closing slide via <img src="/api/deck/<deck>/share-qr.png"> and it
-// can never go stale. Points at public_host when configured (so phones in
-// the room resolve it), else the request host.
-func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
-	deck := r.PathValue("deck")
-	if !s.canView(r, deck) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	if !studio.ValidDeckName(deck) {
+		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
 		return
 	}
-	ttl := 72
-	if v := r.URL.Query().Get("ttl"); v != "" {
-		fmt.Sscanf(v, "%d", &ttl)
+	if req.TTLHours > 24*30 {
+		req.TTLHours = 24 * 30
 	}
+	expires := time.Now().Add(time.Duration(req.TTLHours) * time.Hour)
+	tok := s.MintShare(deck, time.Duration(req.TTLHours)*time.Hour)
+	writeJSON(w, map[string]string{
+		"url":        s.shareBase(r) + "/v/" + deck + "/" + tok,
+		"token":      tok,
+		"expires_at": expires.UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) shareBase(r *http.Request) string {
 	base := s.St.Config.PublicHost
 	if base == "" {
 		scheme := "http"
@@ -217,7 +227,24 @@ func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
 		}
 		base = scheme + "://" + r.Host
 	}
-	link := strings.TrimRight(base, "/") + "/v/" + deck + "/" + s.MintShare(deck, time.Duration(ttl)*time.Hour)
+	return strings.TrimRight(base, "/")
+}
+
+// handleShareQR renders a QR code for a freshly-minted share link — embed
+// it on a closing slide via <img src="/api/deck/<deck>/share-qr.png"> and it
+// can never go stale. Points at public_host when configured (so phones in
+// the room resolve it), else the request host.
+func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
+	deck := r.PathValue("deck")
+	if !s.canView(r, deck) && !isLoopback(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	ttl := 72
+	if v := r.URL.Query().Get("ttl"); v != "" {
+		fmt.Sscanf(v, "%d", &ttl)
+	}
+	link := s.shareBase(r) + "/v/" + deck + "/" + s.MintShare(deck, time.Duration(ttl)*time.Hour)
 	png, err := qrcode.Encode(link, qrcode.Medium, 640)
 	if err != nil {
 		jsonErr(w, err, 500)

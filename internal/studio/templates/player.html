@@ -32,6 +32,7 @@ html,body{height:100%;background:#111614;font-family:var(--vstd-sans)}
 .slide.active{display:block!important}
 .slide.active{display:block}
 .notes{display:none}
+.slide .pgpill{position:absolute;right:44px;bottom:12px;z-index:8;font:14px var(--vstd-sans);color:#a8b6ab;border:1px solid #4d6252;border-radius:999px;padding:2px 9px;line-height:1.2}
 
 /* ---------- Viewer chrome ---------- */
 #hud{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;
@@ -52,6 +53,18 @@ body:hover #hud{opacity:1}
 #downloadMenu button{text-align:left;padding:9px 13px;font-size:13px}
 #downloadMenu small{display:block;color:#86a78e;font-size:10px;font-weight:400;margin-top:2px}
 #downloadbtn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#shareDialog{position:fixed;inset:0;z-index:155;display:none;align-items:center;justify-content:center;background:rgba(5,13,8,.68);backdrop-filter:blur(3px);font-family:var(--vstd-sans)}
+#shareDialog.open{display:flex}
+#shareDialog .card{width:min(520px,calc(100vw - 32px));background:var(--vstd-off);color:var(--vstd-deep);border-radius:18px;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+#shareDialog .shead{display:flex;align-items:center;gap:12px;margin-bottom:8px}#shareDialog h2{font:400 28px var(--vstd-serif);flex:1}
+#shareDialog .close{border:0;background:transparent;color:var(--vstd-gray);font-size:22px;cursor:pointer;padding:4px 8px}
+#shareDialog p{font-size:14px;line-height:1.45;color:var(--vstd-gray);margin-bottom:18px}
+#shareDialog label{display:block;font-size:12px;font-weight:700;letter-spacing:.05em;margin:12px 0 6px}
+#shareDialog select,#shareDialog input{width:100%;border:1px solid #bdcbbf;border-radius:9px;background:#fff;color:var(--vstd-deep);font:14px var(--vstd-sans);padding:11px 12px}
+#shareDialog .actions{display:flex;gap:9px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+#shareDialog .actions button{border:1px solid #abc0af;border-radius:999px;background:#fff;color:var(--vstd-deep);font:700 13px var(--vstd-sans);padding:10px 17px;cursor:pointer}
+#shareDialog .actions .primary{background:var(--vstd-deep);border-color:var(--vstd-deep);color:#fff}
+#shareDialog .meta{min-height:18px;margin-top:8px;color:#5d7563;font-size:12px}
 /* touch devices: hud always visible, bigger targets, secondary items behind ⋯ */
 body.mobilehud #hud{opacity:1;gap:2px;padding:8px 10px;bottom:calc(10px + env(safe-area-inset-bottom));max-width:96vw}
 body.mobilehud #hud>button{font-size:16px;padding:9px 13px}
@@ -228,7 +241,7 @@ body.editmode section.slide img,body.editmode section.slide video{pointer-events
 body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--vstd-green);outline-offset:2px;cursor:text}
 body.editmode .slide.active{cursor:default}
 @media print{
-  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#capbar,#editRibbon{display:none!important}
+  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#shareDialog,#capbar,#editRibbon{display:none!important}
   #stage{position:static}
   #frame{width:1280px;height:720px;box-shadow:none;page-break-after:always;position:relative;margin:0 auto}
   .slide{display:block!important;position:relative;page-break-after:always}
@@ -257,6 +270,7 @@ body.editmode .slide.active{cursor:default}
   <button data-act="companion" id="companionbtn" style="display:none">Companion</button>
   <button data-act="notes">Notes</button>
   <button data-act="present" id="presentbtn">Present</button>
+  <button data-act="share" id="sharebtn" style="display:none">Share</button>
   <button data-act="download" id="downloadbtn" style="display:none" title="Download deck" aria-label="Download deck"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg></button>
   <button id="newslidebtn" style="display:none">+ Slide</button>
   <button data-act="edit" id="editbtn">Edit</button>
@@ -264,6 +278,18 @@ body.editmode .slide.active{cursor:default}
   <button data-act="more" id="hudMore" style="display:none">⋯</button>
   <div id="downloadMenu"><button data-download="pdf">PDF<small>Fixed-layout document</small></button><button data-download="pptx">PowerPoint (.pptx)<small>Editable text, shapes, chart elements, and images</small></button></div>
   <div id="hudmore"></div>
+</div>
+<div id="shareDialog" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <div class="card">
+    <div class="shead"><h2 id="shareTitle">Share this presentation</h2><button class="close" type="button" aria-label="Close">&#10005;</button></div>
+    <p>Generate a private, expiring link. It grants access to this presentation only.</p>
+    <label for="shareTTL">Link expires after</label>
+    <select id="shareTTL"><option value="24">24 hours</option><option value="72" selected>3 days</option><option value="168">7 days</option><option value="720">30 days</option></select>
+    <label for="shareURL">Share link</label>
+    <input id="shareURL" type="text" readonly placeholder="Choose Generate link">
+    <div class="meta" id="shareMeta"></div>
+    <div class="actions"><button type="button" data-share="generate" class="primary">Generate link</button><button type="button" data-share="copy" disabled>Copy link</button><button type="button" data-share="email" disabled>Email link</button></div>
+  </div>
 </div>
 <div id="editRibbon" role="toolbar" aria-label="Object editing controls">
   <div class="rbrand">Edit</div><div class="rselection" id="editSelection">No object selected</div>
@@ -300,7 +326,45 @@ body.editmode .slide.active{cursor:default}
   const menu=document.getElementById('menu'),menulist=document.getElementById('menulist');
   const overview=document.getElementById('overview'),ovgrid=document.getElementById('ovgrid');
   const progress=document.getElementById('progress');
+	const shareDialog=document.getElementById('shareDialog');
   let cur=0,notesOn=false,scale=1;
+
+  function closeShare(){if(shareDialog)shareDialog.classList.remove('open');}
+  function openShare(){
+    if(!shareDialog)return;
+    shareDialog.classList.add('open');
+    setTimeout(()=>document.getElementById('shareTTL').focus(),0);
+  }
+  async function generateShare(){
+    const ttl=parseInt(document.getElementById('shareTTL').value)||72;
+    const meta=document.getElementById('shareMeta');
+    meta.textContent='Generating a deck-scoped link…';
+    try{
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ttl_hours:ttl})});
+      const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+      const input=document.getElementById('shareURL');input.value=new URL(j.url,location.origin).href;
+      shareDialog.querySelectorAll('[data-share="copy"],[data-share="email"]').forEach(b=>b.disabled=false);
+      meta.textContent='Expires '+new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(j.expires_at));
+      input.select();
+    }catch(e){meta.textContent='Could not generate link: '+e.message;}
+  }
+  async function copyShare(){
+    const input=document.getElementById('shareURL');if(!input.value)return;
+    try{await navigator.clipboard.writeText(input.value);}catch(_){input.select();document.execCommand('copy');}
+    toast('Presentation link copied');
+  }
+  function emailShare(){
+    const link=document.getElementById('shareURL').value;if(!link)return;
+    const title=(window.VSTD&&window.VSTD.title)||document.title||'Presentation';
+    location.href='mailto:?subject='+encodeURIComponent(title)+'&body='+encodeURIComponent('Here is the presentation link:\n\n'+link+'\n\nThis link grants access only to this presentation.');
+  }
+  if(shareDialog){
+    shareDialog.addEventListener('click',e=>{
+      if(e.target===shareDialog||e.target.closest('.close')){closeShare();return;}
+      const act=e.target.closest('[data-share]')&&e.target.closest('[data-share]').dataset.share;
+      if(act==='generate')generateShare();else if(act==='copy')copyShare();else if(act==='email')emailShare();
+    });
+  }
 
   // page numbers: only in-flow (non-parked) slides are numbered
   function renumberPills(){
@@ -535,6 +599,7 @@ body.editmode .slide.active{cursor:default}
     else if(a==='edit')toggleEdit();
     else if(a==='save')saveHtml();
     else if(a==='download'){document.getElementById('downloadMenu').classList.toggle('open');}
+    else if(a==='share')openShare();
     else if(a==='present')enterPresent();
   });
   addEventListener('pointerdown',e=>{
@@ -571,7 +636,7 @@ body.editmode .slide.active{cursor:default}
     else if(e.key==='p'||e.key==='P')enterPresent();
     else if(e.key==='v'||e.key==='V')document.dispatchEvent(new Event('vstd:vtoggle'));
     else if(e.key==='d'||e.key==='D')document.dispatchEvent(new Event('vstd:dtoggle'));
-    else if(e.key==='Escape'){clearSel();overview.classList.remove('open');menu.classList.remove('open');}
+    else if(e.key==='Escape'){clearSel();overview.classList.remove('open');menu.classList.remove('open');closeShare();}
   });
 
   // ---------- Edit mode ----------
@@ -1096,7 +1161,7 @@ body.editmode .slide.active{cursor:default}
         if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
         // presenter-only: starts hidden so an audience tab never flashes it
-        if(!audience){const b=document.getElementById('downloadbtn');if(b)b.style.display='';}
+        if(!audience){['downloadbtn','sharebtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
         if(audience){
           window.__following=true;
           ['editbtn','savebtn','presentbtn','hudVessica'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});

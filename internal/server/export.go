@@ -389,15 +389,9 @@ func (s *Server) capturePPTXDeck(r *http.Request, deck string) (studio.PPTXDeck,
 		return studio.PPTXDeck{}, err
 	}
 	defer os.RemoveAll(tmp)
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, chrome,
-		"--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
-		"--no-first-run", "--no-default-browser-check", "--disable-component-update",
-		"--disable-background-networking", "--disable-sync", "--hide-scrollbars",
-		"--window-size=1280,720", "--virtual-time-budget=20000",
-		"--run-all-compositor-stages-before-draw", "--user-data-dir="+filepath.Join(tmp, "profile"),
-		"--dump-dom", pageURL)
+	cmd := exec.CommandContext(ctx, chrome, pptxChromeArgs(tmp, pageURL)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	dumpPath := filepath.Join(tmp, "capture.html")
@@ -442,6 +436,21 @@ func (s *Server) capturePPTXDeck(r *http.Request, deck string) (studio.PPTXDeck,
 		return studio.PPTXDeck{}, fmt.Errorf("chrome object capture failed: %v — %s", err, msg)
 	}
 	return parsePPTXCapture(dump)
+}
+
+func pptxChromeArgs(tmp, pageURL string) []string {
+	return []string{
+		"--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
+		"--no-first-run", "--no-default-browser-check", "--disable-component-update",
+		"--disable-background-networking", "--disable-sync", "--hide-scrollbars",
+		// Object capture awaits image decoding and canvas encoding across the
+		// entire deck. A 20s virtual-time budget can expire mid-script and leave
+		// Chrome alive with an unresolved promise until the HTTP timeout. Give
+		// the capture script the same budget as the request-level guard.
+		"--window-size=1280,720", "--virtual-time-budget=180000",
+		"--run-all-compositor-stages-before-draw", "--user-data-dir=" + filepath.Join(tmp, "profile"),
+		"--dump-dom", pageURL,
+	}
 }
 
 // handleExportPPTX converts the rendered DOM to native PresentationML

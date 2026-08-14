@@ -2,10 +2,37 @@ package server
 
 import (
 	"context"
+	"os"
 	"reflect"
 	"strings"
 	"testing"
 )
+
+func TestAgentRecoversInterruptedPassForRetry(t *testing.T) {
+	st := testStudio(t)
+	path := st.SlidePath("demo", "0010-a", ".md")
+	body := "# Before\n\n## Edit requests\n- (in progress — cloud agent — 40%)\n- add the share QR code\n\n## Log\n"
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	w := &agentWorker{s: New(st, ModeStudio)}
+	if got := w.recoverInterruptedPasses(); got != 1 {
+		t.Fatalf("recovered = %d, want 1", got)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(got), "(in progress") {
+		t.Fatalf("stale marker was not cleared:\n%s", got)
+	}
+	if !strings.Contains(string(got), "- add the share QR code") {
+		t.Fatalf("pending request was lost:\n%s", got)
+	}
+	if queued := w.nextAll(); len(queued) != 1 || queued[0] != [2]string{"demo", "0010-a"} {
+		t.Fatalf("queue after recovery = %#v", queued)
+	}
+}
 
 func TestAgentCommandSupportsCodex(t *testing.T) {
 	t.Setenv("OPENAI_API_KEY", "test-openai-key")
