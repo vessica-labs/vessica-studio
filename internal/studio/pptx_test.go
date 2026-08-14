@@ -3,6 +3,7 @@ package studio
 import (
 	"archive/zip"
 	"bytes"
+	"fmt"
 	"io"
 	"strings"
 	"testing"
@@ -47,5 +48,39 @@ func TestBuildPPTXEmitsEditableObjects(t *testing.T) {
 	}
 	if _, ok := parts["ppt/media/image1.png"]; !ok {
 		t.Fatal("individual image object was not embedded")
+	}
+}
+
+func TestBuildRasterPPTXEmitsOneFullBleedImagePerSlide(t *testing.T) {
+	png := []byte{137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0}
+	b, err := BuildRasterPPTX("Visual exact", [][]byte{png, png})
+	if err != nil {
+		t.Fatal(err)
+	}
+	zr, err := zip.NewReader(bytes.NewReader(b), int64(len(b)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	parts := map[string]string{}
+	for _, f := range zr.File {
+		r, err := f.Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := io.ReadAll(r)
+		r.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		parts[f.Name] = string(data)
+	}
+	for i := 1; i <= 2; i++ {
+		slide := parts[fmt.Sprintf("ppt/slides/slide%d.xml", i)]
+		if strings.Count(slide, "<p:pic>") != 1 || !strings.Contains(slide, `name="HTML slide `) {
+			t.Fatalf("slide %d is not a single visual-exact image: %s", i, slide)
+		}
+		if !strings.Contains(slide, `<a:off x="0" y="0"/><a:ext cx="12192000" cy="6858000"/>`) {
+			t.Fatalf("slide %d image is not full bleed: %s", i, slide)
+		}
 	}
 }

@@ -44,7 +44,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`/api/events?deck=`,                       // deck-scoped live-follow stream
 		`me.presenter===true`,                     // only the presenter publishes positions
 		`if(window.__lastPresenterIdx!=null)show`, // late audience joins catch up immediately
-		`data-download="pptx"`,                    // editable PowerPoint export
+		`data-download="pptx"`,                    // visual-exact PowerPoint export
+		`data-download="pptx-editable"`,           // explicit best-effort editable fallback
 		`id="editRibbon"`,                         // fixed, shared object-editing ribbon
 		`role="toolbar"`,                          // accessible PowerPoint-style control surface
 		`id="videoRibbonTools"`,                   // media options share the same ribbon
@@ -62,6 +63,11 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`addEventListener('paste'`,                // clipboard images can be placed on slides
 		`keyTargetIsTextEntry`,                    // typing surfaces suppress deck hotkeys
 		`pad.addEventListener('keydown'`,          // Sticky keystrokes cannot bubble to the player
+		`chipTimer=setTimeout(()=>syncFollowChip(false),3200)`,                                              // follow intro collapses automatically
+		`chip.textContent=window.__following?(announce?'● Following live — tap to browse freely':'● LIVE')`, // compact persistent live state
+		`className='vsound'`,     // video sound control is a durable toggle
+		`.vsound{position:fixed`, // control remains usable when the slide is scaled on mobile
+		`s.querySelectorAll('video[data-vstd-video]').forEach(soundChip)`, // fullscreen preserves/rebuilds the toggle
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)
@@ -75,6 +81,12 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	}
 	if strings.Contains(html, `id="vinspect"`) {
 		t.Error("video controls must share the top ribbon, not use a floating inspector")
+	}
+	if strings.Contains(html, `.vunmute`) {
+		t.Error("one-shot unmute control must not replace the persistent sound toggle")
+	}
+	if strings.Contains(html, `#followchip{position:fixed;bottom:`) {
+		t.Error("follow indicator must not overlap the bottom mobile HUD")
 	}
 	if got := strings.Count(html, `aria-label="Slide number"`); got != 1 {
 		t.Fatalf("built slide has %d page-number pills, want 1", got)
