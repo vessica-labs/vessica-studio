@@ -1137,7 +1137,7 @@ body.editmode .slide.active{cursor:default}
   window.__vme=null;
   if(location.protocol.indexOf('http')===0&&window.EventSource){
     try{
-      const es=new EventSource('/api/events');
+      const es=new EventSource('/api/events?deck='+encodeURIComponent(window.VSTD.deck));
       es.addEventListener('reload',()=>{
         if(Date.now()-(window.__selfSave||0)<2500){/* our own write; DOM is already current */}
         else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
@@ -1160,10 +1160,12 @@ body.editmode .slide.active{cursor:default}
         window.__vme=me;
         if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
         const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
+        window.__vaudience=audience;
         // presenter-only: starts hidden so an audience tab never flashes it
         if(!audience){['downloadbtn','sharebtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
         if(audience){
           window.__following=true;
+          if(window.__lastPresenterIdx!=null)show(window.__lastPresenterIdx);
           ['editbtn','savebtn','presentbtn','hudVessica'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
           const chip=document.createElement('div');
           chip.id='followchip';chip.style.display='block';
@@ -1182,14 +1184,15 @@ body.editmode .slide.active{cursor:default}
               chip.textContent='○ Browsing freely — click to rejoin the presenter';
             }
           },true);
-        }
+        }else if(me.presenter===true)publishPresenterPosition(cur);
       }).catch(()=>{});
-      document.addEventListener('vstd:slide',e=>{
-        if(!window.__presenting)return;
-        if(window.__vme&&window.__vme.presenter===false)return;
+      function publishPresenterPosition(index){
+        if(!(window.__vme&&window.__vme.presenter===true)||window.__vaudience)return;
         fetch('/api/deck/'+window.VSTD.deck+'/presenting',{method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({index:e.detail.index})}).catch(()=>{});
+          headers:{'Content-Type':'application/json'},body:JSON.stringify({index:index})}).catch(()=>{});
+      }
+      document.addEventListener('vstd:slide',e=>{
+        publishPresenterPosition(e.detail.index);
       });
     }catch(_){}
   }

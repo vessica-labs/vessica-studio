@@ -277,14 +277,25 @@ func (s *Server) handlePresenting(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
 		return
 	}
-	var req struct {
-		Index int `json:"index"`
-	}
+	var req presentingUpdate
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&req); err != nil {
 		jsonErr(w, err, 400)
 		return
 	}
-	s.Broadcast("follow|" + r.PathValue("deck") + "|" + strconv.Itoa(req.Index))
+	deck := r.PathValue("deck")
+	if err := s.validatePresenting(deck, req.Index); err != nil {
+		jsonErr(w, err, http.StatusBadRequest)
+		return
+	}
+	relay := presentingUpdate{Index: req.Index, Seq: time.Now().UnixNano()}
+	s.setPresenting(deck, req.Index, relay.Seq)
+	if err := s.relayPresenting(r, deck, relay); err != nil {
+		// Local viewing must remain usable if Railway is temporarily
+		// unreachable; the error is logged so production diagnostics show it.
+		log.Printf("presenting relay failed for %s slide %d: %v", deck, req.Index+1, err)
+		writeJSON(w, map[string]string{"status": "local-only"})
+		return
+	}
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 

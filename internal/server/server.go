@@ -43,8 +43,9 @@ type Server struct {
 	Mode Mode
 	OAI  *oai.Client
 
-	mu   sync.Mutex
-	subs map[chan string]bool
+	mu         sync.Mutex
+	subs       map[chan string]bool
+	presenting map[string]presentingState
 
 	// auth (see auth.go)
 	secret     string
@@ -61,7 +62,7 @@ type Server struct {
 
 func New(st *studio.Studio, mode Mode) *Server {
 	c := oai.New(st.Config.OpenAI.BaseURL, st.Config.OpenAI.APIKeyCmd)
-	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}}
+	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}, presenting: map[string]presentingState{}}
 	s.initAuth()
 	return s
 }
@@ -94,9 +95,15 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
+	deck := r.URL.Query().Get("deck")
+	if deck != "" && (!studio.ValidDeckName(deck) || !s.canView(r, deck)) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
 	ch := make(chan string, 8)
 	s.mu.Lock()
 	s.subs[ch] = true
+	current, hasCurrent := s.presenting[deck]
 	s.mu.Unlock()
 	defer func() {
 		s.mu.Lock()
@@ -104,6 +111,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 	}()
 	fmt.Fprintf(w, "event: hello\ndata: vstd\n\n")
+	if deck != "" && hasCurrent {
+		fmt.Fprintf(w, "event: follow\ndata: %s|%d\n\n", deck, current.Index)
+	}
 	fl.Flush()
 	for {
 		select {
@@ -178,6 +188,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /api/deck/{deck}/share", s.handleMintShare)
 	mux.HandleFunc("GET /api/deck/{deck}/share-qr.png", s.handleShareQR)
 	mux.HandleFunc("POST /api/deck/{deck}/presenting", s.handlePresenting)
+	mux.HandleFunc("POST /api/deck/{deck}/presenting-relay", s.handlePresentingRelay)
 	mux.HandleFunc("GET /api/content-sync/status", s.handleContentSyncStatus)
 	s.VessicaRoutes(mux)      // demo tools: kb, tasks, display, sms, email, search, code
 	s.AudienceChatRoutes(mux) // QR-scanned per-person audience chat

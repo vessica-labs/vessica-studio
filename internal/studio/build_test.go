@@ -36,29 +36,32 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 
 	// the full engine control plane must be present
 	for _, want := range []string{
-		`id="hud"`,                       // HUD bar
-		`id="hudmore"`,                   // ⋯ overflow popover
-		`id="downloadbtn"`,               // PDF/PPTX download menu
-		`id="sharebtn"`,                  // presenter-only deck sharing
-		`data-share="generate"`,          // expiring share-link dialog
-		`data-download="pptx"`,           // editable PowerPoint export
-		`id="editRibbon"`,                // fixed, shared object-editing ribbon
-		`role="toolbar"`,                 // accessible PowerPoint-style control surface
-		`id="videoRibbonTools"`,          // media options share the same ribbon
-		`body.editmode #stage{top:62px}`, // ribbon reserves canvas space instead of covering it
-		`data-act="sticky"`,              // sticky notes
-		`data-act="companion"`,           // companion drawer
-		`data-act="vessica"`,             // vessica toggle
-		`data-parked`,                    // hide/park handling in the runtime
-		`--vstd-green`,                   // engine-owned chrome tokens
-		`<h1>Hi</h1>`,                    // slides injected
-		`"deck":"demo"`,                  // runtime meta injected
-		`.slide{background:#fff}`,        // theme.css injected
-		`c.removeAttribute('data-vstd')`, // engine-only slide id is not persisted
-		`name:'open_companion'`,          // Vessica can open the narrative editor
-		`addEventListener('paste'`,       // clipboard images can be placed on slides
-		`keyTargetIsTextEntry`,           // typing surfaces suppress deck hotkeys
-		`pad.addEventListener('keydown'`, // Sticky keystrokes cannot bubble to the player
+		`id="hud"`,                                // HUD bar
+		`id="hudmore"`,                            // ⋯ overflow popover
+		`id="downloadbtn"`,                        // PDF/PPTX download menu
+		`id="sharebtn"`,                           // presenter-only deck sharing
+		`data-share="generate"`,                   // expiring share-link dialog
+		`/api/events?deck=`,                       // deck-scoped live-follow stream
+		`me.presenter===true`,                     // only the presenter publishes positions
+		`if(window.__lastPresenterIdx!=null)show`, // late audience joins catch up immediately
+		`data-download="pptx"`,                    // editable PowerPoint export
+		`id="editRibbon"`,                         // fixed, shared object-editing ribbon
+		`role="toolbar"`,                          // accessible PowerPoint-style control surface
+		`id="videoRibbonTools"`,                   // media options share the same ribbon
+		`body.editmode #stage{top:62px}`,          // ribbon reserves canvas space instead of covering it
+		`data-act="sticky"`,                       // sticky notes
+		`data-act="companion"`,                    // companion drawer
+		`data-act="vessica"`,                      // vessica toggle
+		`data-parked`,                             // hide/park handling in the runtime
+		`--vstd-green`,                            // engine-owned chrome tokens
+		`<h1>Hi</h1>`,                             // slides injected
+		`"deck":"demo"`,                           // runtime meta injected
+		`.slide{background:#fff}`,                 // theme.css injected
+		`c.removeAttribute('data-vstd')`,          // engine-only slide id is not persisted
+		`name:'open_companion'`,                   // Vessica can open the narrative editor
+		`addEventListener('paste'`,                // clipboard images can be placed on slides
+		`keyTargetIsTextEntry`,                    // typing surfaces suppress deck hotkeys
+		`pad.addEventListener('keydown'`,          // Sticky keystrokes cannot bubble to the player
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)
