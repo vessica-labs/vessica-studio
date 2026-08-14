@@ -47,29 +47,34 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`data-download="pptx"`,                    // visual-exact PowerPoint export
 		`data-download="pptx-editable"`,           // explicit best-effort editable fallback
 		`document.querySelectorAll('#downloadMenu [data-download^="pptx"]')`, // audience never sees PowerPoint
-		`b.title='Download PDF'`,                   // audience HUD exposes PDF directly
-		`"follow_url":"https://talk.example/follow"`, // stable laptop entry is available to the QR overlay
-		`id="editRibbon"`,                         // fixed, shared object-editing ribbon
-		`role="toolbar"`,                          // accessible PowerPoint-style control surface
-		`id="videoRibbonTools"`,                   // media options share the same ribbon
-		`body.editmode #stage{top:62px}`,          // ribbon reserves canvas space instead of covering it
-		`data-act="sticky"`,                       // sticky notes
-		`data-act="companion"`,                    // companion drawer
-		`data-act="vessica"`,                      // vessica toggle
-		`data-parked`,                             // hide/park handling in the runtime
-		`--vstd-green`,                            // engine-owned chrome tokens
-		`<h1>Hi</h1>`,                             // slides injected
-		`"deck":"demo"`,                           // runtime meta injected
-		`.slide{background:#fff}`,                 // theme.css injected
-		`c.removeAttribute('data-vstd')`,          // engine-only slide id is not persisted
-		`name:'open_companion'`,                   // Vessica can open the narrative editor
-		`addEventListener('paste'`,                // clipboard images can be placed on slides
-		`keyTargetIsTextEntry`,                    // typing surfaces suppress deck hotkeys
-		`pad.addEventListener('keydown'`,          // Sticky keystrokes cannot bubble to the player
-		`chipTimer=setTimeout(()=>syncFollowChip(false),3200)`,                                              // follow intro collapses automatically
-		`chip.textContent=window.__following?(announce?'● Following live — tap to browse freely':'● LIVE')`, // compact persistent live state
-		`className='vsound'`,     // video sound control is a durable toggle
-		`.vsound{position:fixed`, // control remains usable when the slide is scaled on mobile
+		`b.title='Download PDF'`,                                 // audience HUD exposes PDF directly
+		`data-presenter-control`,                                 // presenter controls fail closed before identity resolves
+		`window.VSTDPresenterControl`,                            // all client control paths share the same presenter gate
+		`new MutationObserver(lockAudienceHUD)`,                  // dynamically injected HUD controls are also hidden
+		`chip.setAttribute('role','status')`,                     // follow state is an indicator, not an audience control
+		`document.dispatchEvent(new CustomEvent('vstd:identity'`, // late-created controls sync after auth resolves
+		`"follow_url":"https://talk.example/follow"`,             // stable laptop entry is available to the QR overlay
+		`id="editRibbon"`,                                        // fixed, shared object-editing ribbon
+		`role="toolbar"`,                                         // accessible PowerPoint-style control surface
+		`id="videoRibbonTools"`,                                  // media options share the same ribbon
+		`body.editmode #stage{top:62px}`,                         // ribbon reserves canvas space instead of covering it
+		`data-act="sticky"`,                                      // sticky notes
+		`data-act="companion"`,                                   // companion drawer
+		`data-act="vessica"`,                                     // vessica toggle
+		`data-parked`,                                            // hide/park handling in the runtime
+		`--vstd-green`,                                           // engine-owned chrome tokens
+		`<h1>Hi</h1>`,                                            // slides injected
+		`"deck":"demo"`,                                          // runtime meta injected
+		`.slide{background:#fff}`,                                // theme.css injected
+		`c.removeAttribute('data-vstd')`,                         // engine-only slide id is not persisted
+		`name:'open_companion'`,                                  // Vessica can open the narrative editor
+		`addEventListener('paste'`,                               // clipboard images can be placed on slides
+		`keyTargetIsTextEntry`,                                   // typing surfaces suppress deck hotkeys
+		`pad.addEventListener('keydown'`,                         // Sticky keystrokes cannot bubble to the player
+		`chipTimer=setTimeout(()=>syncFollowChip(false),3200)`,   // follow intro collapses automatically
+		`chip.textContent=announce?'● Following live':'● LIVE'`,  // compact persistent live state
+		`className='vsound'`,                                     // video sound control is a durable toggle
+		`.vsound{position:fixed`,                                 // control remains usable when the slide is scaled on mobile
 		`s.querySelectorAll('video[data-vstd-video]').forEach(soundChip)`, // fullscreen preserves/rebuilds the toggle
 	} {
 		if !strings.Contains(html, want) {
@@ -90,6 +95,11 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	}
 	if strings.Contains(html, `#followchip{position:fixed;bottom:`) {
 		t.Error("follow indicator must not overlap the bottom mobile HUD")
+	}
+	for _, forbidden := range []string{`tap to browse freely`, `Browsing freely`} {
+		if strings.Contains(html, forbidden) {
+			t.Errorf("audience follow indicator unexpectedly exposes a control: %q", forbidden)
+		}
 	}
 	if got := strings.Count(html, `aria-label="Slide number"`); got != 1 {
 		t.Fatalf("built slide has %d page-number pills, want 1", got)

@@ -286,6 +286,35 @@ func TestPDFDownloadAuthorizationAllowsShareButPPTXStaysPresenterOnly(t *testing
 	}
 }
 
+func TestSharedViewerCannotInvokePresenterControls(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	s.secret = "test-secret"
+	h := s.Routes()
+	share := s.MintShare("demo", time.Hour)
+
+	for _, tc := range []struct {
+		name, method, target, body string
+		want                       int
+	}{
+		{name: "mint share", method: http.MethodPost, target: "/api/deck/demo/share", body: `{}`, want: http.StatusUnauthorized},
+		{name: "publish presenter position", method: http.MethodPost, target: "/api/deck/demo/presenting", body: `{"index":0}`, want: http.StatusUnauthorized},
+		{name: "mint realtime token", method: http.MethodPost, target: "/api/realtime/token", want: http.StatusUnauthorized},
+		{name: "write Vessica tasks", method: http.MethodPost, target: "/api/vessica/demo/tasks", body: `{}`, want: http.StatusUnauthorized},
+		{name: "edit slide", method: http.MethodPut, target: "/api/deck/demo/slide/0010-a/fragment", body: `<section class="slide">Nope</section>`, want: http.StatusForbidden},
+		{name: "download PowerPoint", method: http.MethodGet, target: "/api/deck/demo/export.pptx", want: http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+			req.AddCookie(&http.Cookie{Name: shareCookieName("demo"), Value: share})
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			if rr.Code != tc.want {
+				t.Fatalf("status=%d, want %d; body=%s", rr.Code, tc.want, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestDeckStatusReportsDisabledAgentForQueuedRedesign(t *testing.T) {
 	st := testStudio(t)
 	companion := "# Before\n\n## Edit requests\n- simplify the curve\n\n## Log\n"
