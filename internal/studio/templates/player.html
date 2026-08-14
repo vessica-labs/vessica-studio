@@ -214,6 +214,7 @@ body.editmode #stage{top:62px}
 #videoRibbonTools .danger{color:#ff9a9a}
 @media(max-width:1050px){#editRibbon .rhint{display:none}}
 body.editmode section.slide img,body.editmode section.slide video{pointer-events:auto !important}
+body.editmode section.slide [data-chart-group]>.chart-art{pointer-events:none!important}
 #snapguides{position:absolute;inset:0;pointer-events:none;z-index:49}
 #snapguides .sg{position:absolute;background:var(--vstd-mint);opacity:.85;box-shadow:0 0 4px rgba(32,227,172,.6)}
 #snapguides .sg.v{top:0;bottom:0;width:1px}
@@ -924,6 +925,7 @@ body.editmode .slide.active{cursor:default}
     const c=sec.cloneNode(true);
     c.classList.remove('active','mini');c.style.display='';
     c.removeAttribute('data-vstd');
+    c.querySelectorAll('[data-vstd-generated]').forEach(el=>el.remove());
     c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
     if(window.__vclean)window.__vclean(c);
     return c.outerHTML;
@@ -1070,6 +1072,20 @@ body.editmode .slide.active{cursor:default}
 
   // engine link: SSE (reload + live-follow), identity, presenter broadcast
   window.__vme=null;
+  let deferredReload=false;
+  function interactionSurfaceOpen(){
+    const sticky=document.getElementById('stickyPad');
+    const companion=document.getElementById('companionDrawer');
+    return !!((sticky&&sticky.style.display==='block')||(companion&&companion.classList.contains('open')));
+  }
+  function flushDeferredReload(){
+    if(!deferredReload||interactionSurfaceOpen()||editMode||window.__dictating||(window.__vlive&&window.__vlive()))return;
+    deferredReload=false;location.reload();
+  }
+  document.addEventListener('vstd:interactionend',e=>{
+    if(e.detail&&e.detail.dirty)return;
+    setTimeout(flushDeferredReload,80);
+  });
   if(location.protocol.indexOf('http')===0&&window.EventSource){
     try{
       const es=new EventSource('/api/events');
@@ -1078,6 +1094,9 @@ body.editmode .slide.active{cursor:default}
         else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
         else if(window.__dictating){/* our own writes; DOM is already current */}
         else if(window.__vlive&&window.__vlive()){toast('Deck changed on disk — reload deferred while Vessica is live');}
+        else if(interactionSurfaceOpen()){
+          deferredReload=true;toast('Deck changed on disk — reload deferred while Sticky or Companion is open');
+        }
         else if(!window.__following){
           // survive the reload in Grid view: stash grid state in the hash so
           // the boot path restores overview + scroll + zoom
@@ -1216,7 +1235,7 @@ body.editmode .slide.active{cursor:default}
     return 'companion saved';
   }
   async function open(edit){drawer.classList.add('open');await ensureLoaded();setMode(!!edit);return 'companion opened';}
-  function close(){drawer.classList.remove('open');}
+  function close(){drawer.classList.remove('open');document.dispatchEvent(new CustomEvent('vstd:interactionend',{detail:{dirty}}));}
   function sectionBounds(md,name){
     const re=new RegExp('^## '+name.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\s*$','m');const m=re.exec(md);if(!m)return null;
     const start=m.index+m[0].length;const rest=md.slice(start);const n=/\n##\s+/.exec(rest);return {start,end:n?start+n.index:md.length};
@@ -1409,7 +1428,7 @@ body.editmode .slide.active{cursor:default}
     if(!curId()){P().toast('This slide has no id — save it first');return;}
     pad.style.display='block';loadOpen();ta.focus();
   }
-  function close(){pad.style.display='none';ta.blur();clearRef();}
+  function close(){pad.style.display='none';ta.blur();clearRef();document.dispatchEvent(new Event('vstd:interactionend'));}
   async function submit(){
     const text=ta.value.trim();
     if(!text)return;
@@ -1563,7 +1582,7 @@ body.editmode .slide.active{cursor:default}
     {type:'function',name:'next_slide',description:'Advance to the next slide. Call when the speaker has clearly finished this slide and lands the opening idea of the next one.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'prev_slide',description:'Go back one slide.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'goto_slide',description:'Jump to a slide by its 1-based number.',parameters:{type:'object',properties:{number:{type:'integer'}},required:['number']}},
-    {type:'function',name:'highlight',description:'Softly glow one element on the current slide. phrase MUST be copied verbatim (or a distinctive fragment) from the HIGHLIGHTABLE ELEMENTS list in your instructions — never paraphrase. Use sparingly — one at a time, only when the speaker dwells on that point.',parameters:{type:'object',properties:{phrase:{type:'string'}},required:['phrase']}},
+    {type:'function',name:'highlight',description:'Softly glow one non-title element on the current slide. Charts can be selected by an accessible description or any chart label. phrase MUST be copied verbatim (or a distinctive fragment) from the HIGHLIGHTABLE ELEMENTS list in your instructions — never paraphrase. Never highlight the slide title. Use sparingly — one at a time, only when the speaker dwells on that point.',parameters:{type:'object',properties:{phrase:{type:'string'}},required:['phrase']}},
     {type:'function',name:'clear_highlight',description:'Remove any highlight.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'begin_conversation',description:'Call ONLY when the speaker says the wake word "Vessica" and wants you to respond aloud. After calling, you may speak.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'edit_text',description:'IN CONVERSATION ONLY: replace text on the current slide. find = the exact visible text (or a distinctive fragment of it); replace = the new text.',parameters:{type:'object',properties:{find:{type:'string'},replace:{type:'string'}},required:['find','replace']}},
@@ -1602,11 +1621,46 @@ body.editmode .slide.active{cursor:default}
     {type:'function',name:'end_conversation',description:'Call when the speaker asks you to stop, be quiet, or says thanks — then return to silent operation.',parameters:{type:'object',properties:{}}}
   ];
 
+  const HIGHLIGHT_TITLE='.s-title,[data-slide-title]';
+  function isHighlightTitle(el){
+    if(!el)return false;
+    if(el.closest(HIGHLIGHT_TITLE))return true;
+    const heading=el.closest('h1,h2'),slide=P().slideEl();
+    return !!(heading&&heading.parentElement===slide);
+  }
+  function chartRoot(el){
+    return el.closest('[data-chart-group],[data-chart],figure.chart,figure[data-chart]')||el;
+  }
+  function chartHighlightTargets(){
+    const slide=P().slideEl(),roots=[],seen=new Set();
+    slide.querySelectorAll('[data-chart-group],[data-chart],figure.chart,figure[data-chart],svg.chart-art,svg[role="img"],img[alt],[role="img"][aria-label]').forEach(el=>{
+      const root=chartRoot(el);
+      if(isHighlightTitle(root)||seen.has(root))return;
+      seen.add(root);roots.push(root);
+    });
+    return roots.map(root=>{
+      const parts=[],used=new Set();
+      const add=value=>{
+        const text=(value||'').trim().replace(/\s+/g,' ').slice(0,160);
+        if(text.length>2&&!used.has(text)){used.add(text);parts.push(text);}
+      };
+      add(root.getAttribute('aria-label'));add(root.getAttribute('alt'));add(root.getAttribute('title'));
+      root.querySelectorAll('[aria-label],img[alt],svg title,svg desc,[data-chart-label],.chart-label,svg text').forEach(el=>{
+        add(el.getAttribute('aria-label'));add(el.getAttribute('alt'));add(el.textContent);
+      });
+      return {el:root,parts:parts};
+    }).filter(target=>target.parts.length);
+  }
   function highlightables(){
-    const seen=new Set(),out=[];
-    P().slideEl().querySelectorAll('.bh,.s-title,.s-lead,li,.chev,.kpi,.headband,.card .tiny,b').forEach(el=>{
-      const t=(el.textContent||'').trim().replace(/\s+/g,' ').slice(0,80);
+    const seen=new Set(),out=[],add=value=>{
+      const t=(value||'').trim().replace(/\s+/g,' ').slice(0,80);
       if(t.length>3&&!seen.has(t)){seen.add(t);out.push(t);}
+    };
+    // Chart descriptions and labels come first so a dense slide cannot push
+    // every chart phrase out of the capped realtime instruction payload.
+    chartHighlightTargets().forEach(target=>target.parts.forEach(add));
+    P().slideEl().querySelectorAll('.bh,.s-lead,li,.chev,.kpi,.headband,.card .tiny,b').forEach(el=>{
+      if(!isHighlightTitle(el)&&!el.closest('[data-chart-group],[data-chart],figure.chart,figure[data-chart]'))add(el.textContent);
     });
     return out.slice(0,24).map(t=>'"'+t+'"').join(' | ');
   }
@@ -1630,7 +1684,7 @@ RULES:
 - Stay COMPLETELY SILENT unless the speaker says the wake word "Vessica" — then call begin_conversation and respond briefly and helpfully, drawing on the slide context. When told to stop / be quiet / thanked, call end_conversation and go silent again.
 - While silent, your ONLY actions are tool calls. Never produce audio without begin_conversation.
 - Advance slides with next_slide when the speaker finishes the current slide's material and begins the next slide's opening idea. Be conservative — never advance mid-thought. Obey explicit commands ("next slide", "go back", "go to slide 12") immediately via tools.
-- Use highlight(phrase) when the speaker dwells on a specific element visible on the slide; clear_highlight when they move on.
+- Use highlight(phrase) when the speaker dwells on a specific non-title element visible on the slide; clear_highlight when they move on. Never highlight the slide title. A chart is highlightable when the speaker's topic relates to its accessible description or one of its labels; use the corresponding verbatim highlightable phrase and the whole chart will glow.
 - LIVE EDITING (only after the wake word, in conversation): the speaker may ask you to change the slide — "change X to Y" → edit_text; "retitle this…" → set_slide_title; "add a bullet…" → add_bullet; "remove …" → remove_element. Confirm briefly aloud. For big asks (redesign, new image, restructure) use note_edit_request and say it's queued for the redesign pass.
 - COMPANION NARRATIVE EDITING: "open/edit the companion/narrative/talk track" → open_companion. While the speaker dictates narrative changes, use edit_companion for exact replacements, set_companion_section for a complete rewrite, or append_companion_section for additional prose. Each call saves immediately and visibly updates the drawer. Source attachments shown above the Markdown are part of the companion contract and may be referenced in edit requests.
 - BLANK-SLIDE AUTHORING (in conversation): "give me a blank slide (titled X)" → new_blank_slide. Then the speaker talks the slide into existence: distill each distinct point with author_point, stream narration with author_talk, set the lead with author_lead. When they say they're done / back to the presentation, call done_authoring and fall silent again on end_conversation if asked.
@@ -1901,7 +1955,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   function clearGlow(){if(glowEl){glowEl.classList.remove('vglow');glowEl=null;}}
   window.__vstopVessica=()=>{if(S.on)stop();};
   window.__vlive=()=>!!S.on;
-  window.__vpres={run:(n,a)=>runTool(n,a||{},'test')};
+  window.__vpres={run:(n,a)=>runTool(n,a||{},'test'),highlightables:()=>highlightables()};
   window.__vreconf=()=>{if(S.on)configure();};
   window.__vpush=(text)=>{
     if(!(S.on&&S.dc&&S.dc.readyState==='open'))return false;
@@ -1914,24 +1968,28 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     clearGlow();
     if(!phrase)return false;
     const p=normTxt(phrase);
-    const cands=P().slideEl().querySelectorAll('.bh,.s-title,.s-lead,li,.chev,.kpi,.headband,.card,.pill,td,b');
+    const cands=[];
+    P().slideEl().querySelectorAll('.bh,.s-lead,li,.chev,.kpi,.headband,.card,.pill,td,b').forEach(el=>{
+      if(!isHighlightTitle(el)&&!el.closest('[data-chart-group],[data-chart],figure.chart,figure[data-chart]'))cands.push({el:el,text:el.textContent||''});
+    });
+    chartHighlightTargets().forEach(target=>target.parts.forEach(text=>cands.push({el:target.el,text:text})));
     let best=null,bestLen=Infinity;
-    cands.forEach(el=>{
-      const t=normTxt(el.textContent);
-      if(t.includes(p)&&t.length<bestLen){best=el;bestLen=t.length;}
+    cands.forEach(cand=>{
+      const t=normTxt(cand.text);
+      if(t.includes(p)&&t.length<bestLen){best=cand.el;bestLen=t.length;}
     });
     if(!best){ // fuzzy: stem-prefix overlap so "delegation"/"delegations" etc. still match
       const stems=p.split(' ').filter(w=>w.length>3).map(w=>w.slice(0,5));
       let bestScore=0;
-      cands.forEach(el=>{
-        const tw=normTxt(el.textContent).split(' ').map(w=>w.slice(0,5));
+      cands.forEach(cand=>{
+        const tw=normTxt(cand.text).split(' ').map(w=>w.slice(0,5));
         const score=stems.filter(st=>tw.indexOf(st)>=0).length;
-        const t=normTxt(el.textContent);
-        if(score>bestScore||(score===bestScore&&score>0&&t.length<bestLen)){best=el;bestScore=score;bestLen=t.length;}
+        const t=normTxt(cand.text);
+        if(score>bestScore||(score===bestScore&&score>0&&t.length<bestLen)){best=cand.el;bestScore=score;bestLen=t.length;}
       });
       if(bestScore<Math.max(1,Math.ceil(stems.length/2)))best=null;
     }
-    if(best){
+    if(best&&!isHighlightTitle(best)){
       // climb from inline text to its containing box so the glow is a clean rectangle
       let box=best;
       while(box&&box.parentElement&&getComputedStyle(box).display==='inline')box=box.parentElement;
@@ -2311,7 +2369,14 @@ If narration starts with no draft slide, call new_slide first (infer a working t
       'display:flex;align-items:center;justify-content:center;color:#E3FDDB;font-size:34px;padding-left:6px}'+
     '.vunmute{position:absolute;right:28px;bottom:56px;z-index:41;background:rgba(12,32,19,.92);color:#dff0e2;'+
       'border:1px solid #21BF61;border-radius:999px;padding:8px 18px;font-size:14px;font-family:var(--vstd-sans);cursor:pointer}'+
-    'body.editmode.vdrop #frame{outline:3px solid #20E3AC;outline-offset:6px}';
+    '#videoSoundToggle{position:fixed;top:16px;right:16px;z-index:96;display:none;align-items:center;gap:7px;'+
+      'border:1px solid #54735e;border-radius:999px;padding:6px 8px 6px 10px;background:rgba(12,32,19,.94);'+
+      'color:#e3fddb;font:700 11px var(--vstd-sans);cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.24)}'+
+    '#videoSoundToggle.show{display:flex}#videoSoundToggle .vstrack{position:relative;width:27px;height:15px;border-radius:999px;background:#21bf61}'+
+    '#videoSoundToggle .vstrack i{position:absolute;top:2px;right:2px;width:11px;height:11px;border-radius:50%;background:#0c2013;transition:.15s}'+
+    '#videoSoundToggle.off .vstrack{background:#66736a}#videoSoundToggle.off .vstrack i{right:14px;background:#edf3ee}'+
+    'body.editmode #videoSoundToggle{top:76px}body.editmode.vdrop #frame{outline:3px solid #20E3AC;outline-offset:6px}'+
+    '@media print{#videoSoundToggle{display:none!important}}';
   document.head.appendChild(css);
 
   let gestured=false;
@@ -2324,6 +2389,31 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   const isAudience=()=>{const me=window.__vme;return !!(me&&me.mode==='public'&&!me.presenter);};
   const allVids=()=>[...frame.querySelectorAll('.slide video[data-vstd-video]')];
   const activeSlide=()=>frame.querySelector('.slide.active');
+  const soundKey='vstd:video-sound:'+((window.VSTD&&window.VSTD.deck)||'deck');
+  let soundOn=true;
+  try{const stored=localStorage.getItem(soundKey);if(stored!==null)soundOn=stored==='on';}catch(_){}
+  const soundToggle=document.createElement('button');
+  soundToggle.id='videoSoundToggle';soundToggle.type='button';soundToggle.setAttribute('role','switch');
+  soundToggle.innerHTML='<span class="vsicon"></span><span class="vslabel"></span><span class="vstrack"><i></i></span>';
+  document.body.appendChild(soundToggle);
+  const guardedVideos=new WeakSet();
+
+  function syncSoundToggle(s){
+    const hasVideo=!!(s&&s.querySelector('video[data-vstd-video]'));
+    soundToggle.classList.toggle('show',hasVideo);soundToggle.classList.toggle('off',!soundOn);
+    soundToggle.setAttribute('aria-checked',soundOn?'true':'false');
+    soundToggle.setAttribute('aria-label',soundOn?'Turn video sound off':'Turn video sound on');
+    soundToggle.querySelector('.vsicon').textContent=soundOn?'🔊':'🔇';
+    soundToggle.querySelector('.vslabel').textContent=soundOn?'Sound on':'Sound off';
+  }
+  function videoWantsSound(v){return soundOn&&v.hasAttribute('data-unmuted');}
+  soundToggle.addEventListener('click',e=>{
+    e.stopPropagation();gestured=true;soundOn=!soundOn;
+    try{localStorage.setItem(soundKey,soundOn?'on':'off');}catch(_){}
+    const s=activeSlide();
+    (s?[...s.querySelectorAll('video[data-vstd-video]')]:[]).forEach(v=>{v.muted=!videoWantsSound(v);});
+    if(!soundOn)(s||document).querySelectorAll('.vunmute').forEach(el=>el.remove());syncSoundToggle(s);
+  });
 
   function setup(v){
     const id=v.dataset.vstdVideo;
@@ -2332,6 +2422,11 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     if(!v.getAttribute('poster'))v.poster=posterFor(id);
     v.loop=v.hasAttribute('data-loop');
     if(isAudience()||!v.hasAttribute('data-autoplay')){v.controls=true;}
+    if(!soundOn)v.muted=true;
+    if(!guardedVideos.has(v)){
+      guardedVideos.add(v);
+      v.addEventListener('volumechange',()=>{if(!soundOn&&!v.muted)v.muted=true;});
+    }
   }
   function ensureSrc(v,preload){
     if(!v.getAttribute('src')){v.src=srcFor(v.dataset.vstdVideo);if(preload){v.preload='auto';try{v.load();}catch(_){}}}
@@ -2353,15 +2448,17 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   }
   function tapToPlay(v){
     if(v.closest('.slide').querySelector('.vtap'))return;
-    overlayFor(v,'vtap','<span>▶</span>',()=>{gestured=true;ensureSrc(v,true);v.muted=!v.hasAttribute('data-unmuted');v.play().catch(()=>{});});
+    overlayFor(v,'vtap','<span>▶</span>',()=>{gestured=true;ensureSrc(v,true);v.muted=!videoWantsSound(v);v.play().catch(()=>{});});
   }
   function unmuteChip(v){
+    if(!soundOn)return;
     if(v.closest('.slide').querySelector('.vunmute'))return;
     overlayFor(v,'vunmute','🔊 Tap for sound',()=>{gestured=true;v.muted=false;});
   }
 
   function activate(){
     const s=activeSlide();if(!s)return;
+    syncSoundToggle(s);
     clearOverlays();
     allVids().forEach(v=>{
       if(!s.contains(v)){if(!v.paused)v.pause();return;}
@@ -2370,7 +2467,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
       if(!v.hasAttribute('data-autoplay'))return; // manual video: presenter uses controls
       ensureSrc(v,false);
       if(!v.hasAttribute('data-keep-time')){try{v.currentTime=0;}catch(_){}}
-      const wantSound=v.hasAttribute('data-unmuted');
+      const wantSound=videoWantsSound(v);
       v.muted=!(wantSound&&gestured);
       const pr=v.play();
       if(pr&&pr.catch)pr.catch(()=>{
@@ -2397,7 +2494,8 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   document.addEventListener('fullscreenchange',()=>{
     if(!document.fullscreenElement)return;
     const s=activeSlide();if(!s)return;
-    s.querySelectorAll('video[data-vstd-video][data-unmuted]').forEach(v=>{if(!v.paused)v.muted=false;});
+    if(soundOn)s.querySelectorAll('video[data-vstd-video][data-unmuted]').forEach(v=>{if(!v.paused)v.muted=false;});
+    else s.querySelectorAll('video[data-vstd-video]').forEach(v=>{v.muted=true;});
     clearOverlays(s);
   });
   // audience status arrives async (/api/me) — retro-apply to the current slide

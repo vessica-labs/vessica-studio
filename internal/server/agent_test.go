@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAgentCommandSupportsCodex(t *testing.T) {
@@ -29,6 +30,28 @@ func TestAgentCommandSupportsCodex(t *testing.T) {
 	}
 	if !found {
 		t.Fatal("Codex command did not map OPENAI_API_KEY to CODEX_API_KEY")
+	}
+}
+
+func TestAgentPassTimeoutAllowsComplexRedesigns(t *testing.T) {
+	t.Setenv("VSTD_AGENT_TIMEOUT", "")
+	if got := agentPassTimeout(); got != 30*time.Minute {
+		t.Fatalf("default timeout = %s, want 30m", got)
+	}
+	t.Setenv("VSTD_AGENT_TIMEOUT", "45m")
+	if got := agentPassTimeout(); got != 45*time.Minute {
+		t.Fatalf("configured timeout = %s, want 45m", got)
+	}
+}
+
+func TestAgentCriticTimeoutAllowsVisualReview(t *testing.T) {
+	t.Setenv("VSTD_AGENT_CRITIC_TIMEOUT", "")
+	if got := agentCriticTimeout(); got != 20*time.Minute {
+		t.Fatalf("default critic timeout = %s, want 20m", got)
+	}
+	t.Setenv("VSTD_AGENT_CRITIC_TIMEOUT", "25m")
+	if got := agentCriticTimeout(); got != 25*time.Minute {
+		t.Fatalf("configured critic timeout = %s, want 25m", got)
 	}
 }
 

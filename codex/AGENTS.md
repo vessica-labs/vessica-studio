@@ -12,7 +12,10 @@ Copy this file into a content repo (or merge into its AGENTS.md).
 ## Ground rules
 
 - Install the engine if missing: `go install github.com/vessica-labs/vessica-studio/cmd/vstd@latest`
-- Before any deck work, read the authoring conventions: run `vstd skill conventions`
+- Before any deck work, read the authoring conventions: run `vstd skill conventions`.
+  Charts use its hybrid editable structure; existing inline SVG text can be
+  promoted with `vstd chart promote-text <deck> <slide> --dry-run` followed by
+  the write command after preview.
 - For a specific workflow, run `vstd skill <name>` and follow it exactly:
   `deck-new`, `deck-fork`, `deck-review`, `market-refresh`, `slide-add`, `slide-edit`
 - Preview with `vstd serve` (default http://localhost:4400) — it watches and

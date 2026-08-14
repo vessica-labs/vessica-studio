@@ -31,6 +31,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/chromium"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"gopkg.in/yaml.v3"
 )
@@ -360,7 +361,7 @@ exact-string replacement asserted against the current file content). Never
 end the pass waiting for permission or asking a question; a pass that ends
 without resolving its bullets is recorded as a failure.`, deck, id, deck, id, deck)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), agentPassTimeout())
 	defer cancel()
 	cmd := agentCommand(ctx, w.bin, w.s.St.Root, prompt)
 	out, err := cmd.CombinedOutput()
@@ -403,6 +404,16 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 		w.gitPush(deck, id)
 	}
 	w.s.Broadcast("reload")
+}
+
+func agentPassTimeout() time.Duration {
+	const fallback = 30 * time.Minute
+	if raw := strings.TrimSpace(os.Getenv("VSTD_AGENT_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return fallback
 }
 
 func agentCommand(ctx context.Context, bin, root, prompt string) *exec.Cmd {
@@ -492,7 +503,7 @@ The same visual inputs are available as local files, current slide first: %s. If
 Compare the current slide visually and substantively with the source. Inspect the original files listed in the companion frontmatter under attachments: when useful for precise text, labels, values, or context. Correct the slide until it is a high-fidelity native recreation while preserving the deck theme and the companion's intent. Check geometry, hierarchy, labels, values, omissions, source attribution, legibility, and the 1280x720 footer safe zone.
 
 Modify only decks/%s/slides/%s.html and its paired Markdown companion. Do not alter source attachments. Append a dated Log entry describing the critic adjustments. Do not add an Edit requests bullet or leave an in-progress marker. If the current result already has high fidelity, leave the fragment unchanged and only add a concise critic-verified Log entry.`, id, deck, strings.Join(sourceNames, ", "), strings.Join(images, ", "), deck, id)
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), agentCriticTimeout())
 	defer cancel()
 	cmd := agentCommandWithImages(ctx, w.bin, w.s.St.Root, prompt, images)
 	out, runErr := cmd.CombinedOutput()
@@ -534,26 +545,28 @@ func (w *agentWorker) renderSlide(deck, id, tmp string) (string, error) {
 	if n == 0 {
 		return "", fmt.Errorf("slide not found")
 	}
-	chromium := os.Getenv("VSTD_CHROMIUM")
-	if chromium == "" {
-		for _, candidate := range []string{"chromium", "chromium-browser", "google-chrome"} {
-			if path, lookErr := exec.LookPath(candidate); lookErr == nil {
-				chromium = path
-				break
-			}
-		}
-	}
-	if chromium == "" {
+	chromiumBin := chromium.Find("")
+	if chromiumBin == "" {
 		return "", fmt.Errorf("Chromium not found")
 	}
 	out := filepath.Join(tmp, "current-slide.png")
 	target := (&url.URL{Scheme: "file", Path: index}).String() + "#/" + strconv.Itoa(n)
-	cmd := exec.Command(chromium, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
+	cmd := exec.Command(chromiumBin, "--headless", "--no-sandbox", "--disable-gpu", "--hide-scrollbars",
 		"--window-size=1280,720", "--virtual-time-budget=2500", "--screenshot="+out, target)
 	if data, err := cmd.CombinedOutput(); err != nil {
 		return "", fmt.Errorf("chromium: %v — %s", err, strings.TrimSpace(string(data)))
 	}
 	return out, nil
+}
+
+func agentCriticTimeout() time.Duration {
+	const fallback = 20 * time.Minute
+	if raw := strings.TrimSpace(os.Getenv("VSTD_AGENT_CRITIC_TIMEOUT")); raw != "" {
+		if d, err := time.ParseDuration(raw); err == nil && d > 0 {
+			return d
+		}
+	}
+	return fallback
 }
 
 func (w *agentWorker) renderSourceAttachment(deck string, attachment studio.CompanionAttachment, tmp string, index int) (string, error) {

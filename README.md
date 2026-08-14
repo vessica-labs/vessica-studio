@@ -20,7 +20,10 @@ Part of [Vessica Labs](https://github.com/vessica-labs). Licensed under MIT.
 - **Live studio:** rebuilds on file changes, reloads connected browsers, and
   provides a structured edit API with stale-write protection.
 - **Presentation runtime:** an engine-owned player supplies navigation, HUD,
-  editing controls, live follow, and OpenAI Realtime integration across themes.
+  editing controls, live follow, a persistent sound switch on video slides, and
+  OpenAI Realtime integration across themes. Vessica excludes slide titles from
+  highlights and can highlight a chart from its accessible description or any
+  visible chart label.
 - **Reusable media:** generate images, upload or normalize video, maintain a
   shared asset manifest, and sync large video bytes to S3-compatible storage.
 - **Narrative editing:** open the current slide companion in a rendered Markdown
@@ -36,6 +39,24 @@ Part of [Vessica Labs](https://github.com/vessica-labs). Licensed under MIT.
 - **Hosted presentation mode:** deploy a presenter/audience surface to Railway
   with GitHub sign-in, presenter-only Git-backed editing, and expiring
   deck-scoped share links.
+
+### Editable charts
+
+Charts default to a hybrid structure: one inline SVG holds the plotted geometry
+(lines, dots, bars, fills, and gridlines), while labels, ticks, legends, values,
+and annotations are positioned HTML text overlays. Studio can select the chart
+group as one object or edit/move any label independently; PowerPoint export
+keeps those overlays as native text boxes.
+
+Existing inline SVG charts can be previewed and migrated with:
+
+```sh
+vstd chart promote-text <deck> <slide> --dry-run
+vstd chart promote-text <deck> <slide>
+```
+
+The migration uses rendered Chrome geometry and refuses partial writes for
+unsupported curved or zero-size SVG text. Raster charts are not migrated.
 
 ## Requirements
 
@@ -150,6 +171,7 @@ OpenAI, S3, Railway, or agent runtimes.
 | `vstd diff-upstream <fork>` | Show parent changes since a fork was created |
 | `vstd build <deck>` / `--all` | Build one deck or every deck |
 | `vstd agent` | Run one optional headless redesign-queue sweep |
+| `vstd chart promote-text <deck> <slide>` | Convert inline SVG chart text into editable positioned HTML overlays (`--dry-run` supported) |
 | `vstd serve [deck]` | Serve, watch, live reload, and expose the edit surface |
 | `vstd asset gen` | Generate and catalog an image |
 | `vstd asset list\|find` | Browse the shared asset library |
@@ -246,7 +268,7 @@ Important hosted settings include:
 | `VSTD_CONTENT_SYNC` | Set to `1` to allow authenticated presenters to edit hosted content |
 | `VSTD_GIT_REPO`, `VSTD_GIT_BRANCH`, `VSTD_GIT_TOKEN` | Content repository, branch, and repository-scoped write token for hosted sync |
 | `VSTD_GIT_DEBOUNCE_SECONDS`, `VSTD_GIT_POLL_SECONDS` | Optional hosted push batching and remote polling intervals |
-| `VSTD_AGENT`, `VSTD_AGENT_CMD` | Enable the optional headless redesign worker; defaults to `claude`, or use `codex` with `OPENAI_API_KEY` |
+| `VSTD_AGENT`, `VSTD_AGENT_CMD`, `VSTD_AGENT_TIMEOUT`, `VSTD_AGENT_CRITIC_TIMEOUT` | Enable the optional headless redesign worker; defaults to `claude`, or use `codex` with `OPENAI_API_KEY`; redesign and source-critic passes default to 30 and 20 minutes and accept Go-duration overrides such as `45m` |
 | `VSTD_S3_ENDPOINT`, `VSTD_S3_BUCKET`, `VSTD_S3_ACCESS_KEY`, `VSTD_S3_SECRET_KEY`, `VSTD_S3_REGION` | S3-compatible video storage |
 | `PUBLIC_URL` | Public base URL used by audience and call links |
 | `TELNYX_API_KEY`, `TELNYX_FROM_NUMBER`, `TELNYX_CONNECTION_ID` | Optional SMS and call actions |

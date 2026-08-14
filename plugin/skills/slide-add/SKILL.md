@@ -17,6 +17,9 @@ Read `../../docs/conventions.md`. Locate the studio root and target deck (`vstd 
    `POST /api/deck/{d}/slides` when the engine is running.
 3. **Generate** with the same four-step loop as deck-new: companion → fragment →
    required visual element → critic pass.
+   For any chart/graph/plot, follow the conventions' hybrid chart contract:
+   geometry in one `.chart-art` SVG and all text as editable `.chart-label`
+   overlays inside a selectable `data-chart-group` container.
    If the slide is based on a PDF, PPT/PPTX, or image, preserve that original under
    `decks/<deck>/sources/` and list it in companion frontmatter `attachments:` with
    the relevant `page`. Render and compare the finished slide to that source,

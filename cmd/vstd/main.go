@@ -7,6 +7,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	qrcode "github.com/skip2/go-qrcode"
+	"github.com/vessica-labs/vessica-studio/internal/chart"
 	"github.com/vessica-labs/vessica-studio/internal/library"
 	"github.com/vessica-labs/vessica-studio/internal/oai"
 	"github.com/vessica-labs/vessica-studio/internal/s3"
@@ -55,6 +57,8 @@ func main() {
 		err = cmdServe(args)
 	case "asset":
 		err = cmdAsset(args)
+	case "chart":
+		err = cmdChart(args)
 	case "bundle":
 		err = cmdBundle(args)
 	case "qr":
@@ -97,6 +101,8 @@ Usage:
   vstd asset add-video <file> [--slug S --tags a,b --no-transcode]
                                       ingest a video (normalize, poster, manifest)
   vstd asset push|pull                sync video bytes with the S3 bucket
+  vstd chart promote-text <deck> <slide> [--dry-run]
+                                      promote inline SVG text to editable overlays
   vstd bundle <deck>                  self-contained folder export (videos included)
   vstd key check                      verify OpenAI key resolution
   vstd qr <deck> [--ttl 72] [--host U]  mint a signed audience share link + QR
@@ -125,6 +131,7 @@ Environment:
   VSTD_GIT_REPO / _BRANCH / _TOKEN
                         content repository and scoped write credential
   VSTD_AGENT=1          enable the optional headless redesign worker
+  VSTD_CHROMIUM         Chrome/Chromium binary for visual export/migration
   PORT                  overrides port (Railway sets this)
   VSTD_S3_ENDPOINT / _BUCKET / _ACCESS_KEY / _SECRET_KEY / _REGION
                         S3-compatible bucket for video assets (Railway
@@ -300,6 +307,59 @@ func cmdAgent(args []string) error {
 	srv := server.New(st, server.ModeStudio)
 	n := srv.RunAgentOnce()
 	log.Printf("agent: sweep complete — %d pass(es) run", n)
+	return nil
+}
+
+func cmdChart(args []string) error {
+	if len(args) == 0 || args[0] != "promote-text" {
+		return fmt.Errorf("usage: vstd chart promote-text <deck> <slide> [--root DIR --dry-run --chromium PATH]")
+	}
+	fs := flag.NewFlagSet("chart promote-text", flag.ContinueOnError)
+	root := rootFlag(fs)
+	dryRun := fs.Bool("dry-run", false, "inspect and report without changing the fragment")
+	browser := fs.String("chromium", "", "Chrome/Chromium executable (or VSTD_CHROMIUM)")
+	positional := make([]string, 0, 2)
+	flags := make([]string, 0, len(args)-1)
+	for i := 1; i < len(args); i++ {
+		if strings.HasPrefix(args[i], "-") {
+			flags = append(flags, args[i])
+			if (args[i] == "--root" || args[i] == "-root" || args[i] == "--chromium" || args[i] == "-chromium") && i+1 < len(args) {
+				i++
+				flags = append(flags, args[i])
+			}
+		} else {
+			positional = append(positional, args[i])
+		}
+	}
+	if len(positional) != 2 {
+		return fmt.Errorf("usage: vstd chart promote-text <deck> <slide> [--root DIR --dry-run --chromium PATH]")
+	}
+	if err := fs.Parse(flags); err != nil {
+		return err
+	}
+	st, err := openStudio(*root)
+	if err != nil {
+		return err
+	}
+	result, err := chart.PromoteSVGText(context.Background(), st, positional[0], positional[1], chart.Options{
+		Browser: *browser,
+		DryRun:  *dryRun,
+	})
+	if err != nil {
+		return err
+	}
+	if result.Promoted == 0 {
+		fmt.Printf("no SVG text found on %s/%s\n", positional[0], positional[1])
+		return nil
+	}
+	if *dryRun {
+		fmt.Printf("would promote %d text label(s) across %d chart graphic(s) on %s/%s\n", result.Promoted, result.Charts, positional[0], positional[1])
+		return nil
+	}
+	if err := st.AppendLog(positional[0], positional[1], fmt.Sprintf("promoted %d inline SVG chart labels to editable HTML overlays via vstd chart promote-text", result.Promoted)); err != nil {
+		return fmt.Errorf("fragment promoted but companion log update failed: %w", err)
+	}
+	fmt.Printf("promoted %d text label(s) across %d chart graphic(s) on %s/%s\n", result.Promoted, result.Charts, positional[0], positional[1])
 	return nil
 }
 

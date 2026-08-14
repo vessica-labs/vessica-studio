@@ -35,7 +35,9 @@ For every slide, in order:
 2. **Fragment**: write `NNNN-slug.html` implementing the companion at the formatting
    standard, varying layout patterns for pacing (light/dark, columns, statements, dividers).
 3. **Visual element** (required): follow the Visual element rule in conventions —
-   reuse from library → generate/queue → inline SVG. Record asset ids in the
+   reuse from library → generate/queue → inline SVG. Charts are the exception:
+   use the conventions' hybrid chart structure with geometry in `.chart-art`
+   SVG and all text in editable `.chart-label` overlays. Record asset ids in the
    companion frontmatter `visuals:`.
 4. **Critic pass**: run the critic loop (screenshot + checklist + fix ≤2 rounds).
    Batch: generate all slides, then screenshot/review in one Playwright pass.

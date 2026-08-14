@@ -53,4 +53,9 @@ func TestPackagedWorkflowsMatchCodexLaunchers(t *testing.T) {
 	if strings.TrimSpace(conventions) == "" {
 		t.Fatal("Conventions() returned an empty document")
 	}
+	for _, want := range []string{"hybrid editable chart", "vstd chart promote-text", "data-chart-group", "chart-label"} {
+		if !strings.Contains(conventions, want) {
+			t.Errorf("conventions missing chart-authoring contract %q", want)
+		}
+	}
 }

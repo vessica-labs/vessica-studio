@@ -16,6 +16,10 @@ context-aware**.
 2. **Edit the fragment** at the formatting standard. Prefer the edit API when the engine
    runs (`PUT .../fragment`, `PUT .../title`); files directly otherwise. Keep the single
    `<section>` structure and theme classes.
+   When adding or rebuilding a chart, use the conventions' hybrid chart contract.
+   When an existing inline SVG chart contains `<text>`, use
+   `vstd chart promote-text <deck> <slide> --dry-run` and then the write command
+   when appropriate; inspect and fine-tune the resulting editable overlays.
 3. **Update the companion**: Key ideas/Evidence if content changed; Talk track if the
    message changed (keep next-slide cue); dated Log line describing the edit and why.
 4. **Critic-check when warranted**: layout changes and redesigns get a screenshot pass;

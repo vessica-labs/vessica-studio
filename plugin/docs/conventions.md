@@ -50,7 +50,7 @@ the attachment directly; `page` identifies the relevant PDF page or PPT slide.
 
 ## Engine surface
 
-CLI: `vstd new|list|fork|diff-upstream|build|serve|asset gen|asset find|key check`.
+CLI: `vstd new|list|fork|diff-upstream|build|serve|asset gen|asset find|chart promote-text|key check`.
 HTTP (studio mode): `GET /api/decks`, `GET /api/deck/{d}/slide/{id}`,
 `PUT .../fragment`, `PUT .../companion/{section}`, `PUT .../title`, `POST /api/deck/{d}/slides`.
 
@@ -75,6 +75,52 @@ Every generated slide gets AT LEAST one visual element. Priority order:
    Reference assets as `/library/img/<file>`; use a styled placeholder div until the
    file exists.
 3. **Inline SVG** (thin-line icons, gradient/aurora art) when a raster image adds nothing.
+
+## Charts and data graphics (hybrid by default)
+
+When a user asks for a chart, graph, plot, or data-driven exhibit, build it as
+a **hybrid editable chart** unless they explicitly request another format:
+
+- Put plotted geometry only in one inline SVG with class `chart-art`: axes,
+  gridlines, lines, bars, areas, dots, connectors, and decorative marks.
+- Put every human-readable string outside the SVG as an absolutely positioned
+  HTML element with classes/attributes `chart-label` and `data-edit`: tick
+  labels, axis titles, series labels, legends, values, annotations, and callouts.
+- Wrap both layers in a positioned container carrying `data-chart-group` and
+  `data-edit`. The chart background/group can be selected and moved as one
+  object; individual labels remain independently selectable, editable, and
+  movable in Studio and export as PowerPoint text boxes.
+- Preserve accessibility on the geometry SVG with `role="img"`, an
+  `aria-label` or `<title>/<desc>`, and `aria-hidden="true"` only when the HTML
+  labels plus surrounding prose fully communicate the chart.
+- Do not bake text into a raster image. Raster-chart migration is out of scope;
+  recreate it as a hybrid chart when editability is required.
+
+Typical structure:
+
+```html
+<div class="chart-group" data-chart-group data-edit style="position:relative">
+  <svg class="chart-art" viewBox="0 0 800 420" role="img"
+       aria-label="Revenue rises from 2024 to 2027">
+    <!-- geometry only: lines, bars, dots, gridlines -->
+  </svg>
+  <div class="chart-label" data-edit style="position:absolute;left:8%;top:86%">2024</div>
+  <div class="chart-label" data-edit style="position:absolute;left:72%;top:18%">$42M</div>
+</div>
+```
+
+To migrate an existing inline SVG chart, preview first, then promote its text:
+
+```sh
+vstd chart promote-text <deck> <slide> --dry-run
+vstd chart promote-text <deck> <slide>
+```
+
+The command uses rendered browser geometry, removes supported SVG `<text>` and
+direct `<tspan>` nodes, creates editable overlays, and appends the companion Log.
+It refuses partial writes when it encounters unsupported curved `textPath` or
+zero-size labels. After migration, build and screenshot the slide; adjust label
+placement if font metrics differ from the original SVG.
 
 Users can also drag-drop image (png/jpg/gif/webp) and video files onto a slide,
 or copy/paste an image from the clipboard while slide edit mode is active. The
