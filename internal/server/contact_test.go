@@ -32,6 +32,9 @@ func TestPublicRootServesOptionalLandingPage(t *testing.T) {
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Matt Kropp") {
 		t.Fatalf("anonymous root status=%d body=%q", rr.Code, rr.Body.String())
 	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("anonymous root cache control=%q", rr.Header().Get("Cache-Control"))
+	}
 
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/site/site.css", nil))
@@ -43,6 +46,31 @@ func TestPublicRootServesOptionalLandingPage(t *testing.T) {
 	h.ServeHTTP(rr, presenterRequest(s, http.MethodGet, "/", ""))
 	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Vessica Studio") {
 		t.Fatalf("presenter root status=%d body=%q", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPresenterIndexRequiresAuthenticationAndIsNotCached(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	s.secret = "test-secret"
+	s.allowed = map[string]bool{"matt-kropp": true}
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/presentations", nil))
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/auth/login" {
+		t.Fatalf("anonymous status=%d location=%q", rr.Code, rr.Header().Get("Location"))
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("anonymous cache control=%q", rr.Header().Get("Cache-Control"))
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, presenterRequest(s, http.MethodGet, "/presentations", ""))
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Demo") {
+		t.Fatalf("presenter status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("presenter cache control=%q", rr.Header().Get("Cache-Control"))
 	}
 }
 

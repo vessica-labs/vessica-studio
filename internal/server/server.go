@@ -138,6 +138,7 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleSwitcher)
+	mux.HandleFunc("GET /presentations", s.handlePresenterSwitcher)
 	site := http.StripPrefix("/site/", http.FileServer(http.Dir(filepath.Join(s.St.Root, "site"))))
 	mux.Handle("GET /site/", site)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
@@ -222,6 +223,7 @@ func (w *statusCapture) WriteHeader(code int) {
 }
 
 func (s *Server) handleSwitcher(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if s.Mode == ModePublic && !s.isPresenter(r) {
 		// A content repo may provide a public marketing homepage. Decks and
 		// their shared library remain gated independently below.
@@ -231,6 +233,15 @@ func (s *Server) handleSwitcher(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		// Studios without a homepage retain the original presenter-first flow.
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
+		return
+	}
+	s.handlePresenterSwitcher(w, r)
+}
+
+func (s *Server) handlePresenterSwitcher(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Mode == ModePublic && !s.isPresenter(r) {
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}

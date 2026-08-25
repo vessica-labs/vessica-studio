@@ -152,6 +152,31 @@ func TestMeReportsHostedEditCapability(t *testing.T) {
 	}
 }
 
+func TestPresenterLoginUsesDedicatedUncachedDestination(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	s.secret = "test-secret"
+	s.allowed = map[string]bool{"matt-kropp": true}
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("anonymous login status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("login cache control=%q", rr.Header().Get("Cache-Control"))
+	}
+	if !strings.Contains(rr.Body.String(), "location.replace('/presentations')") {
+		t.Fatalf("login page does not use presenter destination: %q", rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, presenterRequest(s, http.MethodGet, "/auth/login", ""))
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/presentations" {
+		t.Fatalf("presenter login status=%d location=%q", rr.Code, rr.Header().Get("Location"))
+	}
+}
+
 func TestPresenterMintsAbsoluteDeckScopedShareLink(t *testing.T) {
 	st := testStudio(t)
 	write := func(rel, body string) {

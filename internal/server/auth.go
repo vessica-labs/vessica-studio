@@ -377,6 +377,7 @@ func (s *Server) handleGitHubDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGitHubPoll(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	s.mu.Lock()
 	flow, ok := s.flows[r.PathValue("id")]
 	s.mu.Unlock()
@@ -445,6 +446,11 @@ func (s *Server) handleGitHubPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Mode == ModePublic && s.isPresenter(r) {
+		http.Redirect(w, r, "/presentations", http.StatusFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	io.WriteString(w, `<!DOCTYPE html><html><head><title>Vessica Studio — sign in</title><style>
 body{font-family:'Trebuchet MS',sans-serif;background:#0C2B15;color:#E3FDDB;margin:0;
@@ -467,7 +473,7 @@ a{color:#21BF61} .sub{color:#8fb59a;font-size:14px} #err{color:#FE7C2B;margin-to
       await new Promise(res=>setTimeout(res,(d.interval||5)*1000));
       const p=await fetch('/auth/github/poll/'+d.id,{method:'POST'});
       const j=await p.json();
-      if(p.status===200&&j.status==='completed'){body.innerHTML='Signed in as <b>'+j.login+'</b> — redirecting…';location.href='/';return;}
+      if(p.status===200&&j.status==='completed'){body.innerHTML='Signed in as <b>'+j.login+'</b> — redirecting…';location.replace('/presentations');return;}
       if(p.status!==202){throw new Error(j.error||('HTTP '+p.status));}
     }
   }catch(e){err.textContent=e.message;}

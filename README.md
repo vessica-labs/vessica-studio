@@ -259,7 +259,9 @@ precedence.
 ## Public hosting
 
 `public` mode keeps audiences read-only. Presenters authenticate through GitHub
-Device Flow and must appear in `VSTD_ALLOWED_GITHUB`. When
+Device Flow and must appear in `VSTD_ALLOWED_GITHUB`. Successful sign-in opens
+the non-cacheable `/presentations` index so a public marketing homepage at `/`
+cannot mask the authenticated presenter session. When
 `VSTD_CONTENT_SYNC=1`, an authenticated presenter can use the same sticky-note
 and direct-edit controls as a local studio: saves update the running instance
 immediately, then a background worker batches and pushes content-only commits
