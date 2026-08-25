@@ -38,6 +38,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	for _, want := range []string{
 		`id="hud"`,                                // HUD bar
 		`id="hudmore"`,                            // ⋯ overflow popover
+		`id="homebtn"`,                            // presenter return to the deck index
+		`location.assign('/presentations')`,       // Home control uses the authenticated index
 		`id="downloadbtn"`,                        // PDF/PPTX download menu
 		`id="sharebtn"`,                           // presenter-only deck sharing
 		`data-share="generate"`,                   // expiring share-link dialog
@@ -95,6 +97,12 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	}
 	if strings.Contains(html, `#followchip{position:fixed;bottom:`) {
 		t.Error("follow indicator must not overlap the bottom mobile HUD")
+	}
+	if !strings.Contains(html, `data-act="home" id="homebtn" data-presenter-control style="display:none"`) {
+		t.Error("Home control must remain hidden until presenter identity resolves")
+	}
+	if !strings.Contains(html, `const allowed=['prev','next','download'].includes(control.dataset.act)`) {
+		t.Error("audience HUD allowlist must exclude the presenter Home control")
 	}
 	for _, forbidden := range []string{`tap to browse freely`, `Browsing freely`} {
 		if strings.Contains(html, forbidden) {
