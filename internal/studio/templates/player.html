@@ -52,7 +52,7 @@ body:hover #hud{opacity:1}
 #downloadMenu.open{display:flex}
 #downloadMenu button{text-align:left;padding:9px 13px;font-size:13px}
 #downloadMenu small{display:block;color:#86a78e;font-size:10px;font-weight:400;margin-top:2px}
-#downloadbtn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#homebtn svg,#downloadbtn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #shareDialog{position:fixed;inset:0;z-index:155;display:none;align-items:center;justify-content:center;background:rgba(5,13,8,.68);backdrop-filter:blur(3px);font-family:var(--vstd-sans)}
 #shareDialog.open{display:flex}
 #shareDialog .card{width:min(520px,calc(100vw - 32px));background:var(--vstd-off);color:var(--vstd-deep);border-radius:18px;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
@@ -261,6 +261,7 @@ body.editmode .slide.active{cursor:default}
 
 <div id="progress"></div>
 <div id="hud">
+  <button data-act="home" id="homebtn" data-presenter-control style="display:none" title="All presentations" aria-label="All presentations"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"/></svg></button>
   <button data-act="prev">‹ Prev</button>
   <span class="cnt" id="cnt" style="display:none">1 / 1</span>
   <button data-act="next">Next ›</button>
@@ -598,7 +599,8 @@ body.editmode .slide.active{cursor:default}
     if(a==='vessica'){document.dispatchEvent(new Event('vstd:vtoggle'));document.getElementById('hudmore').classList.remove('open');return;}
     if(a==='more'){document.getElementById('hudmore').classList.toggle('open');return;}
     document.getElementById('hudmore').classList.remove('open');
-    if(a==='prev')step(-1);else if(a==='next')step(1); // step() skips parked+hidden — show(cur±1) walked straight through the parking lot on touch devices
+    if(a==='home')location.assign('/presentations');
+    else if(a==='prev')step(-1);else if(a==='next')step(1); // step() skips parked+hidden — show(cur±1) walked straight through the parking lot on touch devices
     else if(a==='menu')menu.classList.toggle('open');
     else if(a==='grid'){buildOv();overview.classList.add('open');}
     else if(a==='sticky'){if(window.__stickyToggle)window.__stickyToggle();}
@@ -2725,10 +2727,10 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   document.body.classList.add('mobilehud');
   const hud=document.getElementById('hud'),more=document.getElementById('hudmore');
   if(!hud||!more)return;
-  // primary bar keeps: Prev · count · Next · Download · Vessica · ⋯ — everything else
+  // primary bar keeps: Home · Prev · count · Next · Download · Vessica · ⋯ — everything else
   // moves into the ⋯ popover (same delegated handlers keep working because
   // the popover lives inside #hud)
-  const keep=new Set(['prev','next','download','vessica','more']);
+  const keep=new Set(['home','prev','next','download','vessica','more']);
   [...hud.querySelectorAll(':scope > button')].forEach(b=>{
     if(!keep.has(b.dataset.act||''))more.appendChild(b);
   });
