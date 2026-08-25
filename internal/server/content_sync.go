@@ -27,7 +27,7 @@ const (
 	syncStateError    = "error"
 )
 
-var contentSyncPaths = []string{"decks", "themes", "library", "requests"}
+var contentSyncPaths = []string{"decks", "themes", "library", "requests", "site"}
 
 type contentSyncConfig struct {
 	Root     string

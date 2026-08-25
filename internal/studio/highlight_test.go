@@ -12,7 +12,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/chromium"
 )
 
-func TestVessicaHighlightExcludesTitleAndTargetsChart(t *testing.T) {
+func TestPlayerRuntimeHighlightsAndCurrentMonthYear(t *testing.T) {
 	browser := chromium.Find("")
 	if browser == "" {
 		t.Skip("Chrome/Chromium unavailable")
@@ -31,6 +31,7 @@ func TestVessicaHighlightExcludesTitleAndTargetsChart(t *testing.T) {
     </svg>
     <div class="chart-label" data-chart-label>Enterprise segment</div>
   </div>
+  <div data-current-month-year>Fallback date</div>
 </section>`)
 
 	st, err := Open(root)
@@ -51,17 +52,21 @@ func TestVessicaHighlightExcludesTitleAndTargetsChart(t *testing.T) {
   const titleGlow=!!document.querySelector('.vglow');
   const chartResult=window.__vpres.run('highlight',{phrase:'Enterprise segment'});
   const glow=document.querySelector('.vglow');
-  return JSON.stringify({listed,titleResult,titleGlow,chartResult,chartGroup:!!(glow&&glow.hasAttribute('data-chart-group'))});
+  const expectedDate=new Intl.DateTimeFormat(undefined,{month:'long',year:'numeric'}).format(new Date());
+  const dateText=document.querySelector('[data-current-month-year]').textContent;
+  return JSON.stringify({listed,titleResult,titleGlow,chartResult,chartGroup:!!(glow&&glow.hasAttribute('data-chart-group')),dateText,expectedDate});
 })()`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got struct {
-		Listed      string `json:"listed"`
-		TitleResult string `json:"titleResult"`
-		TitleGlow   bool   `json:"titleGlow"`
-		ChartResult string `json:"chartResult"`
-		ChartGroup  bool   `json:"chartGroup"`
+		Listed       string `json:"listed"`
+		TitleResult  string `json:"titleResult"`
+		TitleGlow    bool   `json:"titleGlow"`
+		ChartResult  string `json:"chartResult"`
+		ChartGroup   bool   `json:"chartGroup"`
+		DateText     string `json:"dateText"`
+		ExpectedDate string `json:"expectedDate"`
 	}
 	if err := json.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatal(err)
@@ -79,5 +84,8 @@ func TestVessicaHighlightExcludesTitleAndTargetsChart(t *testing.T) {
 	}
 	if got.ChartResult != "highlighted" || !got.ChartGroup {
 		t.Error("chart label did not highlight the chart group")
+	}
+	if got.DateText != got.ExpectedDate || got.DateText == "Fallback date" {
+		t.Errorf("dynamic month/year = %q, want %q", got.DateText, got.ExpectedDate)
 	}
 }

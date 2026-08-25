@@ -43,6 +43,14 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`id="editRibbon"`,                     // fixed, shared object-editing ribbon
 		`role="toolbar"`,                      // accessible PowerPoint-style control surface
 		`id="videoRibbonTools"`,               // media options share the same ribbon
+		`id="imageRibbonTools"`,               // pictures and CSS background images expose crop controls
+		`data-img="crop"`,                     // crop mode keeps the frame fixed while the image pans
+		`backgroundPosition`,                  // CSS background pictures can be repositioned in their frame
+		`backgroundSize`,                      // CSS background pictures can be zoomed to change the crop
+		`id="marquee"`,                        // dragging blank canvas creates a multi-object selection box
+		`selectionBounds`,                     // multi-selection uses one combined bounding outline
+		`deleteSelection`,                     // Delete and the ribbon remove every selected object together
+		`shapeKind`,                           // CSS fills, gradients, borders, and circles are selectable shapes
 		`body.editmode #stage{top:62px}`,      // ribbon reserves canvas space instead of covering it
 		`data-act="sticky"`,                   // sticky notes
 		`data-act="companion"`,                // companion drawer
@@ -68,6 +76,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`img[alt]`,                            // legacy image charts can contribute alternate text
 		`Never highlight the slide title`,     // the realtime agent receives the same hard boundary
 		`highlightables:()=>highlightables()`, // browser-level regression tests can inspect target phrases
+		`function applyCurrentMonthYear`,      // declarative cover dates resolve at runtime
+		`[data-current-month-year]`,           // slide-authored dynamic month/year field
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)

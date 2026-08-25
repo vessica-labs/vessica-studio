@@ -52,10 +52,11 @@ type Server struct {
 	allowed    map[string]bool
 	flows      map[string]githubFlow
 
-	tokenMints  []time.Time         // realtime-token rate limiting
-	printJobs   map[string]printJob // one-time keys for in-flight PDF exports (export.go)
-	Agent       *agentWorker
-	ContentSync *ContentSync
+	tokenMints   []time.Time            // realtime-token rate limiting
+	contactMints map[string][]time.Time // public contact-form rate limiting by client
+	printJobs    map[string]printJob    // one-time keys for in-flight PDF exports (export.go)
+	Agent        *agentWorker
+	ContentSync  *ContentSync
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
@@ -127,6 +128,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 func (s *Server) Routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleSwitcher)
+	mux.HandleFunc("GET /presentations", s.handlePresenterSwitcher)
+	site := http.StripPrefix("/site/", http.FileServer(http.Dir(filepath.Join(s.St.Root, "site"))))
+	mux.Handle("GET /site/", site)
 	mux.HandleFunc("GET /api/events", s.handleEvents)
 	mux.HandleFunc("GET /api/decks", s.handleDecks)
 	mux.HandleFunc("GET /d/{deck}/{$}", s.handleDeck)
@@ -166,6 +170,7 @@ func (s *Server) Routes() *http.ServeMux {
 	// Phase 4: auth, share links, live-follow, health
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })
 	mux.HandleFunc("GET /api/me", s.handleMe)
+	mux.HandleFunc("POST /api/contact", s.handleContact)
 	mux.HandleFunc("GET /auth/login", s.handleLoginPage)
 	mux.HandleFunc("GET /auth/config", s.handleAuthConfig)
 	mux.HandleFunc("POST /auth/github/device", s.handleGitHubDevice)
@@ -206,8 +211,25 @@ func (w *statusCapture) WriteHeader(code int) {
 }
 
 func (s *Server) handleSwitcher(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	if s.Mode == ModePublic && !s.isPresenter(r) {
-		// audiences arrive via share links; presenters sign in
+		// A content repo may provide a public marketing homepage. Decks and
+		// their shared library remain gated independently below.
+		landing := filepath.Join(s.St.Root, "site", "index.html")
+		if _, err := os.Stat(landing); err == nil {
+			http.ServeFile(w, r, landing)
+			return
+		}
+		// Studios without a homepage retain the original presenter-first flow.
+		http.Redirect(w, r, "/auth/login", http.StatusFound)
+		return
+	}
+	s.handlePresenterSwitcher(w, r)
+}
+
+func (s *Server) handlePresenterSwitcher(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Mode == ModePublic && !s.isPresenter(r) {
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}
