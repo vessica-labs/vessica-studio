@@ -29,6 +29,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
 const sessionCookie = "vstd_session"
@@ -133,6 +135,28 @@ func (s *Server) shareValid(deck, tok string) bool {
 
 func shareCookieName(deck string) string { return "vstd_share_" + deck }
 
+func shareCookieMaxAge(tok string) int {
+	parts := strings.SplitN(tok, ".", 2)
+	if len(parts) != 2 {
+		return 0
+	}
+	exp, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil {
+		return 0
+	}
+	maxAge := int(time.Until(time.Unix(exp, 0)).Seconds())
+	if maxAge < 1 {
+		return 1
+	}
+	return maxAge
+}
+
+func (s *Server) setShareCookie(w http.ResponseWriter, r *http.Request, deck, tok string) {
+	http.SetCookie(w, &http.Cookie{Name: shareCookieName(deck), Value: tok, Path: "/",
+		HttpOnly: true, Secure: r.TLS != nil || s.Mode == ModePublic, SameSite: http.SameSiteLaxMode,
+		MaxAge: shareCookieMaxAge(tok)})
+}
+
 func (s *Server) hasShare(r *http.Request, deck string) bool {
 	if c, err := r.Cookie(shareCookieName(deck)); err == nil && s.shareValid(deck, c.Value) {
 		return true
@@ -168,14 +192,32 @@ func (s *Server) hasAnyAccess(r *http.Request) bool {
 
 func (s *Server) handleShareLanding(w http.ResponseWriter, r *http.Request) {
 	deck, tok := r.PathValue("deck"), r.PathValue("token")
-	if !s.shareValid(deck, tok) {
+	if !studio.ValidDeckName(deck) || !s.shareValid(deck, tok) {
 		http.Error(w, "This share link is invalid or has expired.", http.StatusForbidden)
 		return
 	}
-	http.SetCookie(w, &http.Cookie{Name: shareCookieName(deck), Value: tok, Path: "/",
-		HttpOnly: true, Secure: r.TLS != nil || s.Mode == ModePublic, SameSite: http.SameSiteLaxMode,
-		MaxAge: 60 * 60 * 24 * 7})
+	s.setShareCookie(w, r, deck, tok)
 	http.Redirect(w, r, "/d/"+deck+"/", http.StatusFound)
+}
+
+// handleFollowLanding is an opt-in, memorable audience entrance for the one
+// deck configured as follow_deck in studio.yaml. It never puts a share token
+// in browser history: the route grants a 24-hour, deck-scoped cookie and then
+// joins the same live-follow experience used by QR visitors.
+func (s *Server) handleFollowLanding(w http.ResponseWriter, r *http.Request) {
+	deck := strings.TrimSpace(s.St.Config.FollowDeck)
+	if !studio.ValidDeckName(deck) {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := s.St.LoadDeckMeta(deck); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	tok := s.MintShare(deck, 24*time.Hour)
+	s.setShareCookie(w, r, deck, tok)
+	w.Header().Set("Cache-Control", "no-store")
+	http.Redirect(w, r, "/d/"+deck+"/?follow=1", http.StatusFound)
 }
 
 func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {
@@ -191,24 +233,23 @@ func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {
 		req.TTLHours = 72
 	}
 	deck := r.PathValue("deck")
-	tok := s.MintShare(deck, time.Duration(req.TTLHours)*time.Hour)
-	writeJSON(w, map[string]string{"url": "/v/" + deck + "/" + tok, "token": tok})
-}
-
-// handleShareQR renders a QR code for a freshly-minted share link — embed
-// it on a closing slide via <img src="/api/deck/<deck>/share-qr.png"> and it
-// can never go stale. Points at public_host when configured (so phones in
-// the room resolve it), else the request host.
-func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
-	deck := r.PathValue("deck")
-	if !s.canView(r, deck) {
-		http.Error(w, "forbidden", http.StatusForbidden)
+	if !studio.ValidDeckName(deck) {
+		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
 		return
 	}
-	ttl := 72
-	if v := r.URL.Query().Get("ttl"); v != "" {
-		fmt.Sscanf(v, "%d", &ttl)
+	if req.TTLHours > 24*30 {
+		req.TTLHours = 24 * 30
 	}
+	expires := time.Now().Add(time.Duration(req.TTLHours) * time.Hour)
+	tok := s.MintShare(deck, time.Duration(req.TTLHours)*time.Hour)
+	writeJSON(w, map[string]string{
+		"url":        s.shareBase(r) + "/v/" + deck + "/" + tok,
+		"token":      tok,
+		"expires_at": expires.UTC().Format(time.RFC3339),
+	})
+}
+
+func (s *Server) shareBase(r *http.Request) string {
 	base := s.St.Config.PublicHost
 	if base == "" {
 		scheme := "http"
@@ -217,7 +258,24 @@ func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
 		}
 		base = scheme + "://" + r.Host
 	}
-	link := strings.TrimRight(base, "/") + "/v/" + deck + "/" + s.MintShare(deck, time.Duration(ttl)*time.Hour)
+	return strings.TrimRight(base, "/")
+}
+
+// handleShareQR renders a QR code for a freshly-minted share link — embed
+// it on a closing slide via <img src="/api/deck/<deck>/share-qr.png"> and it
+// can never go stale. Points at public_host when configured (so phones in
+// the room resolve it), else the request host.
+func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
+	deck := r.PathValue("deck")
+	if !s.canView(r, deck) && !isLoopback(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	ttl := 72
+	if v := r.URL.Query().Get("ttl"); v != "" {
+		fmt.Sscanf(v, "%d", &ttl)
+	}
+	link := s.shareBase(r) + "/v/" + deck + "/" + s.MintShare(deck, time.Duration(ttl)*time.Hour)
 	png, err := qrcode.Encode(link, qrcode.Medium, 640)
 	if err != nil {
 		jsonErr(w, err, 500)
@@ -250,14 +308,25 @@ func (s *Server) handlePresenting(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
 		return
 	}
-	var req struct {
-		Index int `json:"index"`
-	}
+	var req presentingUpdate
 	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<12)).Decode(&req); err != nil {
 		jsonErr(w, err, 400)
 		return
 	}
-	s.Broadcast("follow|" + r.PathValue("deck") + "|" + strconv.Itoa(req.Index))
+	deck := r.PathValue("deck")
+	if err := s.validatePresenting(deck, req.Index); err != nil {
+		jsonErr(w, err, http.StatusBadRequest)
+		return
+	}
+	relay := presentingUpdate{Index: req.Index, Seq: time.Now().UnixNano()}
+	s.setPresenting(deck, req.Index, relay.Seq)
+	if err := s.relayPresenting(r, deck, relay); err != nil {
+		// Local viewing must remain usable if Railway is temporarily
+		// unreachable; the error is logged so production diagnostics show it.
+		log.Printf("presenting relay failed for %s slide %d: %v", deck, req.Index+1, err)
+		writeJSON(w, map[string]string{"status": "local-only"})
+		return
+	}
 	writeJSON(w, map[string]string{"status": "ok"})
 }
 
@@ -308,6 +377,7 @@ func (s *Server) handleGitHubDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGitHubPoll(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	s.mu.Lock()
 	flow, ok := s.flows[r.PathValue("id")]
 	s.mu.Unlock()
@@ -376,6 +446,11 @@ func (s *Server) handleGitHubPoll(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if s.Mode == ModePublic && s.isPresenter(r) {
+		http.Redirect(w, r, "/presentations", http.StatusFound)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	io.WriteString(w, `<!DOCTYPE html><html><head><title>Vessica Studio — sign in</title><style>
 body{font-family:'Trebuchet MS',sans-serif;background:#0C2B15;color:#E3FDDB;margin:0;
@@ -398,7 +473,7 @@ a{color:#21BF61} .sub{color:#8fb59a;font-size:14px} #err{color:#FE7C2B;margin-to
       await new Promise(res=>setTimeout(res,(d.interval||5)*1000));
       const p=await fetch('/auth/github/poll/'+d.id,{method:'POST'});
       const j=await p.json();
-      if(p.status===200&&j.status==='completed'){body.innerHTML='Signed in as <b>'+j.login+'</b> — redirecting…';location.href='/';return;}
+      if(p.status===200&&j.status==='completed'){body.innerHTML='Signed in as <b>'+j.login+'</b> — redirecting…';location.replace('/presentations');return;}
       if(p.status!==202){throw new Error(j.error||('HTTP '+p.status));}
     }
   }catch(e){err.textContent=e.message;}

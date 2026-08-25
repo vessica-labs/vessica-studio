@@ -32,6 +32,7 @@ html,body{height:100%;background:#111614;font-family:var(--vstd-sans)}
 .slide.active{display:block!important}
 .slide.active{display:block}
 .notes{display:none}
+.slide .pgpill{position:absolute;right:44px;bottom:12px;z-index:8;font:14px var(--vstd-sans);color:#a8b6ab;border:1px solid #4d6252;border-radius:999px;padding:2px 9px;line-height:1.2}
 
 /* ---------- Viewer chrome ---------- */
 #hud{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);display:flex;gap:6px;align-items:center;
@@ -52,6 +53,18 @@ body:hover #hud{opacity:1}
 #downloadMenu button{text-align:left;padding:9px 13px;font-size:13px}
 #downloadMenu small{display:block;color:#86a78e;font-size:10px;font-weight:400;margin-top:2px}
 #homebtn svg,#downloadbtn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#shareDialog{position:fixed;inset:0;z-index:155;display:none;align-items:center;justify-content:center;background:rgba(5,13,8,.68);backdrop-filter:blur(3px);font-family:var(--vstd-sans)}
+#shareDialog.open{display:flex}
+#shareDialog .card{width:min(520px,calc(100vw - 32px));background:var(--vstd-off);color:var(--vstd-deep);border-radius:18px;padding:26px;box-shadow:0 24px 70px rgba(0,0,0,.5)}
+#shareDialog .shead{display:flex;align-items:center;gap:12px;margin-bottom:8px}#shareDialog h2{font:400 28px var(--vstd-serif);flex:1}
+#shareDialog .close{border:0;background:transparent;color:var(--vstd-gray);font-size:22px;cursor:pointer;padding:4px 8px}
+#shareDialog p{font-size:14px;line-height:1.45;color:var(--vstd-gray);margin-bottom:18px}
+#shareDialog label{display:block;font-size:12px;font-weight:700;letter-spacing:.05em;margin:12px 0 6px}
+#shareDialog select,#shareDialog input{width:100%;border:1px solid #bdcbbf;border-radius:9px;background:#fff;color:var(--vstd-deep);font:14px var(--vstd-sans);padding:11px 12px}
+#shareDialog .actions{display:flex;gap:9px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+#shareDialog .actions button{border:1px solid #abc0af;border-radius:999px;background:#fff;color:var(--vstd-deep);font:700 13px var(--vstd-sans);padding:10px 17px;cursor:pointer}
+#shareDialog .actions .primary{background:var(--vstd-deep);border-color:var(--vstd-deep);color:#fff}
+#shareDialog .meta{min-height:18px;margin-top:8px;color:#5d7563;font-size:12px}
 /* touch devices: hud always visible, bigger targets, secondary items behind ⋯ */
 body.mobilehud #hud{opacity:1;gap:2px;padding:8px 10px;bottom:calc(10px + env(safe-area-inset-bottom));max-width:96vw}
 body.mobilehud #hud>button{font-size:16px;padding:9px 13px}
@@ -138,10 +151,11 @@ body.mobilehud #hud .cnt{font-size:14px;min-width:52px}
 #dictbar button:hover{background:#1c4229}
 .draft-pill{position:absolute;right:44px;top:16px;border:1.5px dashed #FEA127;border-radius:999px;
   padding:3px 14px;font-size:13px;color:#b06c0e;background:#fff9f0;font-family:var(--vstd-sans)}
-#followchip{position:fixed;bottom:14px;right:14px;z-index:120;display:none;
-  background:rgba(12,32,19,.92);border:1px solid #21BF61;border-radius:999px;padding:8px 18px;
-  font-family:var(--vstd-sans);font-size:13px;color:#cfe6d4;cursor:pointer}
-#followchip.paused{border-color:#FEA127}
+#followchip{position:fixed;top:12px;right:12px;z-index:120;display:none;
+  background:rgba(12,32,19,.94);border:1px solid #21BF61;border-radius:999px;padding:5px 10px;
+  max-width:calc(100vw - 24px);font-family:var(--vstd-sans);font-size:11px;font-weight:700;letter-spacing:.04em;
+  color:#cfe6d4;cursor:default;box-shadow:0 5px 18px rgba(0,0,0,.24);transition:padding .18s,font-size .18s}
+#followchip.intro{padding:8px 14px;font-size:12px;font-weight:600;letter-spacing:0}
 @keyframes vglowp{0%,100%{box-shadow:0 0 0 3px rgba(32,227,172,.55),0 0 34px 6px rgba(32,227,172,.45)}
   50%{box-shadow:0 0 0 3px rgba(32,227,172,.85),0 0 48px 10px rgba(32,227,172,.65)}}
 #menu,#notesPanel{position:fixed;z-index:80;background:#0f271733;backdrop-filter:blur(2px)}
@@ -234,7 +248,7 @@ body.cropmode #selbox{border-style:dashed;border-color:var(--vstd-mint)}
 body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--vstd-green);outline-offset:2px;cursor:text}
 body.editmode .slide.active{cursor:default}
 @media print{
-  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#capbar,#editRibbon,#selbox,#multiboxes,#marquee{display:none!important}
+  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#shareDialog,#capbar,#editRibbon,#selbox,#multiboxes,#marquee{display:none!important}
   #stage{position:static}
   #frame{width:1280px;height:720px;box-shadow:none;page-break-after:always;position:relative;margin:0 auto}
   .slide{display:block!important;position:relative;page-break-after:always}
@@ -254,24 +268,37 @@ body.editmode .slide.active{cursor:default}
 
 <div id="progress"></div>
 <div id="hud">
-  <button data-act="home" id="homebtn" style="display:none" title="All presentations" aria-label="All presentations"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"/></svg></button>
+  <button data-act="home" id="homebtn" data-presenter-control style="display:none" title="All presentations" aria-label="All presentations"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11.5 12 4l9 7.5M5.5 10v10h13V10M9.5 20v-6h5v6"/></svg></button>
   <button data-act="prev">‹ Prev</button>
-  <span class="cnt" id="cnt">1 / 1</span>
+  <span class="cnt" id="cnt" style="display:none">1 / 1</span>
   <button data-act="next">Next ›</button>
-  <button data-act="vessica" id="hudVessica" title="Start/stop Vessica (V)">Vessica</button>
-  <button data-act="menu">Agenda</button>
-  <button data-act="grid">Grid</button>
-  <button data-act="sticky" id="hudSticky">Sticky</button>
+  <button data-act="vessica" id="hudVessica" data-presenter-control style="display:none" title="Start/stop Vessica (V)">Vessica</button>
+  <button data-act="menu" data-presenter-control style="display:none">Agenda</button>
+  <button data-act="grid" data-presenter-control style="display:none">Grid</button>
+  <button data-act="sticky" id="hudSticky" data-presenter-control style="display:none">Sticky</button>
   <button data-act="companion" id="companionbtn" style="display:none">Companion</button>
-  <button data-act="notes">Notes</button>
-  <button data-act="present" id="presentbtn">Present</button>
+  <button data-act="notes" data-presenter-control style="display:none">Notes</button>
+  <button data-act="present" id="presentbtn" data-presenter-control style="display:none">Present</button>
+  <button data-act="share" id="sharebtn" style="display:none">Share</button>
   <button data-act="download" id="downloadbtn" style="display:none" title="Download deck" aria-label="Download deck"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg></button>
   <button id="newslidebtn" style="display:none">+ Slide</button>
-  <button data-act="edit" id="editbtn">Edit</button>
+  <button data-act="edit" id="editbtn" data-presenter-control style="display:none">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
   <button data-act="more" id="hudMore" style="display:none">⋯</button>
-  <div id="downloadMenu"><button data-download="pdf">PDF<small>Fixed-layout document</small></button><button data-download="pptx">PowerPoint (.pptx)<small>Editable text, shapes, chart elements, and images</small></button></div>
+  <div id="downloadMenu"><button data-download="pdf">PDF<small>Fixed-layout document</small></button><button data-download="pptx">PowerPoint (.pptx)<small>Visual-exact slides that mirror the HTML</small></button><button data-download="pptx-editable">PowerPoint — editable objects<small>Best-effort editable text, shapes, and images</small></button></div>
   <div id="hudmore"></div>
+</div>
+<div id="shareDialog" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
+  <div class="card">
+    <div class="shead"><h2 id="shareTitle">Share this presentation</h2><button class="close" type="button" aria-label="Close">&#10005;</button></div>
+    <p>Generate a private, expiring link. It grants access to this presentation only.</p>
+    <label for="shareTTL">Link expires after</label>
+    <select id="shareTTL"><option value="24">24 hours</option><option value="72" selected>3 days</option><option value="168">7 days</option><option value="720">30 days</option></select>
+    <label for="shareURL">Share link</label>
+    <input id="shareURL" type="text" readonly placeholder="Choose Generate link">
+    <div class="meta" id="shareMeta"></div>
+    <div class="actions"><button type="button" data-share="generate" class="primary">Generate link</button><button type="button" data-share="copy" disabled>Copy link</button><button type="button" data-share="email" disabled>Email link</button></div>
+  </div>
 </div>
 <div id="editRibbon" role="toolbar" aria-label="Object editing controls">
   <div class="rbrand">Edit</div><div class="rselection" id="editSelection">No object selected</div>
@@ -313,7 +340,47 @@ body.editmode .slide.active{cursor:default}
   const menu=document.getElementById('menu'),menulist=document.getElementById('menulist');
   const overview=document.getElementById('overview'),ovgrid=document.getElementById('ovgrid');
   const progress=document.getElementById('progress');
+	const shareDialog=document.getElementById('shareDialog');
   let cur=0,notesOn=false,scale=1;
+
+  window.VSTDPresenterControl=()=>!!(window.__vme&&window.__vme.presenter===true&&!window.__vaudience);
+
+  function closeShare(){if(shareDialog)shareDialog.classList.remove('open');}
+  function openShare(){
+    if(!window.VSTDPresenterControl()||!shareDialog)return;
+    shareDialog.classList.add('open');
+    setTimeout(()=>document.getElementById('shareTTL').focus(),0);
+  }
+  async function generateShare(){
+    const ttl=parseInt(document.getElementById('shareTTL').value)||72;
+    const meta=document.getElementById('shareMeta');
+    meta.textContent='Generating a deck-scoped link…';
+    try{
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/share',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ttl_hours:ttl})});
+      const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+      const input=document.getElementById('shareURL');input.value=new URL(j.url,location.origin).href;
+      shareDialog.querySelectorAll('[data-share="copy"],[data-share="email"]').forEach(b=>b.disabled=false);
+      meta.textContent='Expires '+new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(j.expires_at));
+      input.select();
+    }catch(e){meta.textContent='Could not generate link: '+e.message;}
+  }
+  async function copyShare(){
+    const input=document.getElementById('shareURL');if(!input.value)return;
+    try{await navigator.clipboard.writeText(input.value);}catch(_){input.select();document.execCommand('copy');}
+    toast('Presentation link copied');
+  }
+  function emailShare(){
+    const link=document.getElementById('shareURL').value;if(!link)return;
+    const title=(window.VSTD&&window.VSTD.title)||document.title||'Presentation';
+    location.href='mailto:?subject='+encodeURIComponent(title)+'&body='+encodeURIComponent('Here is the presentation link:\n\n'+link+'\n\nThis link grants access only to this presentation.');
+  }
+  if(shareDialog){
+    shareDialog.addEventListener('click',e=>{
+      if(e.target===shareDialog||e.target.closest('.close')){closeShare();return;}
+      const act=e.target.closest('[data-share]')&&e.target.closest('[data-share]').dataset.share;
+      if(act==='generate')generateShare();else if(act==='copy')copyShare();else if(act==='email')emailShare();
+    });
+  }
 
   // page numbers: only in-flow (non-parked) slides are numbered
   function renumberPills(){
@@ -342,7 +409,7 @@ body.editmode .slide.active{cursor:default}
   }
   addEventListener('resize',fit);fit();
 
-  function canEditDeck(){return !window.__vme||window.__vme.editable===true;}
+  function canEditDeck(){return window.VSTDPresenterControl()&&window.__vme.editable===true;}
   window.__vcanEdit=canEditDeck;
   function persistSlide(sec){
     if(!canEditDeck())return;
@@ -540,8 +607,13 @@ body.editmode .slide.active{cursor:default}
 
   document.getElementById('hud').addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
-    if(b.dataset.download){document.getElementById('downloadMenu').classList.remove('open');downloadDeck(b.dataset.download);return;}
+    if(b.dataset.download){
+      if(!window.__vme||(window.__vaudience&&b.dataset.download!=='pdf'))return;
+      document.getElementById('downloadMenu').classList.remove('open');downloadDeck(b.dataset.download);return;
+    }
     const a=b.dataset.act;
+    if(window.__vaudience&& !['prev','next','download'].includes(a))return;
+    if(!window.__vme&&!['prev','next'].includes(a))return;
     if(a==='vessica'){document.dispatchEvent(new Event('vstd:vtoggle'));document.getElementById('hudmore').classList.remove('open');return;}
     if(a==='more'){document.getElementById('hudmore').classList.toggle('open');return;}
     document.getElementById('hudmore').classList.remove('open');
@@ -555,6 +627,7 @@ body.editmode .slide.active{cursor:default}
     else if(a==='edit')toggleEdit();
     else if(a==='save')saveHtml();
     else if(a==='download'){document.getElementById('downloadMenu').classList.toggle('open');}
+    else if(a==='share')openShare();
     else if(a==='present')enterPresent();
   });
   addEventListener('pointerdown',e=>{
@@ -568,6 +641,12 @@ body.editmode .slide.active{cursor:default}
   }
   addEventListener('keydown',e=>{
     if(keyTargetIsTextEntry(e))return;
+    if(window.__vaudience){
+      if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();step(1);}
+      else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();step(-1);}
+      return;
+    }
+    if(!window.VSTDPresenterControl())return;
     if(editingText){if(e.key==='Escape'){e.preventDefault();stopTextEdit();}return;}
     if(editMode&&(e.metaKey||e.ctrlKey)&&(e.key==='z'||e.key==='Z')){e.preventDefault();doUndo();return;}
     if(editMode&&selEl&&(e.key==='Delete'||e.key==='Backspace')){
@@ -587,7 +666,7 @@ body.editmode .slide.active{cursor:default}
     else if(e.key==='p'||e.key==='P')enterPresent();
     else if(e.key==='v'||e.key==='V')document.dispatchEvent(new Event('vstd:vtoggle'));
     else if(e.key==='d'||e.key==='D')document.dispatchEvent(new Event('vstd:dtoggle'));
-    else if(e.key==='Escape'){clearSel();overview.classList.remove('open');menu.classList.remove('open');}
+    else if(e.key==='Escape'){clearSel();overview.classList.remove('open');menu.classList.remove('open');closeShare();}
   });
 
   // ---------- Edit mode ----------
@@ -638,6 +717,7 @@ body.editmode .slide.active{cursor:default}
   }
 
   function toggleEdit(){
+    if(!window.VSTDPresenterControl())return;
     editMode=!editMode;
     document.body.classList.toggle('editmode',editMode);
     document.getElementById('savebtn').style.display=editMode?'':'none';
@@ -1222,25 +1302,25 @@ body.editmode .slide.active{cursor:default}
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   }
 
-  // ---- deck export: PDF or native editable PowerPoint ----
+  // ---- deck export: PDF, visual-exact PowerPoint, or best-effort editable PowerPoint ----
   let __downloadBusy=false;
   async function downloadDeck(format){
-    format=format==='pptx'?'pptx':'pdf';
-    if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast(format.toUpperCase()+' export needs the engine (vstd serve)');return;}
+    const editable=format==='pptx-editable',pptx=format==='pptx'||editable,ext=pptx?'pptx':'pdf';
+    if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast(ext.toUpperCase()+' export needs the engine (vstd serve)');return;}
     if(__downloadBusy)return;
     __downloadBusy=true;
-    toast(format==='pptx'?'Building editable PowerPoint objects…':'Generating PDF…',120000);
+    toast(pptx?(editable?'Building editable PowerPoint objects…':'Rendering visual-exact PowerPoint…'):'Generating PDF…',120000);
     try{
-      const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.'+format);
+      const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.'+ext+(editable?'?mode=editable':''));
       if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
       const blob=await r.blob();
       const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);a.download=window.VSTD.deck+'.'+format;
+      a.href=URL.createObjectURL(blob);a.download=window.VSTD.deck+(editable?'-editable':'')+'.'+ext;
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(a.href),2000);
       const n=r.headers.get('X-VSTD-Pages');
-      toast((format==='pptx'?'Editable PowerPoint':'PDF')+' downloaded'+(n?' — '+n+' slides':''));
-    }catch(e){toast(format.toUpperCase()+' export failed: '+e.message,7000);}
+      toast((pptx?(editable?'Editable PowerPoint':'Visual-exact PowerPoint'):'PDF')+' downloaded'+(n?' — '+n+' slides':''));
+    }catch(e){toast(ext.toUpperCase()+' export failed: '+e.message,7000);}
     finally{__downloadBusy=false;}
   }
 
@@ -1262,7 +1342,7 @@ body.editmode .slide.active{cursor:default}
   });
   if(location.protocol.indexOf('http')===0&&window.EventSource){
     try{
-      const es=new EventSource('/api/events');
+      const es=new EventSource('/api/events?deck='+encodeURIComponent(window.VSTD.deck));
       es.addEventListener('reload',()=>{
         if(Date.now()-(window.__selfSave||0)<2500){/* our own write; DOM is already current */}
         else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
@@ -1286,43 +1366,68 @@ body.editmode .slide.active{cursor:default}
       });
       fetch('/api/me').then(r=>r.json()).then(me=>{
         window.__vme=me;
-        if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
-        const audience=(me.mode==='public'&&!me.presenter)||/[?&]follow=1/.test(location.search);
-        // presenter-only: starts hidden so an audience tab never flashes it
-        if(!audience){['homebtn','downloadbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
+        const audience=(me.mode==='public'&&!me.presenter)||(me.mode!=='public'&&/[?&]follow=1/.test(location.search));
+        window.__vaudience=audience;
+        if(!audience){
+          document.getElementById('cnt').style.display='';
+          document.querySelectorAll('[data-presenter-control]').forEach(b=>b.style.display='');
+          if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
+        }
+        // All authorized viewers may download the fixed-layout PDF. PowerPoint
+        // and share-link controls stay presenter-only at both the HUD and API.
+        if(audience){
+          const b=document.getElementById('downloadbtn');
+          if(b){b.style.display='';b.title='Download PDF';b.setAttribute('aria-label','Download PDF');}
+          document.querySelectorAll('#downloadMenu [data-download^="pptx"]').forEach(b=>b.hidden=true);
+          const hud=document.getElementById('hud'),next=hud.querySelector('[data-act="next"]');
+          if(next&&b)next.insertAdjacentElement('afterend',b);
+          document.getElementById('cnt').style.display='none';
+          const lockAudienceHUD=()=>{
+            hud.querySelectorAll('button').forEach(control=>{
+              const allowed=['prev','next','download'].includes(control.dataset.act)||control.dataset.download==='pdf';
+              if(!allowed)control.style.display='none';
+            });
+          };
+          lockAudienceHUD();
+          new MutationObserver(lockAudienceHUD).observe(hud,{childList:true,subtree:true});
+          document.getElementById('hudMore').style.display='none';
+          document.getElementById('hudmore').classList.remove('open');
+          menu.classList.remove('open');overview.classList.remove('open');notesPanel.classList.remove('open');
+          closeShare();
+        }else{
+          ['downloadbtn','sharebtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});
+        }
         if(audience){
           window.__following=true;
-          ['editbtn','savebtn','presentbtn','hudVessica'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
+          if(window.__lastPresenterIdx!=null)show(window.__lastPresenterIdx);
           const chip=document.createElement('div');
-          chip.id='followchip';chip.style.display='block';
-          chip.textContent='● Following the presenter — click to browse freely';
-          chip.addEventListener('click',()=>{
-            window.__following=!window.__following;
-            chip.classList.toggle('paused',!window.__following);
-            chip.textContent=window.__following?'● Following the presenter — click to browse freely':'○ Browsing freely — click to rejoin the presenter';
-            if(window.__following&&window.__lastPresenterIdx!=null)show(window.__lastPresenterIdx);
-          });
+          chip.id='followchip';chip.style.display='block';chip.setAttribute('role','status');chip.setAttribute('aria-live','polite');
+          let chipTimer=0;
+          const syncFollowChip=announce=>{
+            clearTimeout(chipTimer);
+            chip.classList.toggle('intro',!!announce);
+            chip.textContent=announce?'● Following live':'● LIVE';
+            chip.setAttribute('aria-label','Following the presenter live.');
+            if(announce)chipTimer=setTimeout(()=>syncFollowChip(false),3200);
+          };
+          syncFollowChip(true);
           document.body.appendChild(chip);
-          addEventListener('keydown',e=>{
-            if(keyTargetIsTextEntry(e))return;
-            if(['ArrowLeft','ArrowRight','PageUp','PageDown','Home','End',' '].includes(e.key)&&window.__following){
-              window.__following=false;chip.classList.add('paused');
-              chip.textContent='○ Browsing freely — click to rejoin the presenter';
-            }
-          },true);
-        }
+        }else if(me.presenter===true)publishPresenterPosition(cur);
+        document.dispatchEvent(new CustomEvent('vstd:identity',{detail:{me,audience}}));
       }).catch(()=>{});
-      document.addEventListener('vstd:slide',e=>{
-        if(!window.__presenting)return;
-        if(window.__vme&&window.__vme.presenter===false)return;
+      function publishPresenterPosition(index){
+        if(!(window.__vme&&window.__vme.presenter===true)||window.__vaudience)return;
         fetch('/api/deck/'+window.VSTD.deck+'/presenting',{method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body:JSON.stringify({index:e.detail.index})}).catch(()=>{});
+          headers:{'Content-Type':'application/json'},body:JSON.stringify({index:index})}).catch(()=>{});
+      }
+      document.addEventListener('vstd:slide',e=>{
+        publishPresenterPosition(e.detail.index);
       });
     }catch(_){}
   }
 
   function enterPresent(){
+    if(!window.VSTDPresenterControl())return;
     stopTextEdit();clearSel();
     if(editMode)toggleEdit();
     window.__presenting=true;
@@ -1437,7 +1542,12 @@ body.editmode .slide.active{cursor:default}
     try{await ensureLoaded();state.textContent='Attaching '+f.name+'…';const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/attachment?filename='+encodeURIComponent(f.name),{method:'POST',body:f});if(!r.ok)throw new Error(await r.text());await load(slideId);window.VSTDP&&window.VSTDP.toast('Source attached to companion');}catch(x){window.VSTDP&&window.VSTDP.toast('Attach failed: '+x.message);}finally{e.target.value='';}
   });
   document.addEventListener('vstd:slide',()=>{if(!drawer.classList.contains('open'))return;if(dirty){save().then(()=>load(currentId())).catch(e=>window.VSTDP&&window.VSTDP.toast(e.message));}else load(currentId()).catch(()=>{});});
-  window.__companionDrawer={toggle:()=>drawer.classList.contains('open')?close():open(false),open:()=>open(true),save,run:(name,args)=>name==='open_companion'?open(true):editCompanion(name,args||{})};
+  window.__companionDrawer={
+    toggle:()=>window.VSTDPresenterControl()?(drawer.classList.contains('open')?close():open(false)):undefined,
+    open:()=>window.VSTDPresenterControl()?open(true):undefined,
+    save:()=>window.VSTDPresenterControl()?save():Promise.reject(new Error('presenter auth required')),
+    run:(name,args)=>window.VSTDPresenterControl()?(name==='open_companion'?open(true):editCompanion(name,args||{})):Promise.reject(new Error('presenter auth required'))
+  };
 })();
 
 /* ============ background-work progress (image gen + redesign queue) ============ */
@@ -1626,7 +1736,7 @@ body.editmode .slide.active{cursor:default}
       close();
     }catch(err){P().toast('Note failed: '+err.message);}
   }
-  window.__stickyToggle=()=>{ui();toggle();};
+  window.__stickyToggle=()=>{if(window.VSTDPresenterControl()){ui();toggle();}};
   setTimeout(ui,600);
 })();
 
@@ -1649,8 +1759,8 @@ body.editmode .slide.active{cursor:default}
   }
   function hideState(){status.style.display='none';}
 
-  document.addEventListener('vstd:vtoggle',()=>{S.on?stop('Vessica off'):start();});
-  status.addEventListener('click',()=>{S.on?stop('Vessica off'):start();});
+  document.addEventListener('vstd:vtoggle',()=>{if(window.VSTDPresenterControl())S.on?stop('Vessica off'):start();});
+  status.addEventListener('click',()=>{if(window.VSTDPresenterControl())S.on?stop('Vessica off'):start();});
 
   function fetchT(url,opts,ms,label){
     const ctl=new AbortController();
@@ -2068,7 +2178,10 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
         q.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:'+pos+';padding:0 70px;background:rgba(6,20,10,'+(args.position&&args.position!=='center'?'.25':'.55')+');z-index:60;cursor:pointer';
         q.innerHTML='<div style="background:#FCFBFA;border-radius:24px;padding:36px;text-align:center;box-shadow:0 30px 80px rgba(0,0,0,.4)">'+
           '<img src="/api/deck/'+window.VSTD.deck+'/share-qr.png" style="width:380px;height:380px;display:block" alt="Scan to follow along">'+
-          '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:24px;color:#0C2B15;margin-top:14px"><b>Scan to follow along live</b></div></div>';
+          '<div style="font-family:\'Trebuchet MS\',sans-serif;font-size:24px;color:#0C2B15;margin-top:14px"><b>Scan to follow along live</b></div>'+
+          '<div data-follow-url style="font-family:\'Trebuchet MS\',sans-serif;font-size:18px;color:#54735e;margin-top:6px"></div></div>';
+        const followURL=(window.VSTD&&window.VSTD.follow_url)||location.origin+'/follow';
+        q.querySelector('[data-follow-url]').textContent=followURL.replace(/^https?:\/\//,'');
         q.addEventListener('click',()=>q.remove());
         document.body.appendChild(q);}
       out='QR shown';}
@@ -2129,7 +2242,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   function clearGlow(){if(glowEl){glowEl.classList.remove('vglow');glowEl=null;}}
   window.__vstopVessica=()=>{if(S.on)stop();};
   window.__vlive=()=>!!S.on;
-  window.__vpres={run:(n,a)=>runTool(n,a||{},'test'),highlightables:()=>highlightables()};
+  window.__vpres={run:(n,a)=>window.VSTDPresenterControl()?runTool(n,a||{},'test'):Promise.reject(new Error('presenter auth required')),highlightables:()=>highlightables()};
   window.__vreconf=()=>{if(S.on)configure();};
   window.__vpush=(text)=>{
     if(!(S.on&&S.dc&&S.dc.readyState==='open'))return false;
@@ -2267,6 +2380,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   if(hud){
     const btn=document.createElement('button');
     btn.textContent='KB';btn.title='Upload knowledge-base markdown for Vessica (audience + company notes)';
+    btn.dataset.presenterControl='';btn.style.display='none';
     btn.addEventListener('click',ev=>{
       ev.stopPropagation();
       const inp=document.createElement('input');inp.type='file';inp.accept='.md,.markdown,text/markdown,text/plain';
@@ -2283,6 +2397,8 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     });
     const anchor=document.getElementById('hudSticky');
     hud.insertBefore(btn,anchor?anchor.nextSibling:null);
+    const syncKB=()=>{btn.style.display=window.VSTDPresenterControl()?'':'none';};
+    document.addEventListener('vstd:identity',syncKB);syncKB();
   }
 })();
 
@@ -2310,14 +2426,14 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   function act(msg){if(!dact)return;dact.textContent=msg;clearTimeout(D._a);D._a=setTimeout(()=>{if(dact)dact.textContent='';},4000);}
   function trans(msg){if(dtrans)dtrans.textContent=msg;}
 
-  document.addEventListener('vstd:dtoggle',()=>toggle());
+  document.addEventListener('vstd:dtoggle',()=>{if(window.VSTDPresenterControl())toggle();});
   async function toggle(){D.on?end():startD();}
 
   async function startD(){
     if(D.on)return;
     if(!(window.VSTD&&location.protocol.indexOf('http')===0)){P().toast('Dictation needs the engine (vstd serve, studio mode)');return;}
     const me=window.__vme;
-    if(me&&me.editable!==true){P().toast('Dictation requires presenter editing access');return;}
+    if(!window.VSTDPresenterControl()||!me||me.editable!==true){P().toast('Dictation requires presenter editing access');return;}
     if(window.__vstopVessica)window.__vstopVessica();
     ui();
     bar.style.display='flex';
@@ -2517,7 +2633,12 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   }
 
   // test hook (harness only)
-  window.__vdict={run:runTool,create:createSlide,flush:()=>flush(true),state:()=>D};
+  window.__vdict={
+    run:(name,args)=>window.VSTDPresenterControl()?runTool(name,args):{error:'presenter auth required'},
+    create:title=>window.VSTDPresenterControl()?createSlide(title):undefined,
+    flush:()=>window.VSTDPresenterControl()?flush(true):Promise.reject(new Error('presenter auth required')),
+    state:()=>window.VSTDPresenterControl()?D:{on:false,error:'presenter auth required'}
+  };
 })();
 /* ================= Video assets layer =================
    Slides stay declarative: <video class="vid" data-vstd-video="<asset-id>"
@@ -2541,16 +2662,10 @@ If narration starts with no draft slide, call new_slide first (infer a working t
       'background:rgba(0,0,0,.25);border-radius:12px}'+
     '.vtap span{width:84px;height:84px;border-radius:50%;background:rgba(12,32,19,.85);border:2px solid #21BF61;'+
       'display:flex;align-items:center;justify-content:center;color:#E3FDDB;font-size:34px;padding-left:6px}'+
-    '.vunmute{position:absolute;right:28px;bottom:56px;z-index:41;background:rgba(12,32,19,.92);color:#dff0e2;'+
-      'border:1px solid #21BF61;border-radius:999px;padding:8px 18px;font-size:14px;font-family:var(--vstd-sans);cursor:pointer}'+
-    '#videoSoundToggle{position:fixed;top:16px;right:16px;z-index:96;display:none;align-items:center;gap:7px;'+
-      'border:1px solid #54735e;border-radius:999px;padding:6px 8px 6px 10px;background:rgba(12,32,19,.94);'+
-      'color:#e3fddb;font:700 11px var(--vstd-sans);cursor:pointer;box-shadow:0 3px 12px rgba(0,0,0,.24)}'+
-    '#videoSoundToggle.show{display:flex}#videoSoundToggle .vstrack{position:relative;width:27px;height:15px;border-radius:999px;background:#21bf61}'+
-    '#videoSoundToggle .vstrack i{position:absolute;top:2px;right:2px;width:11px;height:11px;border-radius:50%;background:#0c2013;transition:.15s}'+
-    '#videoSoundToggle.off .vstrack{background:#66736a}#videoSoundToggle.off .vstrack i{right:14px;background:#edf3ee}'+
-    'body.editmode #videoSoundToggle{top:76px}body.editmode.vdrop #frame{outline:3px solid #20E3AC;outline-offset:6px}'+
-    '@media print{#videoSoundToggle{display:none!important}}';
+    '.vsound{position:fixed;right:14px;bottom:64px;z-index:121;background:rgba(12,32,19,.94);color:#dff0e2;'+
+      'border:1px solid #21BF61;border-radius:999px;padding:8px 15px;font-size:13px;font-weight:700;font-family:var(--vstd-sans);cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.3)}'+
+      '.vsound:hover,.vsound:focus-visible{background:rgba(20,58,31,.97);outline:2px solid #20E3AC;outline-offset:2px}'+
+    'body.editmode.vdrop #frame{outline:3px solid #20E3AC;outline-offset:6px}';
   document.head.appendChild(css);
 
   let gestured=false;
@@ -2563,32 +2678,6 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   const isAudience=()=>{const me=window.__vme;return !!(me&&me.mode==='public'&&!me.presenter);};
   const allVids=()=>[...frame.querySelectorAll('.slide video[data-vstd-video]')];
   const activeSlide=()=>frame.querySelector('.slide.active');
-  const soundKey='vstd:video-sound:'+((window.VSTD&&window.VSTD.deck)||'deck');
-  let soundOn=true;
-  try{const stored=localStorage.getItem(soundKey);if(stored!==null)soundOn=stored==='on';}catch(_){}
-  const soundToggle=document.createElement('button');
-  soundToggle.id='videoSoundToggle';soundToggle.type='button';soundToggle.setAttribute('role','switch');
-  soundToggle.innerHTML='<span class="vsicon"></span><span class="vslabel"></span><span class="vstrack"><i></i></span>';
-  document.body.appendChild(soundToggle);
-  const guardedVideos=new WeakSet();
-
-  function syncSoundToggle(s){
-    const hasVideo=!!(s&&s.querySelector('video[data-vstd-video]'));
-    soundToggle.classList.toggle('show',hasVideo);soundToggle.classList.toggle('off',!soundOn);
-    soundToggle.setAttribute('aria-checked',soundOn?'true':'false');
-    soundToggle.setAttribute('aria-label',soundOn?'Turn video sound off':'Turn video sound on');
-    soundToggle.querySelector('.vsicon').textContent=soundOn?'🔊':'🔇';
-    soundToggle.querySelector('.vslabel').textContent=soundOn?'Sound on':'Sound off';
-  }
-  function videoWantsSound(v){return soundOn&&v.hasAttribute('data-unmuted');}
-  soundToggle.addEventListener('click',e=>{
-    e.stopPropagation();gestured=true;soundOn=!soundOn;
-    try{localStorage.setItem(soundKey,soundOn?'on':'off');}catch(_){}
-    const s=activeSlide();
-    (s?[...s.querySelectorAll('video[data-vstd-video]')]:[]).forEach(v=>{v.muted=!videoWantsSound(v);});
-    if(!soundOn)(s||document).querySelectorAll('.vunmute').forEach(el=>el.remove());syncSoundToggle(s);
-  });
-
   function setup(v){
     const id=v.dataset.vstdVideo;
     v.playsInline=true;v.setAttribute('playsinline','');
@@ -2596,17 +2685,12 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     if(!v.getAttribute('poster'))v.poster=posterFor(id);
     v.loop=v.hasAttribute('data-loop');
     if(isAudience()||!v.hasAttribute('data-autoplay')){v.controls=true;}
-    if(!soundOn)v.muted=true;
-    if(!guardedVideos.has(v)){
-      guardedVideos.add(v);
-      v.addEventListener('volumechange',()=>{if(!soundOn&&!v.muted)v.muted=true;});
-    }
   }
   function ensureSrc(v,preload){
     if(!v.getAttribute('src')){v.src=srcFor(v.dataset.vstdVideo);if(preload){v.preload='auto';try{v.load();}catch(_){}}}
     else if(preload&&v.preload!=='auto'){v.preload='auto';}
   }
-  function clearOverlays(scope){(scope||document).querySelectorAll('.vtap,.vunmute').forEach(el=>el.remove());}
+  function clearOverlays(scope){(scope||document).querySelectorAll('.vtap,.vsound').forEach(el=>el.remove());}
   function overlayFor(v,cls,html,onTap){
     const s=v.closest('.slide');if(!s)return null;
     const o=document.createElement('div');o.className=cls;o.innerHTML=html;
@@ -2622,33 +2706,43 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   }
   function tapToPlay(v){
     if(v.closest('.slide').querySelector('.vtap'))return;
-    overlayFor(v,'vtap','<span>▶</span>',()=>{gestured=true;ensureSrc(v,true);v.muted=!videoWantsSound(v);v.play().catch(()=>{});});
+    overlayFor(v,'vtap','<span>▶</span>',()=>{gestured=true;ensureSrc(v,true);v.muted=v.dataset.vsound?v.dataset.vsound==='off':!v.hasAttribute('data-unmuted');v.play().catch(()=>{});soundChip(v);});
   }
-  function unmuteChip(v){
-    if(!soundOn)return;
-    if(v.closest('.slide').querySelector('.vunmute'))return;
-    overlayFor(v,'vunmute','🔊 Tap for sound',()=>{gestured=true;v.muted=false;});
+  function syncSoundChip(v){
+    const chip=v._vstdSoundChip;if(!chip||!chip.isConnected)return;
+    chip.textContent=v.muted?'🔇 Sound off':'🔊 Sound on';chip.setAttribute('aria-label',v.muted?'Turn video sound on':'Turn video sound off');chip.setAttribute('aria-pressed',v.muted?'false':'true');
+  }
+  function soundChip(v){
+    const s=v.closest('.slide');if(!s)return null;
+    let chip=document.querySelector('.vsound');
+    if(!chip){
+      chip=document.createElement('button');chip.type='button';chip.className='vsound';
+      chip.addEventListener('click',e=>{e.stopPropagation();gestured=true;v.muted=!v.muted;v.dataset.vsound=v.muted?'off':'on';syncSoundChip(v);});
+      document.body.appendChild(chip);
+    }
+    v._vstdSoundChip=chip;
+    if(!v._vstdSoundSync){v.addEventListener('volumechange',()=>syncSoundChip(v));v._vstdSoundSync=true;}
+    syncSoundChip(v);return chip;
   }
 
   function activate(){
     const s=activeSlide();if(!s)return;
-    syncSoundToggle(s);
     clearOverlays();
     allVids().forEach(v=>{
       if(!s.contains(v)){if(!v.paused)v.pause();return;}
       setup(v);
-      if(isAudience())return; // poster + native controls; streams on tap only
-      if(!v.hasAttribute('data-autoplay'))return; // manual video: presenter uses controls
+      if(isAudience()){soundChip(v);return;} // poster + native controls; streams on tap only
+      if(!v.hasAttribute('data-autoplay')){soundChip(v);return;} // manual video: presenter uses controls
       ensureSrc(v,false);
       if(!v.hasAttribute('data-keep-time')){try{v.currentTime=0;}catch(_){}}
-      const wantSound=videoWantsSound(v);
+      const wantSound=v.dataset.vsound?v.dataset.vsound==='on':v.hasAttribute('data-unmuted');
       v.muted=!(wantSound&&gestured);
       const pr=v.play();
       if(pr&&pr.catch)pr.catch(()=>{
-        if(!v.muted){v.muted=true;v.play().catch(()=>tapToPlay(v));if(wantSound)unmuteChip(v);}
+        if(!v.muted){v.muted=true;v.play().catch(()=>tapToPlay(v));}
         else tapToPlay(v);
       });
-      if(wantSound&&!gestured)unmuteChip(v);
+      soundChip(v);
     });
     preloadNext(s);
   }
@@ -2668,9 +2762,9 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   document.addEventListener('fullscreenchange',()=>{
     if(!document.fullscreenElement)return;
     const s=activeSlide();if(!s)return;
-    if(soundOn)s.querySelectorAll('video[data-vstd-video][data-unmuted]').forEach(v=>{if(!v.paused)v.muted=false;});
-    else s.querySelectorAll('video[data-vstd-video]').forEach(v=>{v.muted=true;});
-    clearOverlays(s);
+    s.querySelectorAll('video[data-vstd-video][data-unmuted]').forEach(v=>{if(!v.paused&&v.dataset.vsound!=='off')v.muted=false;});
+    s.querySelectorAll('.vtap').forEach(el=>el.remove());
+    s.querySelectorAll('video[data-vstd-video]').forEach(soundChip);
   });
   // audience status arrives async (/api/me) — retro-apply to the current slide
   let audApplied=false;
@@ -2685,6 +2779,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
         v.controls=true;
       });
       clearOverlays();
+      const s=activeSlide();if(s)s.querySelectorAll('video[data-vstd-video]').forEach(soundChip);
     }
   },400);
   setTimeout(()=>clearInterval(audPoll),15000);
@@ -2692,9 +2787,9 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   // ---- save-path helpers (called by saveToEngine/persistSlide/saveHtml) ----
   window.__vclean=function(rootEl){
     rootEl.querySelectorAll('video[data-vstd-video]').forEach(v=>{
-      ['src','poster','controls','loop','playsinline','preload','autoplay','muted','data-vinit'].forEach(a=>v.removeAttribute(a));
+      ['src','poster','controls','loop','playsinline','preload','autoplay','muted','data-vinit','data-vsound'].forEach(a=>v.removeAttribute(a));
     });
-    rootEl.querySelectorAll('.vtap,.vunmute').forEach(el=>el.remove());
+    rootEl.querySelectorAll('.vtap,.vsound').forEach(el=>el.remove());
   };
   // single-file export cannot carry 50MB of video — swap each for its poster
   // frame (inlined as a data URL) so the emailed file still reads well
@@ -2861,14 +2956,15 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   document.body.classList.add('mobilehud');
   const hud=document.getElementById('hud'),more=document.getElementById('hudmore');
   if(!hud||!more)return;
-  document.getElementById('hudMore').style.display='';
-  // primary bar keeps: Home · Prev · count · Next · Vessica · ⋯ — everything else
+  // primary bar keeps: Home · Prev · count · Next · Download · Vessica · ⋯ — everything else
   // moves into the ⋯ popover (same delegated handlers keep working because
   // the popover lives inside #hud)
-  const keep=new Set(['home','prev','next','vessica','more']);
+  const keep=new Set(['home','prev','next','download','vessica','more']);
   [...hud.querySelectorAll(':scope > button')].forEach(b=>{
     if(!keep.has(b.dataset.act||''))more.appendChild(b);
   });
+  const syncMore=()=>{document.getElementById('hudMore').style.display=window.VSTDPresenterControl()?'':'none';};
+  document.addEventListener('vstd:identity',syncMore);syncMore();
   // dismiss the popover on any outside tap
   addEventListener('pointerdown',e=>{
     if(!e.target.closest('#hud'))more.classList.remove('open');

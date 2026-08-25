@@ -47,6 +47,7 @@ func TestPlayerRuntimeHighlightsAndCurrentMonthYear(t *testing.T) {
 	defer cancel()
 	raw, err := chromium.Evaluate(ctx, browser, target, `(()=>{
   if(!window.__vpres)return '';
+  window.__vme={presenter:true,editable:true};window.__vaudience=false;
   const listed=window.__vpres.highlightables();
   const titleResult=window.__vpres.run('highlight',{phrase:'this title'});
   const titleGlow=!!document.querySelector('.vglow');

@@ -152,6 +152,194 @@ func TestMeReportsHostedEditCapability(t *testing.T) {
 	}
 }
 
+func TestPresenterLoginUsesDedicatedUncachedDestination(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	s.secret = "test-secret"
+	s.allowed = map[string]bool{"matt-kropp": true}
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("anonymous login status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("login cache control=%q", rr.Header().Get("Cache-Control"))
+	}
+	if !strings.Contains(rr.Body.String(), "location.replace('/presentations')") {
+		t.Fatalf("login page does not use presenter destination: %q", rr.Body.String())
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, presenterRequest(s, http.MethodGet, "/auth/login", ""))
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/presentations" {
+		t.Fatalf("presenter login status=%d location=%q", rr.Code, rr.Header().Get("Location"))
+	}
+}
+
+func TestPresenterMintsAbsoluteDeckScopedShareLink(t *testing.T) {
+	st := testStudio(t)
+	write := func(rel, body string) {
+		path := filepath.Join(st.Root, rel)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("decks/other/deck.yaml", "title: Other\ntheme: default\n")
+	write("decks/other/slides/0010-a.html", `<section class="slide">Other</section>`)
+	write("decks/other/slides/0010-a.md", "# Other\n")
+	st.Config.PublicHost = "https://mattkropp.vessica.ai/"
+	s := New(st, ModePublic)
+	s.secret = "test-secret"
+	s.allowed = map[string]bool{"matt-kropp": true}
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	req := presenterRequest(s, http.MethodPost, "/api/deck/demo/share", `{"ttl_hours":168}`)
+	req.Header.Set("Content-Type", "application/json")
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK {
+		t.Fatalf("share status = %d; body=%s", rr.Code, rr.Body.String())
+	}
+	var share struct {
+		URL       string `json:"url"`
+		ExpiresAt string `json:"expires_at"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &share); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(share.URL, "https://mattkropp.vessica.ai/v/demo/") || share.ExpiresAt == "" {
+		t.Fatalf("share response = %#v", share)
+	}
+
+	landing := httptest.NewRequest(http.MethodGet, share.URL, nil)
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, landing)
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/d/demo/" {
+		t.Fatalf("landing status=%d location=%q body=%s", rr.Code, rr.Header().Get("Location"), rr.Body.String())
+	}
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].MaxAge <= 6*24*60*60 {
+		t.Fatalf("share cookie = %#v, want token-matched lifetime", cookies)
+	}
+
+	for _, tc := range []struct {
+		deck string
+		want int
+	}{{"demo", http.StatusOK}, {"other", http.StatusForbidden}} {
+		r := httptest.NewRequest(http.MethodGet, "/d/"+tc.deck+"/", nil)
+		r.AddCookie(cookies[0])
+		rr = httptest.NewRecorder()
+		h.ServeHTTP(rr, r)
+		if rr.Code != tc.want {
+			t.Fatalf("shared viewer status for %s = %d, want %d; body=%s", tc.deck, rr.Code, tc.want, rr.Body.String())
+		}
+	}
+
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPost, "/api/deck/demo/share", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous mint status = %d, want 401", rr.Code)
+	}
+}
+
+func TestFollowLandingGrantsOnlyConfiguredDeck(t *testing.T) {
+	st := testStudio(t)
+	st.Config.FollowDeck = "demo"
+	s := New(st, ModePublic)
+	s.secret = "test-secret"
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/follow", nil))
+	if rr.Code != http.StatusFound || rr.Header().Get("Location") != "/d/demo/?follow=1" {
+		t.Fatalf("follow status=%d location=%q body=%s", rr.Code, rr.Header().Get("Location"), rr.Body.String())
+	}
+	if rr.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("follow cache control = %q", rr.Header().Get("Cache-Control"))
+	}
+	cookies := rr.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Name != shareCookieName("demo") || !cookies[0].HttpOnly || !cookies[0].Secure {
+		t.Fatalf("follow cookie = %#v", cookies)
+	}
+	if !s.shareValid("demo", cookies[0].Value) || s.shareValid("other", cookies[0].Value) {
+		t.Fatal("follow cookie was not scoped to the configured deck")
+	}
+}
+
+func TestFollowLandingIsDisabledWithoutConfiguredDeck(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/follow", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d, want 404; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestPDFDownloadAuthorizationAllowsShareButPPTXStaysPresenterOnly(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	s.secret = "test-secret"
+	h := s.Routes()
+	share := s.MintShare("demo", time.Hour)
+	shared := httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pdf", nil)
+	shared.AddCookie(&http.Cookie{Name: shareCookieName("demo"), Value: share})
+	if !s.canView(shared, "demo") {
+		t.Fatal("share-cookie holder cannot download the authorized deck PDF")
+	}
+	if s.isPresenter(shared) {
+		t.Fatal("share-cookie holder unexpectedly has presenter/PPTX authority")
+	}
+	if s.canView(httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pdf", nil), "demo") {
+		t.Fatal("anonymous viewer unexpectedly has PDF authority")
+	}
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pdf", nil))
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous PDF status=%d, want 401; body=%s", rr.Code, rr.Body.String())
+	}
+
+	sharedPPTX := httptest.NewRequest(http.MethodGet, "/api/deck/demo/export.pptx", nil)
+	sharedPPTX.AddCookie(&http.Cookie{Name: shareCookieName("demo"), Value: share})
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, sharedPPTX)
+	if rr.Code != http.StatusUnauthorized {
+		t.Fatalf("shared-viewer PPTX status=%d, want 401; body=%s", rr.Code, rr.Body.String())
+	}
+}
+
+func TestSharedViewerCannotInvokePresenterControls(t *testing.T) {
+	s := New(testStudio(t), ModePublic)
+	s.secret = "test-secret"
+	h := s.Routes()
+	share := s.MintShare("demo", time.Hour)
+
+	for _, tc := range []struct {
+		name, method, target, body string
+		want                       int
+	}{
+		{name: "mint share", method: http.MethodPost, target: "/api/deck/demo/share", body: `{}`, want: http.StatusUnauthorized},
+		{name: "publish presenter position", method: http.MethodPost, target: "/api/deck/demo/presenting", body: `{"index":0}`, want: http.StatusUnauthorized},
+		{name: "mint realtime token", method: http.MethodPost, target: "/api/realtime/token", want: http.StatusUnauthorized},
+		{name: "write Vessica tasks", method: http.MethodPost, target: "/api/vessica/demo/tasks", body: `{}`, want: http.StatusUnauthorized},
+		{name: "edit slide", method: http.MethodPut, target: "/api/deck/demo/slide/0010-a/fragment", body: `<section class="slide">Nope</section>`, want: http.StatusForbidden},
+		{name: "download PowerPoint", method: http.MethodGet, target: "/api/deck/demo/export.pptx", want: http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			req := httptest.NewRequest(tc.method, tc.target, strings.NewReader(tc.body))
+			req.AddCookie(&http.Cookie{Name: shareCookieName("demo"), Value: share})
+			rr := httptest.NewRecorder()
+			h.ServeHTTP(rr, req)
+			if rr.Code != tc.want {
+				t.Fatalf("status=%d, want %d; body=%s", rr.Code, tc.want, rr.Body.String())
+			}
+		})
+	}
+}
+
 func TestDeckStatusReportsDisabledAgentForQueuedRedesign(t *testing.T) {
 	st := testStudio(t)
 	companion := "# Before\n\n## Edit requests\n- simplify the curve\n\n## Log\n"

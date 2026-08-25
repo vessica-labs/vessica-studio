@@ -75,6 +75,9 @@ func (s *Studio) Build(deck string) (string, error) {
 			"base":  s.Config.OpenAI.BaseURL,
 		},
 	}
+	if s.Config.FollowDeck != "" && s.Config.PublicHost != "" {
+		rt["follow_url"] = strings.TrimRight(s.Config.PublicHost, "/") + "/follow"
+	}
 	rtJSON, _ := json.Marshal(rt)
 
 	out := string(player)
@@ -110,8 +113,8 @@ var sectionTagRe = regexp.MustCompile(`<section\s`)
 var pagePillClassRe = regexp.MustCompile(`class\s*=\s*["'][^"']*\bpgpill\b[^"']*["']`)
 
 // ensurePagePill makes slide numbering an engine guarantee instead of
-// requiring every author or redesign agent to remember footer boilerplate.
-// Existing pills are preserved so theme-specific markup remains authoritative.
+// requiring every author (or agent) to remember presentation chrome. Existing
+// pills are preserved so custom placement and styling remain intact.
 func ensurePagePill(frag string) string {
 	if pagePillClassRe.MatchString(frag) {
 		return frag

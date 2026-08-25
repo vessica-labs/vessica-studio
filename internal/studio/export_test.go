@@ -44,7 +44,7 @@ func TestBuildPrintHTML(t *testing.T) {
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0010-active.html"),
 		`<section class="slide" data-sec="A"><h1>Active</h1></section>`)
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0020-hidden.html"),
-		`<section class="slide" data-hidden="1"><h1>Hidden</h1></section>`)
+		`<section class="slide" data-hidden="1"><h1>Hidden</h1><video data-vstd-video="clip-1"></video></section>`)
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0030-parked.html"),
 		`<section class="slide" data-parked="1"><h1>Parked</h1></section>`)
 
@@ -62,11 +62,19 @@ func TestBuildPrintHTML(t *testing.T) {
 	if !strings.Contains(html, "<h1>Active</h1>") || !strings.Contains(html, "<h1>Hidden</h1>") {
 		t.Error("active/hidden slides missing from print HTML")
 	}
+	if !strings.Contains(html, `poster="/assets/video/clip-1/poster"`) {
+		t.Error("print HTML did not add the runtime-equivalent video poster")
+	}
 	if strings.Contains(html, "<h1>Parked</h1>") {
 		t.Error("parked slide leaked into print HTML")
 	}
 	if got := strings.Count(html, `class="vstd-page"`); got != 2 {
 		t.Errorf("page wrappers = %d, want 2", got)
+	}
+	for _, want := range []string{`id="vstd-page-1"`, `id="vstd-page-2"`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("print HTML missing stable page anchor %q", want)
+		}
 	}
 	// each exported slide must carry the active class so theme visibility
 	// rules keyed on .slide.active apply without player JS

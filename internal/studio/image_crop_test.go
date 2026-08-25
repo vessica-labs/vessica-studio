@@ -42,6 +42,7 @@ func TestPlayerEditsCSSBackgroundImageCrop(t *testing.T) {
 	defer cancel()
 	raw, err := chromium.Evaluate(ctx, browser, target, `(()=>{
   if(!document.querySelector('#editbtn')||!document.querySelector('#picture'))return '';
+  window.__vme={presenter:true,editable:true};window.__vaudience=false;
   document.querySelector('#editbtn').click();
   const picture=document.querySelector('#picture');
   const point=()=>{const r=picture.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}};

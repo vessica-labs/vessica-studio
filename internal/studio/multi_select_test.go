@@ -41,6 +41,7 @@ func TestPlayerMarqueeSelectsMovesAndDeletesMultipleObjects(t *testing.T) {
 	defer cancel()
 	raw, err := chromium.Evaluate(ctx, browser, target, `(()=>{
   if(!document.querySelector('#editbtn')||!document.querySelector('#a'))return '';
+  window.__vme={presenter:true,editable:true};window.__vaudience=false;
   document.querySelector('#editbtn').click();
   const slide=document.querySelector('.slide'),a=document.querySelector('#a'),b=document.querySelector('#b'),c=document.querySelector('#c');
   const ar=a.getBoundingClientRect(),br=b.getBoundingClientRect(),cr=c.getBoundingClientRect();

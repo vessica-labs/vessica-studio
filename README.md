@@ -801,8 +801,10 @@ fixtures, or Git history.
 
 ## Hosted deployment
 
-Public mode keeps audiences read-only. Presenters authenticate through GitHub
-Device Flow and must appear in `VSTD_ALLOWED_GITHUB`.
+`public` mode keeps audiences read-only. Presenters authenticate through GitHub
+Device Flow and must appear in `VSTD_ALLOWED_GITHUB`. Successful sign-in opens
+the non-cacheable `/presentations` index so a public marketing homepage at `/`
+cannot mask the authenticated presenter session.
 
 When `VSTD_CONTENT_SYNC=1`, an authenticated presenter can use sticky-note,
 direct-edit, companion, attachment, and pasted-image controls in the hosted

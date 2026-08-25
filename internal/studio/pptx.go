@@ -353,3 +353,33 @@ func BuildPPTX(deck PPTXDeck) ([]byte, error) {
 	}
 	return out.Bytes(), nil
 }
+
+// BuildRasterPPTX packages one 1280x720 PNG per slide as a full-bleed image.
+// This is the visual-fidelity export: browser-rendered CSS, SVG, typography,
+// gradients, and effects remain pixel-identical instead of being approximated
+// with PowerPoint's different layout and text engines.
+func BuildRasterPPTX(title string, pngs [][]byte) ([]byte, error) {
+	if len(pngs) == 0 {
+		return nil, fmt.Errorf("deck has no rendered slides")
+	}
+	deck := PPTXDeck{Title: title, Slides: make([]PPTXSlide, len(pngs))}
+	for i, png := range pngs {
+		if len(png) == 0 {
+			return nil, fmt.Errorf("rendered slide %d is empty", i+1)
+		}
+		deck.Slides[i] = PPTXSlide{
+			ID: fmt.Sprintf("slide-%d", i+1),
+			Elements: []PPTXElement{{
+				Kind:      "image",
+				Name:      fmt.Sprintf("HTML slide %d", i+1),
+				X:         0,
+				Y:         0,
+				W:         1280,
+				H:         720,
+				Opacity:   1,
+				ImageData: "data:image/png;base64," + base64.StdEncoding.EncodeToString(png),
+			}},
+		}
+	}
+	return BuildPPTX(deck)
+}

@@ -103,6 +103,9 @@ func (s *Server) StartAgent() {
 
 func (w *agentWorker) loop() {
 	w.bootstrapGit()
+	if n := w.recoverInterruptedPasses(); n > 0 {
+		log.Printf("agent: recovered %d interrupted pass(es) for retry", n)
+	}
 	log.Printf("agent: worker enabled (cmd=%s, max %d/hour, concurrency %d, push=%v)", w.bin, w.maxPerHour, w.conc, w.push)
 	var lastBlockLog time.Time
 	for {
@@ -148,6 +151,35 @@ func (w *agentWorker) loop() {
 			}()
 		}
 	}
+}
+
+// recoverInterruptedPasses clears progress markers left behind by a process
+// restart. An in-progress marker is only valid while this process owns the
+// corresponding inflight entry; preserving one across startup would make the
+// slide permanently invisible to nextAll(). Worker-error markers remain
+// human-reviewed and are intentionally not retried automatically.
+func (w *agentWorker) recoverInterruptedPasses() int {
+	decks, err := w.s.St.ListDecks()
+	if err != nil {
+		return 0
+	}
+	recovered := 0
+	for _, deck := range decks {
+		ids, err := w.s.St.SlideIDs(deck)
+		if err != nil {
+			continue
+		}
+		for _, id := range ids {
+			path := w.s.St.SlidePath(deck, id, ".md")
+			body, err := os.ReadFile(path)
+			if err != nil || !strings.Contains(string(body), "- (in progress") {
+				continue
+			}
+			w.mark(deck, id, "")
+			recovered++
+		}
+	}
+	return recovered
 }
 
 // RunOnce sweeps the queue synchronously (vstd agent --once).

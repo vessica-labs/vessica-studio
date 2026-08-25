@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -21,7 +22,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
-// PDF export: GET /api/deck/{deck}/export.pdf (presenter-only) builds a
+// PDF export: GET /api/deck/{deck}/export.pdf (any authorized viewer) builds a
 // static print page of the deck's active + hidden slides (parked/"unused"
 // excluded), renders it through a locally installed Chrome/Chromium
 // (--headless --print-to-pdf — no Go dependency), and streams the PDF back
@@ -246,25 +247,14 @@ func (s *Server) handlePrintHTML(w http.ResponseWriter, r *http.Request) {
 	io.WriteString(w, html)
 }
 
-func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
-	if !s.isPresenter(r) {
-		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
-		return
-	}
-	deck := r.PathValue("deck")
-	if !studio.ValidDeckName(deck) {
-		jsonErr(w, fmt.Errorf("invalid deck"), 400)
-		return
-	}
+func (s *Server) renderDeckPDF(r *http.Request, deck string) ([]byte, int, error) {
 	html, pages, err := s.St.BuildPrintHTML(deck)
 	if err != nil {
-		jsonErr(w, err, 500)
-		return
+		return nil, 0, err
 	}
 	chrome := findChrome()
 	if chrome == "" {
-		jsonErr(w, fmt.Errorf("PDF export needs Chrome or Chromium on this machine — install one, or point VSTD_CHROME at a browser binary"), 500)
-		return
+		return nil, 0, fmt.Errorf("PDF export needs Chrome or Chromium on this machine — install one, or point VSTD_CHROME at a browser binary")
 	}
 
 	// Chrome loads the print page from this same server so /library and
@@ -272,13 +262,11 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 	// this request came in on.
 	la, _ := r.Context().Value(http.LocalAddrContextKey).(net.Addr)
 	if la == nil {
-		jsonErr(w, fmt.Errorf("cannot determine local server address"), 500)
-		return
+		return nil, 0, fmt.Errorf("cannot determine local server address")
 	}
 	_, port, err := net.SplitHostPort(la.String())
 	if err != nil {
-		jsonErr(w, fmt.Errorf("cannot determine local server port: %v", err), 500)
-		return
+		return nil, 0, fmt.Errorf("cannot determine local server port: %v", err)
 	}
 	key := s.putPrintJob(html)
 	defer s.dropPrintJob(key)
@@ -286,8 +274,7 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 
 	tmp, err := os.MkdirTemp("", "vstd-pdf-*")
 	if err != nil {
-		jsonErr(w, err, 500)
-		return
+		return nil, 0, err
 	}
 	defer os.RemoveAll(tmp)
 	out := filepath.Join(tmp, deck+".pdf")
@@ -312,8 +299,7 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Start(); err != nil {
-		jsonErr(w, fmt.Errorf("chrome failed to start: %v", err), 500)
-		return
+		return nil, 0, fmt.Errorf("chrome failed to start: %v", err)
 	}
 	// Chrome (macOS especially) can linger after the PDF is fully written —
 	// background updater children keep the process alive. So don't wait for
@@ -324,7 +310,7 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 	done, timedOut := false, false
 	for !done && !timedOut {
 		select {
-		case err := <-exited:
+		case runErr := <-exited:
 			if fi, statErr := os.Stat(out); statErr == nil && fi.Size() > 0 {
 				done = true // exited cleanly after writing
 			} else {
@@ -332,8 +318,7 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 				if len(msg) > 400 {
 					msg = msg[len(msg)-400:]
 				}
-				jsonErr(w, fmt.Errorf("chrome print failed: %v — %s", err, msg), 500)
-				return
+				return nil, 0, fmt.Errorf("chrome print failed: %v — %s", runErr, msg)
 			}
 		case <-ctx.Done():
 			timedOut = true
@@ -348,12 +333,28 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 	}
 	cmd.Process.Kill()
 	if timedOut {
-		jsonErr(w, fmt.Errorf("chrome print timed out"), http.StatusGatewayTimeout)
-		return
+		return nil, 0, fmt.Errorf("chrome print timed out")
 	}
 	pdf, err := os.ReadFile(out)
 	if err != nil {
-		jsonErr(w, fmt.Errorf("chrome produced no PDF: %v", err), 500)
+		return nil, 0, fmt.Errorf("chrome produced no PDF: %v", err)
+	}
+	return pdf, pages, nil
+}
+
+func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
+	deck := r.PathValue("deck")
+	if !studio.ValidDeckName(deck) {
+		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
+		return
+	}
+	if !s.canView(r, deck) {
+		jsonErr(w, fmt.Errorf("deck share access or presenter auth required"), http.StatusUnauthorized)
+		return
+	}
+	pdf, pages, err := s.renderDeckPDF(r, deck)
+	if err != nil {
+		jsonErr(w, err, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
@@ -361,6 +362,50 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-VSTD-Pages", strconv.Itoa(pages))
 	w.Write(pdf)
+}
+
+func rasterizePDF(ctx context.Context, pdf []byte) ([][]byte, error) {
+	pdftoppm, err := exec.LookPath("pdftoppm")
+	if err != nil {
+		return nil, fmt.Errorf("visual-exact PPTX export needs pdftoppm (Poppler) on this machine")
+	}
+	tmp, err := os.MkdirTemp("", "vstd-pptx-raster-*")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(tmp)
+	in := filepath.Join(tmp, "deck.pdf")
+	if err := os.WriteFile(in, pdf, 0o600); err != nil {
+		return nil, err
+	}
+	prefix := filepath.Join(tmp, "slide")
+	cmd := exec.CommandContext(ctx, pdftoppm, "-png", "-r", "96", in, prefix)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		msg := strings.TrimSpace(stderr.String())
+		if len(msg) > 500 {
+			msg = msg[len(msg)-500:]
+		}
+		return nil, fmt.Errorf("rasterize PDF for PPTX: %v — %s", err, msg)
+	}
+	paths, err := filepath.Glob(prefix + "-*.png")
+	if err != nil {
+		return nil, err
+	}
+	sort.Strings(paths)
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("rasterize PDF for PPTX produced no slides")
+	}
+	images := make([][]byte, 0, len(paths))
+	for _, path := range paths {
+		image, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		images = append(images, image)
+	}
+	return images, nil
 }
 
 func (s *Server) capturePPTXDeck(r *http.Request, deck string) (studio.PPTXDeck, error) {
@@ -389,15 +434,9 @@ func (s *Server) capturePPTXDeck(r *http.Request, deck string) (studio.PPTXDeck,
 		return studio.PPTXDeck{}, err
 	}
 	defer os.RemoveAll(tmp)
-	ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, chrome,
-		"--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
-		"--no-first-run", "--no-default-browser-check", "--disable-component-update",
-		"--disable-background-networking", "--disable-sync", "--hide-scrollbars",
-		"--window-size=1280,720", "--virtual-time-budget=20000",
-		"--run-all-compositor-stages-before-draw", "--user-data-dir="+filepath.Join(tmp, "profile"),
-		"--dump-dom", pageURL)
+	cmd := exec.CommandContext(ctx, chrome, pptxChromeArgs(tmp, pageURL)...)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	dumpPath := filepath.Join(tmp, "capture.html")
@@ -444,10 +483,25 @@ func (s *Server) capturePPTXDeck(r *http.Request, deck string) (studio.PPTXDeck,
 	return parsePPTXCapture(dump)
 }
 
-// handleExportPPTX converts the rendered DOM to native PresentationML
-// objects. It deliberately does not take slide screenshots: text remains text,
-// HTML/SVG geometry remains shapes/lines, and each source image is a distinct
-// editable picture object.
+func pptxChromeArgs(tmp, pageURL string) []string {
+	return []string{
+		"--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
+		"--no-first-run", "--no-default-browser-check", "--disable-component-update",
+		"--disable-background-networking", "--disable-sync", "--hide-scrollbars",
+		// Object capture awaits image decoding and canvas encoding across the
+		// entire deck. A 20s virtual-time budget can expire mid-script and leave
+		// Chrome alive with an unresolved promise until the HTTP timeout. Give
+		// the capture script the same budget as the request-level guard.
+		"--window-size=1280,720", "--virtual-time-budget=180000",
+		"--run-all-compositor-stages-before-draw", "--user-data-dir=" + filepath.Join(tmp, "profile"),
+		"--dump-dom", pageURL,
+	}
+}
+
+// handleExportPPTX defaults to the visual-exact path: the browser renders the
+// same print HTML used by PDF export and each page becomes one full-bleed PNG
+// in PowerPoint. mode=editable retains the older best-effort native-object
+// conversion for users who prefer editability over pixel fidelity.
 func (s *Server) handleExportPPTX(w http.ResponseWriter, r *http.Request) {
 	if !s.isPresenter(r) {
 		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
@@ -458,29 +512,63 @@ func (s *Server) handleExportPPTX(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
 		return
 	}
-	model, err := s.capturePPTXDeck(r, deck)
-	if err != nil {
-		jsonErr(w, err, http.StatusInternalServerError)
-		return
+	editable := r.URL.Query().Get("mode") == "editable"
+	var pptx []byte
+	var pages, total, paths int
+	var err error
+	if editable {
+		var model studio.PPTXDeck
+		model, err = s.capturePPTXDeck(r, deck)
+		if err == nil {
+			pptx, err = studio.BuildPPTX(model)
+		}
+		pages = len(model.Slides)
+		for _, slide := range model.Slides {
+			total += len(slide.Elements)
+			for _, element := range slide.Elements {
+				if element.Kind == "path" || element.Kind == "line" {
+					paths++
+				}
+			}
+		}
+	} else {
+		var pdf []byte
+		pdf, pages, err = s.renderDeckPDF(r, deck)
+		if err == nil {
+			var images [][]byte
+			ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+			images, err = rasterizePDF(ctx, pdf)
+			cancel()
+			if err == nil {
+				if len(images) != pages {
+					err = fmt.Errorf("visual-exact PPTX rendered %d images for %d slides", len(images), pages)
+				} else {
+					meta, metaErr := s.St.LoadDeckMeta(deck)
+					if metaErr != nil {
+						err = metaErr
+					} else {
+						pptx, err = studio.BuildRasterPPTX(meta.Title, images)
+						total = len(images)
+					}
+				}
+			}
+		}
 	}
-	pptx, err := studio.BuildPPTX(model)
 	if err != nil {
 		jsonErr(w, err, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.presentationml.presentation")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+deck+`.pptx"`)
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("X-VSTD-Pages", strconv.Itoa(len(model.Slides)))
-	total, paths := 0, 0
-	for _, slide := range model.Slides {
-		total += len(slide.Elements)
-		for _, element := range slide.Elements {
-			if element.Kind == "path" || element.Kind == "line" {
-				paths++
-			}
-		}
+	filename := deck + ".pptx"
+	mode := "visual-exact"
+	if editable {
+		filename = deck + "-editable.pptx"
+		mode = "editable"
 	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-VSTD-Pages", strconv.Itoa(pages))
+	w.Header().Set("X-VSTD-PPTX-Mode", mode)
 	w.Header().Set("X-VSTD-Objects", strconv.Itoa(total))
 	w.Header().Set("X-VSTD-Vector-Paths", strconv.Itoa(paths))
 	w.Write(pptx)

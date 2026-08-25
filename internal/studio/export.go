@@ -11,6 +11,8 @@ import (
 // openSectionRe matches a slide fragment's root <section ...> opening tag.
 var openSectionRe = regexp.MustCompile(`(?is)<section\b[^>]*>`)
 
+var printVideoRe = regexp.MustCompile(`(?is)<video\b[^>]*\bdata-vstd-video="([^"]+)"[^>]*>`)
+
 // SlideParked reports whether a fragment's root <section> carries
 // data-parked — the player's "unused" state. Hidden (data-hidden) slides are
 // still part of the deck; parked ones are not.
@@ -34,6 +36,22 @@ func markActive(frag string) string {
 		repl = strings.Replace(tag, "<section", `<section class="active"`, 1)
 	}
 	return strings.Replace(frag, tag, repl, 1)
+}
+
+// addPrintVideoPosters makes static PDF/PPTX output match the player, whose
+// runtime assigns the same poster URL before a video is played. Without it,
+// browser print captures a black video rectangle.
+func addPrintVideoPosters(frag string) string {
+	return printVideoRe.ReplaceAllStringFunc(frag, func(tag string) string {
+		if strings.Contains(strings.ToLower(tag), " poster=") {
+			return tag
+		}
+		match := printVideoRe.FindStringSubmatch(tag)
+		if len(match) < 2 {
+			return tag
+		}
+		return strings.TrimSuffix(tag, ">") + ` poster="/assets/video/` + htmlEscape(match[1]) + `/poster">`
+	})
 }
 
 // printBaseCSS precedes theme.css so themes can override it — it mirrors the
@@ -84,10 +102,10 @@ func (s *Studio) BuildPrintHTML(deck string) (string, int, error) {
 		if SlideParked(frag) {
 			continue
 		}
-		pages.WriteString(`<div class="vstd-page">`)
-		pages.WriteString(markActive(stampFragment(frag, id)))
-		pages.WriteString("</div>\n")
 		n++
+		pages.WriteString(fmt.Sprintf(`<div class="vstd-page" id="vstd-page-%d">`, n))
+		pages.WriteString(markActive(addPrintVideoPosters(stampFragment(frag, id))))
+		pages.WriteString("</div>\n")
 	}
 	if n == 0 {
 		return "", 0, fmt.Errorf("deck %q has no exportable slides", deck)
