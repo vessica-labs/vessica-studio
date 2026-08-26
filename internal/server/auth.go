@@ -86,6 +86,16 @@ func (s *Server) sessionValue(login string, exp time.Time) string {
 }
 
 func (s *Server) isPresenter(r *http.Request) bool {
+	if s.Collab != nil {
+		if ps, ok := s.playerSession(r); ok {
+			if deck := r.PathValue("deck"); deck != "" && ps.Deck.StorageKey != deck {
+				return false
+			}
+			return ps.Mode == "present" || ps.Mode == "edit"
+		}
+		_, ok := s.accountSession(r)
+		return ok
+	}
 	if s.Mode != ModePublic {
 		return true // local modes: the machine owner is the presenter
 	}
@@ -167,6 +177,12 @@ func (s *Server) hasShare(r *http.Request, deck string) bool {
 // canView: in public mode a deck is visible to the presenter or a valid
 // share-cookie holder; local modes are open.
 func (s *Server) canView(r *http.Request, deck string) bool {
+	if s.Collab != nil {
+		if ps, ok := s.playerSessionForDeck(r, deck); ok && s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "view") {
+			return true
+		}
+		return s.hasShare(r, deck)
+	}
 	return s.Mode != ModePublic || s.isPresenter(r) || s.hasShare(r, deck)
 }
 
@@ -174,6 +190,17 @@ func (s *Server) canView(r *http.Request, deck string) bool {
 // requests pass: the headless Chrome spawned for PDF export (export.go)
 // fetches slide imagery cookie-less from inside this same machine/container.
 func (s *Server) hasAnyAccess(r *http.Request) bool {
+	if s.Collab != nil {
+		if _, ok := s.playerSession(r); ok {
+			return true
+		}
+		// Native image/video elements cannot attach Authorization headers. A
+		// player-host-only HttpOnly cookie is accepted solely by media handlers;
+		// it is never account or player API authority.
+		if _, ok := s.playerMediaSession(r); ok {
+			return true
+		}
+	}
 	if s.Mode != ModePublic || s.isPresenter(r) || isLoopback(r) {
 		return true
 	}
@@ -221,7 +248,15 @@ func (s *Server) handleFollowLanding(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {
-	if !s.isPresenter(r) {
+	deck := r.PathValue("deck")
+	if s.Collab != nil {
+		ps, ok := s.playerSessionForDeck(r, deck)
+		if !ok || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") || (ps.Mode != "present" && ps.Mode != "edit") {
+			jsonErr(w, fmt.Errorf("presentation owner access required"), http.StatusForbidden)
+			return
+		}
+		_ = s.Collab.Audit(r.Context(), ps.User.ID, "deck.external_share", ps.Deck.ID, "", nil)
+	} else if !s.isPresenter(r) {
 		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
 		return
 	}
@@ -232,7 +267,6 @@ func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {
 	if req.TTLHours <= 0 {
 		req.TTLHours = 72
 	}
-	deck := r.PathValue("deck")
 	if !studio.ValidDeckName(deck) {
 		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
 		return
@@ -267,7 +301,14 @@ func (s *Server) shareBase(r *http.Request) string {
 // the room resolve it), else the request host.
 func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
 	deck := r.PathValue("deck")
-	if !s.canView(r, deck) && !isLoopback(r) {
+	if s.Collab != nil {
+		ps, ok := s.nativePlayerSessionForDeck(r, deck)
+		if !ok || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") || (ps.Mode != "present" && ps.Mode != "edit") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		_ = s.Collab.Audit(r.Context(), ps.User.ID, "deck.external_share", ps.Deck.ID, "", map[string]any{"kind": "qr"})
+	} else if !s.canView(r, deck) && !isLoopback(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}
@@ -287,6 +328,27 @@ func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
+	if s.Collab != nil {
+		if ps, ok := s.playerSession(r); ok {
+			owned := ps.Deck.OwnerUserID == ps.User.ID
+			present := ps.Mode == "present" || ps.Mode == "edit"
+			editable := ps.Mode == "edit" && owned && s.ContentSync.Editable()
+			writeJSON(w, map[string]any{
+				"mode": string(s.Mode), "presenter": present, "editable": editable, "audience": false,
+				"user": ps.User, "deck": ps.Deck,
+				"capabilities": map[string]bool{"view": true, "present": present, "edit": editable,
+					"fork": true, "change_visibility": false, "external_share": owned && present},
+				"content_sync": s.ContentSync.Status(), "app_origin": s.appOrigin,
+			})
+			return
+		}
+		if sess, ok := s.accountSession(r); ok {
+			writeJSON(w, map[string]any{"mode": string(s.Mode), "presenter": true, "editable": false, "user": sess.User, "csrf": sess.CSRF})
+			return
+		}
+		writeJSON(w, map[string]any{"mode": string(s.Mode), "presenter": false, "editable": false})
+		return
+	}
 	writeJSON(w, map[string]any{
 		"mode":         string(s.Mode),
 		"presenter":    s.isPresenter(r),
@@ -336,10 +398,15 @@ func (s *Server) handleAuthConfig(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{
 		"mode":              string(s.Mode),
 		"github_configured": s.ghClientID != "",
+		"password_enabled":  s.Collab != nil,
 	})
 }
 
 func (s *Server) handleGitHubDevice(w http.ResponseWriter, r *http.Request) {
+	if s.Collab != nil && !s.validAppOrigin(r) {
+		jsonErr(w, fmt.Errorf("request origin rejected"), http.StatusForbidden)
+		return
+	}
 	if s.ghClientID == "" {
 		jsonErr(w, fmt.Errorf("GitHub OAuth is not configured (set VSTD_GITHUB_CLIENT_ID)"), http.StatusServiceUnavailable)
 		return
@@ -377,6 +444,10 @@ func (s *Server) handleGitHubDevice(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleGitHubPoll(w http.ResponseWriter, r *http.Request) {
+	if s.Collab != nil && !s.validAppOrigin(r) {
+		jsonErr(w, fmt.Errorf("request origin rejected"), http.StatusForbidden)
+		return
+	}
 	w.Header().Set("Cache-Control", "no-store")
 	s.mu.Lock()
 	flow, ok := s.flows[r.PathValue("id")]
@@ -431,8 +502,28 @@ func (s *Server) handleGitHubPoll(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, fmt.Errorf("GitHub identity could not be read"), 502)
 		return
 	}
-	if !s.allowed[strings.ToLower(identity.Login)] {
+	if s.Collab == nil && !s.allowed[strings.ToLower(identity.Login)] {
 		jsonErr(w, fmt.Errorf("GitHub user %q is not on the presenter allowlist", identity.Login), http.StatusForbidden)
+		return
+	}
+	if s.Collab != nil {
+		u, err := s.Collab.BootstrapGitHub(r.Context(), identity.ID, identity.Login, s.filesystemDecks())
+		if err != nil {
+			jsonErr(w, err, http.StatusForbidden)
+			return
+		}
+		raw, _, err := s.Collab.CreateSession(r.Context(), u.ID)
+		if err != nil {
+			jsonErr(w, err, http.StatusInternalServerError)
+			return
+		}
+		s.setAccountCookie(w, r, raw)
+		_ = s.Collab.Audit(r.Context(), u.ID, "auth.github_login", "", u.ID, map[string]any{"github_login": identity.Login})
+		s.mu.Lock()
+		delete(s.flows, r.PathValue("id"))
+		s.mu.Unlock()
+		log.Printf("owner login: %s", identity.Login)
+		writeJSON(w, map[string]any{"status": "completed", "login": identity.Login})
 		return
 	}
 	exp := time.Now().Add(12 * time.Hour)
@@ -449,6 +540,15 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	if s.Mode == ModePublic && s.isPresenter(r) {
 		http.Redirect(w, r, "/presentations", http.StatusFound)
+		return
+	}
+	if s.Collab != nil {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		io.WriteString(w, authShell("Sign in to Vessica Studio", `<form id="login"><input name="email" type="email" autocomplete="email" placeholder="Email" required><input name="password" type="password" autocomplete="current-password" placeholder="Password" required><button>Sign in</button></form><button class="secondary" id="github">Owner sign-in with GitHub</button><button class="secondary" id="forgot">Forgot password</button><div id="githubFlow" class="muted"></div><div id="err"></div>`, `
+const err=document.getElementById('err'),flow=document.getElementById('githubFlow');login.onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const r=await fetch('/api/auth/password/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:f.get('email'),password:f.get('password')})});const j=await r.json();if(r.ok)location.replace('/presentations');else err.textContent=j.error||'Sign-in failed';};
+github.onclick=async()=>{try{const d=await (await fetch('/auth/github/device',{method:'POST'})).json();if(!d.user_code)throw new Error(d.error||'GitHub unavailable');flow.innerHTML='Enter <b>'+d.user_code+'</b> at <a target="_blank" href="'+d.verification_uri+'">GitHub</a>';for(;;){await new Promise(x=>setTimeout(x,(d.interval||5)*1000));const p=await fetch('/auth/github/poll/'+d.id,{method:'POST'}),j=await p.json();if(p.ok){location.replace('/presentations');return;}if(p.status!==202)throw new Error(j.error||'GitHub sign-in failed');}}catch(e){err.textContent=e.message;}};
+forgot.onclick=async()=>{const email=prompt('Email address');if(!email)return;await fetch('/api/auth/password/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});err.textContent='If that account exists, a reset link has been sent.';};
+if(location.hash.startsWith('#reset=')){const token=location.hash.slice(7);history.replaceState(null,'','/auth/login');const password=prompt('Create a new password (12+ characters)');if(password)fetch('/api/auth/password/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password})}).then(async r=>{const j=await r.json();err.textContent=r.ok?'Password reset. Sign in with the new password.':(j.error||'Reset failed');});}`))
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")

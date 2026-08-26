@@ -96,7 +96,13 @@ func (s *Server) handleSetAsk(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleChatQR(w http.ResponseWriter, r *http.Request) {
 	deck := r.PathValue("deck")
-	if !s.canView(r, deck) {
+	if s.Collab != nil {
+		ps, ok := s.nativePlayerSessionForDeck(r, deck)
+		if !ok || (ps.Mode != "present" && ps.Mode != "edit") || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "present") {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+	} else if !s.canView(r, deck) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

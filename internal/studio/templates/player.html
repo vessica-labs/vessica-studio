@@ -333,6 +333,55 @@ body.editmode .slide.active{cursor:default}
 </aside>
 
 <script>
+// Collaboration-mode player capabilities live only in this tab. Centralize
+// bearer propagation so deck-authenticated fetches cannot accidentally fall
+// back to the account cookie (which is deliberately absent on this origin).
+(function(){
+  const nativeFetch=window.fetch.bind(window);
+  function playerToken(){try{return sessionStorage.getItem('vstd_player_session')||'';}catch(_){return '';}}
+  window.fetch=function(input,init){
+    init=init||{};
+    const raw=typeof input==='string'?input:(input&&input.url)||'';
+    let same=false;try{same=new URL(raw,location.href).origin===location.origin;}catch(_){}
+    if(same){
+      const headers=new Headers(init.headers||(input instanceof Request?input.headers:undefined));
+      const token=playerToken();if(token&&!headers.has('Authorization'))headers.set('Authorization','Bearer '+token);
+      init=Object.assign({},init,{headers});
+    }
+    return nativeFetch(input,init);
+  };
+  window.VSTDEventStream=function(path){
+    const listeners={};let closed=false,controller=null;
+    const stream={
+      addEventListener(type,fn){(listeners[type]||(listeners[type]=[])).push(fn);},
+      close(){closed=true;if(controller)controller.abort();}
+    };
+    function emit(type,data){(listeners[type]||[]).forEach(fn=>{try{fn({type,data});}catch(e){setTimeout(()=>{throw e;},0);}});}
+    async function connect(){
+      while(!closed){
+        try{
+          controller=new AbortController();
+          const response=await window.fetch(path,{headers:{Accept:'text/event-stream'},signal:controller.signal,cache:'no-store'});
+          if(!response.ok||!response.body)throw new Error('event stream HTTP '+response.status);
+          const reader=response.body.getReader(),decoder=new TextDecoder();let buffer='';
+          while(!closed){
+            const part=await reader.read();if(part.done)break;
+            buffer+=decoder.decode(part.value,{stream:true}).replace(/\r\n/g,'\n');
+            let split;
+            while((split=buffer.indexOf('\n\n'))>=0){
+              const block=buffer.slice(0,split);buffer=buffer.slice(split+2);
+              let type='message';const data=[];
+              block.split('\n').forEach(line=>{if(line.startsWith('event:'))type=line.slice(6).trim();else if(line.startsWith('data:'))data.push(line.slice(5).trimStart());});
+              if(data.length)emit(type,data.join('\n'));
+            }
+          }
+        }catch(e){if(!closed)emit('error',String(e&&e.message||e));}
+        if(!closed)await new Promise(resolve=>setTimeout(resolve,1200));
+      }
+    }
+    connect();return stream;
+  };
+})();
 (function(){
   const slides=[...document.querySelectorAll('.slide')];
   const frame=document.getElementById('frame'),cnt=document.getElementById('cnt');
@@ -617,7 +666,7 @@ body.editmode .slide.active{cursor:default}
     if(a==='vessica'){document.dispatchEvent(new Event('vstd:vtoggle'));document.getElementById('hudmore').classList.remove('open');return;}
     if(a==='more'){document.getElementById('hudmore').classList.toggle('open');return;}
     document.getElementById('hudmore').classList.remove('open');
-    if(a==='home')location.assign('/presentations');
+	if(a==='home'){const app=window.__vme&&window.__vme.app_origin;location.assign(app?(app+'/presentations'):'/presentations');}
     else if(a==='prev')step(-1);else if(a==='next')step(1); // step() skips parked+hidden — show(cur±1) walked straight through the parking lot on touch devices
     else if(a==='menu')menu.classList.toggle('open');
     else if(a==='grid'){buildOv();overview.classList.add('open');}
@@ -1340,9 +1389,9 @@ body.editmode .slide.active{cursor:default}
     if(e.detail&&e.detail.dirty)return;
     setTimeout(flushDeferredReload,80);
   });
-  if(location.protocol.indexOf('http')===0&&window.EventSource){
+  if(location.protocol.indexOf('http')===0&&window.VSTDEventStream){
     try{
-      const es=new EventSource('/api/events?deck='+encodeURIComponent(window.VSTD.deck));
+      const es=window.VSTDEventStream('/api/events?deck='+encodeURIComponent(window.VSTD.deck));
       es.addEventListener('reload',()=>{
         if(Date.now()-(window.__selfSave||0)<2500){/* our own write; DOM is already current */}
         else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
@@ -1366,12 +1415,16 @@ body.editmode .slide.active{cursor:default}
       });
       fetch('/api/me').then(r=>r.json()).then(me=>{
         window.__vme=me;
-        const audience=(me.mode==='public'&&!me.presenter)||(me.mode!=='public'&&/[?&]follow=1/.test(location.search));
+        const audience=me.audience===true||(me.audience===undefined&&((me.mode==='public'&&!me.presenter)||(me.mode!=='public'&&/[?&]follow=1/.test(location.search))));
         window.__vaudience=audience;
-        if(!audience){
+        if(!audience&&me.presenter){
           document.getElementById('cnt').style.display='';
           document.querySelectorAll('[data-presenter-control]').forEach(b=>b.style.display='');
           if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
+		  else ['editbtn','hudSticky'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
+		}else if(!audience){
+		  document.getElementById('cnt').style.display='';
+		  ['homebtn','downloadbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});
         }
         // All authorized viewers may download the fixed-layout PDF. PowerPoint
         // and share-link controls stay presenter-only at both the HUD and API.
@@ -1394,8 +1447,9 @@ body.editmode .slide.active{cursor:default}
           document.getElementById('hudmore').classList.remove('open');
           menu.classList.remove('open');overview.classList.remove('open');notesPanel.classList.remove('open');
           closeShare();
-        }else{
-          ['downloadbtn','sharebtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});
+		}else{
+		  const ids=['downloadbtn'];if(me.capabilities&&me.capabilities.external_share)ids.push('sharebtn');
+		  ids.forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});
         }
         if(audience){
           window.__following=true;
@@ -1488,6 +1542,7 @@ body.editmode .slide.active{cursor:default}
   function attachments(items){
     attachList.innerHTML='';
     (items||[]).forEach(a=>{const el=document.createElement('a');el.href=a.url;el.target='_blank';el.rel='noopener';
+	  el.addEventListener('click',async e=>{if(!sessionStorage.getItem('vstd_player_session'))return;e.preventDefault();const tab=window.open('about:blank','_blank');try{const r=await fetch(a.url);if(!r.ok)throw new Error('HTTP '+r.status);const u=URL.createObjectURL(await r.blob());if(tab)tab.location=u;else location.href=u;setTimeout(()=>URL.revokeObjectURL(u),60000);}catch(x){if(tab)tab.close();window.VSTDP&&window.VSTDP.toast('Could not open source: '+x.message);}});
       el.title=(a.media_type||'source')+(a.page?' · page/slide '+a.page:'');el.textContent='📎 '+a.name+(a.page?' · '+a.page:'');attachList.appendChild(el);});
     if(!(items||[]).length){const e=document.createElement('span');e.style.cssText='font-size:12px;color:#758579';e.textContent='No source files';attachList.appendChild(e);}
   }
@@ -2339,8 +2394,8 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   }
   document.addEventListener('vstd:slide',()=>{refreshDisplay();refreshTasks();});
   refreshDisplay();refreshTasks();
-  if(window.EventSource){try{
-    const es=new EventSource('/api/events');
+  if(window.VSTDEventStream){try{
+    const es=window.VSTDEventStream('/api/events?deck='+encodeURIComponent(deck));
     es.addEventListener('vdisplay',e=>{if(e.data===deck)refreshDisplay();});
     es.addEventListener('vtasks',e=>{if(e.data===deck)refreshTasks();});
     es.addEventListener('vkb',e=>{if(e.data===deck)refreshKB();});
@@ -2858,7 +2913,8 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     const mb=(f.size/1e6).toFixed(1);
     P().toast('Uploading '+f.name+' ('+mb+' MB)… 0%',60000);
     const xhr=new XMLHttpRequest();
-    xhr.open('POST','/api/asset/video?filename='+encodeURIComponent(f.name));
+    xhr.open('POST','/api/asset/video?filename='+encodeURIComponent(f.name)+'&deck='+encodeURIComponent(window.VSTD.deck));
+    const token=sessionStorage.getItem('vstd_player_session');if(token)xhr.setRequestHeader('Authorization','Bearer '+token);
     xhr.upload.onprogress=ev=>{
       if(ev.lengthComputable)P().toast('Uploading '+f.name+' ('+mb+' MB)… '+Math.round(ev.loaded/ev.total*100)+'%',60000);
     };
@@ -2876,7 +2932,8 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   function uploadImage(f){
     P().toast('Uploading '+f.name+'…',30000);
     const xhr=new XMLHttpRequest();
-    xhr.open('POST','/api/asset/image?filename='+encodeURIComponent(f.name));
+    xhr.open('POST','/api/asset/image?filename='+encodeURIComponent(f.name)+'&deck='+encodeURIComponent(window.VSTD.deck));
+    const token=sessionStorage.getItem('vstd_player_session');if(token)xhr.setRequestHeader('Authorization','Bearer '+token);
     xhr.onload=()=>{
       window.__selfSave=Date.now();
       let j={};try{j=JSON.parse(xhr.responseText);}catch(_){}

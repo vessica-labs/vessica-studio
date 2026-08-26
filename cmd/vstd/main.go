@@ -127,6 +127,12 @@ Environment:
   VSTD_SECRET           session + share-link signing in public mode
   VSTD_GITHUB_CLIENT_ID / VSTD_ALLOWED_GITHUB
                         GitHub Device Flow presenter authentication
+  VSTD_COLLABORATION=1   PostgreSQL-backed single-team collaboration
+  DATABASE_URL           required PostgreSQL URL for collaboration
+  VSTD_APP_ORIGIN / VSTD_PLAYER_ORIGIN
+                        separate HTTPS app and executable-player origins
+  VSTD_OWNER_GITHUB_LOGIN
+                        GitHub login that bootstraps/administers the team
   VSTD_CONTENT_SYNC=1   enable presenter-only hosted content editing
   VSTD_GIT_REPO / _BRANCH / _TOKEN
                         content repository and scoped write credential
@@ -384,6 +390,9 @@ func cmdServe(args []string) error {
 		return fmt.Errorf("invalid mode %q", *mode)
 	}
 	srv := server.New(st, m)
+	if err := srv.StartCollaboration(context.Background()); err != nil {
+		return err
+	}
 	if err := srv.StartContentSync(); err != nil {
 		return err
 	}
