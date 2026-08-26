@@ -77,7 +77,13 @@ func (s *Server) canEdit(r *http.Request) bool {
 		if deck == "" {
 			deck = r.URL.Query().Get("deck")
 		}
-		ps, ok := s.playerSessionForDeck(r, deck)
+		var ps collab.PlayerSession
+		var ok bool
+		if deck == "" {
+			ps, ok = s.playerSession(r)
+		} else {
+			ps, ok = s.playerSessionForDeck(r, deck)
+		}
 		return ok && ps.Mode == "edit" && s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "edit") && s.ContentSync.Editable()
 	}
 	if s.Mode == ModeStudio {

@@ -122,6 +122,14 @@ func (s *Server) hostDispatch(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		// PDF/PPTX rendering launches a loopback Chrome process that loads the
+		// one-time print route and its media through 127.0.0.1. Route it without
+		// weakening external Host validation; the handlers still enforce their
+		// print key or normal authorization.
+		if isLoopback(r) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		switch {
 		case s.isAppRequest(r):
 			if redirectLegacyPlayerPath(s, w, r) {

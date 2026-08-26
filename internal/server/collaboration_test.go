@@ -76,6 +76,17 @@ func TestAccountCookieIsNotPlayerAuthorization(t *testing.T) {
 	}
 }
 
+func TestLoopbackRendererBypassesExternalHostDispatchOnly(t *testing.T) {
+	_, h := collaborationHostServer(t)
+	req := hostRequest(http.MethodGet, "/api/me", "127.0.0.1:4400")
+	req.RemoteAddr = "127.0.0.1:54321"
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"presenter":false`) {
+		t.Fatalf("loopback renderer path did not reach authorization handler: status=%d body=%s", rr.Code, rr.Body.String())
+	}
+}
+
 func TestLegacyAudiencePathRedirectsToPlayerOrigin(t *testing.T) {
 	_, h := collaborationHostServer(t)
 	rr := httptest.NewRecorder()

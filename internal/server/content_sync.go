@@ -7,6 +7,7 @@ package server
 // with the configured GitHub branch.
 
 import (
+	"context"
 	"encoding/base64"
 	"fmt"
 	"log"
@@ -328,6 +329,11 @@ func (c *ContentSync) syncOnce() error {
 	c.lastError = ""
 	c.lastSyncedAt = time.Now()
 	c.mu.Unlock()
+	if c.server != nil && c.server.Collab != nil {
+		if err := c.server.Collab.ReconcileDecks(context.Background(), c.server.filesystemDecks()); err != nil {
+			return fmt.Errorf("reconcile Git-synced presentations: %w", err)
+		}
+	}
 	if c.server != nil && head != remote {
 		c.server.Broadcast("reload")
 	}
