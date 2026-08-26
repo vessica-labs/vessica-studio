@@ -42,6 +42,45 @@ func (s *Studio) Fork(src, client string) (string, error) {
 	return dst, nil
 }
 
+// ForkAs copies a deck to an explicit storage key and title. It is used by
+// the hosted collaboration catalog, where the destination belongs to the
+// caller rather than encoding a client name in the source deck's slug.
+func (s *Studio) ForkAs(src, dst, title string) (err error) {
+	if !ValidDeckName(src) || !ValidDeckName(dst) {
+		return fmt.Errorf("invalid source or destination deck name")
+	}
+	if _, err := os.Stat(s.DeckDir(dst)); err == nil {
+		return fmt.Errorf("deck %q already exists", dst)
+	}
+	if err := copyDir(s.DeckDir(src), s.DeckDir(dst), "build"); err != nil {
+		return err
+	}
+	complete := false
+	defer func() {
+		if !complete {
+			_ = os.RemoveAll(s.DeckDir(dst))
+		}
+	}()
+	hashes, err := s.HashSlides(src)
+	if err != nil {
+		return err
+	}
+	meta, err := s.LoadDeckMeta(dst)
+	if err != nil {
+		return err
+	}
+	meta.ForkedFrom = src
+	meta.ForkDate = time.Now().Format("2006-01-02")
+	meta.ParentHashes = hashes
+	meta.Title = strings.TrimSpace(title)
+	meta.Visibility = "private"
+	if err := s.SaveDeckMeta(dst, meta); err != nil {
+		return err
+	}
+	complete = true
+	return nil
+}
+
 // DiffUpstream reports which slides changed in the parent deck since the
 // fork, and which were added or removed.
 func (s *Studio) DiffUpstream(fork string) (changed, added, removed []string, err error) {

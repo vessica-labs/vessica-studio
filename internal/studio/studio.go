@@ -24,6 +24,7 @@ import (
 type Config struct {
 	ThemeDefault   string `yaml:"theme_default"`
 	Port           int    `yaml:"port"`
+	AppHost        string `yaml:"app_host,omitempty"`
 	PublicHost     string `yaml:"public_host,omitempty"`
 	FollowDeck     string `yaml:"follow_deck,omitempty"`
 	ShareSecretCmd string `yaml:"share_secret_cmd,omitempty"`
