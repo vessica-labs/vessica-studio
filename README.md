@@ -858,6 +858,12 @@ becomes the owner and claims previously unowned decks as private. The owner can
 invite members from `/team`; invitation and password-reset email uses
 `RESEND_API_KEY` and `RESEND_FROM`.
 
+The owner signs in through a guided GitHub device flow. Vessica opens GitHub in
+a new tab, keeps the temporary code visible with its remaining lifetime, and
+copies it when the code is clicked. The in-progress flow is retained in tab
+`sessionStorage`, so a reload or temporary network interruption does not force
+the owner to race for or lose the code.
+
 Each user owns their decks. Team visibility grants other active members View,
 Present, export, and Fork access, but never Edit or sharing authority. Forks are
 private copies with upstream hashes and provenance. Removing a member revokes

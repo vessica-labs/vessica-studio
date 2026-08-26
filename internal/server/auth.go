@@ -442,7 +442,8 @@ func (s *Server) handleGitHubDevice(w http.ResponseWriter, r *http.Request) {
 		Interval:  device.Interval}
 	s.mu.Unlock()
 	writeJSON(w, map[string]any{"id": id, "user_code": device.UserCode,
-		"verification_uri": device.VerificationURI, "interval": device.Interval})
+		"verification_uri": device.VerificationURI, "interval": device.Interval,
+		"expires_in": device.ExpiresIn})
 }
 
 func (s *Server) handleGitHubPoll(w http.ResponseWriter, r *http.Request) {
@@ -546,11 +547,7 @@ func (s *Server) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Collab != nil {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		io.WriteString(w, authShell("Sign in to Vessica Studio", `<form id="login"><input name="email" type="email" autocomplete="email" placeholder="Email" required><input name="password" type="password" autocomplete="current-password" placeholder="Password" required><button>Sign in</button></form><button class="secondary" id="github">Owner sign-in with GitHub</button><button class="secondary" id="forgot">Forgot password</button><div id="githubFlow" class="muted"></div><div id="err"></div>`, `
-const err=document.getElementById('err'),flow=document.getElementById('githubFlow');login.onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);const r=await fetch('/api/auth/password/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:f.get('email'),password:f.get('password')})});const j=await r.json();if(r.ok)location.replace('/presentations');else err.textContent=j.error||'Sign-in failed';};
-github.onclick=async()=>{try{const d=await (await fetch('/auth/github/device',{method:'POST'})).json();if(!d.user_code)throw new Error(d.error||'GitHub unavailable');flow.innerHTML='Enter <b>'+d.user_code+'</b> at <a target="_blank" href="'+d.verification_uri+'">GitHub</a>';for(;;){await new Promise(x=>setTimeout(x,(d.interval||5)*1000));const p=await fetch('/auth/github/poll/'+d.id,{method:'POST'}),j=await p.json();if(p.ok){location.replace('/presentations');return;}if(p.status!==202)throw new Error(j.error||'GitHub sign-in failed');}}catch(e){err.textContent=e.message;}};
-forgot.onclick=async()=>{const email=prompt('Email address');if(!email)return;await fetch('/api/auth/password/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email})});err.textContent='If that account exists, a reset link has been sent.';};
-if(location.hash.startsWith('#reset=')){const token=location.hash.slice(7);history.replaceState(null,'','/auth/login');const password=prompt('Create a new password (12+ characters)');if(password)fetch('/api/auth/password/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password})}).then(async r=>{const j=await r.json();err.textContent=r.ok?'Password reset. Sign in with the new password.':(j.error||'Reset failed');});}`))
+		io.WriteString(w, collaborationLoginPage())
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
@@ -581,6 +578,175 @@ a{color:#21BF61} .sub{color:#8fb59a;font-size:14px} #err{color:#FE7C2B;margin-to
   }catch(e){err.textContent=e.message;}
 })();
 </script></body></html>`)
+}
+
+const collaborationLoginCSS = `
+body{min-height:100vh;display:grid;place-items:center;padding:40px 24px;background:#071d10}
+[hidden]{display:none!important}
+main.login-auth{width:min(920px,100%);max-width:none;margin:0;padding:0;display:grid;grid-template-columns:minmax(0,1.08fr) minmax(0,.92fr);overflow:hidden;background:#12341d;border:1px solid #31513a;border-radius:28px;box-shadow:0 28px 80px rgba(0,0,0,.3)}
+.login-member,.login-owner{padding:56px}
+.login-owner{display:flex;flex-direction:column;justify-content:center;background:#0d2917;border-left:1px solid #2c4a35}
+.login-auth .eyebrow{margin:0 0 14px;color:#20e3ac;font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}
+.login-auth h1{margin:0 0 12px;font-size:48px;line-height:1.02;letter-spacing:-.035em}
+.login-auth h2{margin:0 0 10px;color:#fff;font:400 31px/1.12 Georgia,serif;letter-spacing:-.02em}
+.login-auth .lede{max-width:420px;margin:0 0 34px;color:#a8c8b0;font-size:16px;line-height:1.55}
+.login-form{display:grid;gap:18px}
+.login-form label{display:grid;gap:8px;color:#d9eddd;font-size:13px;font-weight:700}
+.login-form input{min-width:0;width:100%;height:48px;padding:0 15px;background:#f8fbf8;border-color:#d5e3d8;border-radius:12px;outline:none;transition:border-color .15s,box-shadow .15s}
+.login-form input:focus{border-color:#20e3ac;box-shadow:0 0 0 4px rgba(32,227,172,.15)}
+.login-form .sign-in-button{height:48px;margin-top:2px;border:0;border-radius:12px;background:#20d991;transition:transform .15s,background .15s}
+.login-form .sign-in-button:hover{background:#35e6a2;transform:translateY(-1px)}
+.forgot-button{justify-self:start;padding:0;border:0;background:transparent;color:#8fb59a;font-weight:650}
+.forgot-button:hover{color:#dff9e6;text-decoration:underline}
+.login-message{min-height:22px;margin:18px 0 0;color:#ffb195;font-size:14px;line-height:1.5}
+.login-message.success{color:#77e8b2}
+.github-intro{margin-top:26px}
+.github-start{width:100%;min-height:50px;border:1px solid #4c6d55;border-radius:13px;background:#f7fbf8;color:#0a2513;transition:transform .15s,box-shadow .15s,background .15s}
+.github-start:hover{background:#fff;box-shadow:0 10px 24px rgba(0,0,0,.18);transform:translateY(-1px)}
+.github-promise{margin:14px 0 0;color:#8fb59a;font-size:13px;line-height:1.5;text-align:center}
+.device-flow{margin-top:24px}
+.device-topline{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}
+.device-kicker{margin:0;color:#b9d2bf;font-size:13px;font-weight:750}
+.new-code{padding:0;border:0;background:transparent;color:#76dfa9;font-size:13px;font-weight:750}
+.new-code:hover{text-decoration:underline}
+.device-instruction{margin:0 0 14px;color:#a8c8b0;font-size:14px;line-height:1.5}
+.device-code{width:100%;padding:21px 14px 17px;display:grid;gap:7px;background:#071d10;border:1px solid #3e6749;border-radius:16px;color:#fff;text-align:center;transition:border-color .15s,transform .15s,box-shadow .15s}
+.device-code:hover,.device-code:focus-visible{border-color:#20e3ac;box-shadow:0 0 0 4px rgba(32,227,172,.12);transform:translateY(-1px);outline:none}
+.device-code-value{font:750 35px/1 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;letter-spacing:.16em;color:#20e3ac}
+.copy-hint{color:#8fb59a;font-size:12px;font-weight:650;letter-spacing:0}
+.github-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px}
+.github-actions button,.github-actions a{min-height:44px;display:grid;place-items:center;border-radius:11px;text-decoration:none;font-size:14px;font-weight:750}
+.open-github{background:#20d991;color:#071d10;border:1px solid #20d991}
+.copy-code{background:transparent;color:#dff9e6;border:1px solid #41614a}
+.flow-meta{display:flex;justify-content:space-between;gap:12px;margin:15px 0 9px;color:#8fb59a;font-size:12px}
+.flow-status{color:#cbe3d0}
+.device-flow progress{display:block;width:100%;height:5px;overflow:hidden;border:0;border-radius:999px;background:#25402d;color:#20d991}
+.device-flow progress::-webkit-progress-bar{background:#25402d;border-radius:999px}
+.device-flow progress::-webkit-progress-value{background:#20d991;border-radius:999px;transition:width 1s linear}
+.device-flow progress::-moz-progress-bar{background:#20d991;border-radius:999px}
+.device-flow.expired .device-code{border-color:#805a45}
+.device-flow.expired .device-code-value{color:#ffb195}
+.device-flow.expired progress{color:#ff9b75}
+@media(max-width:760px){body{display:block;padding:18px}.login-auth h1{font-size:41px}main.login-auth{grid-template-columns:1fr}.login-member,.login-owner{padding:36px 30px}.login-owner{border-left:0;border-top:1px solid #2c4a35}.login-owner{min-height:390px}}
+@media(max-width:420px){body{padding:0;background:#12341d}main.login-auth{border:0;border-radius:0;box-shadow:none}.login-member,.login-owner{padding:34px 22px}.github-actions{grid-template-columns:1fr}.device-code-value{font-size:30px}}
+@media(prefers-reduced-motion:reduce){.login-auth *{scroll-behavior:auto!important;transition:none!important}}
+`
+
+const collaborationLoginBody = `<section class="login-member">
+<p class="eyebrow">Vessica Studio</p>
+<h1>Welcome back</h1>
+<p class="lede">Sign in to your presentation workspace.</p>
+<form id="login" class="login-form">
+<label>Email address<input name="email" type="email" autocomplete="email" placeholder="you@example.com" required></label>
+<label>Password<input name="password" type="password" autocomplete="current-password" placeholder="Your password" required></label>
+<button class="sign-in-button">Sign in</button>
+<button class="forgot-button" type="button" id="forgot">Forgot password?</button>
+</form>
+<p id="loginMessage" class="login-message" role="status" aria-live="polite"></p>
+</section>
+<section class="login-owner" aria-labelledby="githubTitle">
+<p class="eyebrow">Studio owner</p>
+<h2 id="githubTitle">Sign in with GitHub</h2>
+<p class="lede">Use the GitHub account connected to this studio.</p>
+<div id="githubIntro" class="github-intro">
+<button class="github-start" type="button" id="github">Continue with GitHub</button>
+<p class="github-promise">We’ll open GitHub for you. No rushing, and no code to retype.</p>
+</div>
+<div id="githubFlow" class="device-flow" hidden>
+<div class="device-topline"><p class="device-kicker">Your temporary code</p><button class="new-code" type="button" id="newGithubCode">Get a new code</button></div>
+<p class="device-instruction">Click the code to copy it, then paste it into the GitHub tab.</p>
+<button class="device-code" type="button" id="githubCode" aria-label="Copy GitHub device code">
+<span class="device-code-value" id="githubCodeValue">—</span><span class="copy-hint" id="githubCopyHint">Click to copy</span>
+</button>
+<div class="github-actions"><a class="open-github" id="openGithub" target="_blank" rel="noopener">Open GitHub</a><button class="copy-code" type="button" id="copyGithubCode">Copy code</button></div>
+<div class="flow-meta"><span class="flow-status" id="githubStatus" role="status" aria-live="polite">Waiting for GitHub…</span><span id="githubExpires">Code available</span></div>
+<progress id="githubProgress" max="100" value="100" aria-label="Time remaining for GitHub device code"></progress>
+</div>
+<p id="githubMessage" class="login-message" role="alert" aria-live="assertive"></p>
+</section>`
+
+const collaborationLoginScript = `
+const flowStorageKey='vstd_github_device_flow';
+const loginForm=document.getElementById('login'),loginMessage=document.getElementById('loginMessage'),forgotButton=document.getElementById('forgot');
+const githubButton=document.getElementById('github'),githubIntro=document.getElementById('githubIntro'),githubFlow=document.getElementById('githubFlow');
+const githubCode=document.getElementById('githubCode'),githubCodeValue=document.getElementById('githubCodeValue'),githubCopyHint=document.getElementById('githubCopyHint');
+const copyGithubCode=document.getElementById('copyGithubCode'),openGithub=document.getElementById('openGithub'),newGithubCode=document.getElementById('newGithubCode');
+const githubStatus=document.getElementById('githubStatus'),githubExpires=document.getElementById('githubExpires'),githubProgress=document.getElementById('githubProgress'),githubMessage=document.getElementById('githubMessage');
+let activeGithubFlow=null,pollGeneration=0,countdownTimer=0,copyTimer=0;
+
+function setMessage(element,message,success){element.textContent=message||'';element.classList.toggle('success',!!success);}
+function saveGithubFlow(flow){try{sessionStorage.setItem(flowStorageKey,JSON.stringify(flow));}catch(_){}}
+function clearSavedGithubFlow(){try{sessionStorage.removeItem(flowStorageKey);}catch(_){}}
+function remainingSeconds(){return activeGithubFlow?Math.max(0,Math.ceil((activeGithubFlow.expires_at-Date.now())/1000)):0;}
+function formatRemaining(seconds){const minutes=Math.floor(seconds/60),rest=seconds%60;return minutes+':'+String(rest).padStart(2,'0');}
+function updateGithubCountdown(){
+  if(!activeGithubFlow)return;
+  const remaining=remainingSeconds(),total=Math.max(1,activeGithubFlow.expires_in||900);
+  githubExpires.textContent=remaining?'Available for '+formatRemaining(remaining):'Code expired';
+  githubProgress.value=Math.max(0,Math.min(100,(remaining/total)*100));
+  if(!remaining)expireGithubFlow();
+}
+function showGithubFlow(flow){
+  activeGithubFlow=flow;githubIntro.hidden=true;githubFlow.hidden=false;githubFlow.classList.remove('expired');
+  githubCodeValue.textContent=flow.user_code;openGithub.href=flow.verification_uri;githubCopyHint.textContent='Click to copy';
+  githubStatus.textContent='Waiting for you on GitHub…';setMessage(githubMessage,'');
+  clearInterval(countdownTimer);updateGithubCountdown();countdownTimer=setInterval(updateGithubCountdown,1000);
+}
+function expireGithubFlow(){
+  pollGeneration++;clearInterval(countdownTimer);githubFlow.classList.add('expired');
+  githubStatus.textContent='This code has expired';githubExpires.textContent='Get a new code when you’re ready';githubProgress.value=0;
+  setMessage(githubMessage,'The code will stay here, but GitHub needs a fresh one to continue.');clearSavedGithubFlow();
+}
+async function copyDeviceCode(){
+  if(!activeGithubFlow)return;
+  try{
+    let copied=false;
+    if(navigator.clipboard&&navigator.clipboard.writeText){try{await navigator.clipboard.writeText(activeGithubFlow.user_code);copied=true;}catch(_){}}
+    if(!copied){const field=document.createElement('textarea');field.value=activeGithubFlow.user_code;field.setAttribute('readonly','');field.style.position='fixed';field.style.opacity='0';document.body.appendChild(field);field.select();copied=document.execCommand('copy');field.remove();}
+    if(!copied)throw new Error('copy unavailable');
+    githubCopyHint.textContent='Copied to clipboard';copyGithubCode.textContent='Copied';clearTimeout(copyTimer);copyTimer=setTimeout(()=>{githubCopyHint.textContent='Click to copy';copyGithubCode.textContent='Copy code';},2200);
+  }catch(_){githubCopyHint.textContent='Select and copy: '+activeGithubFlow.user_code;}
+}
+function scheduleGithubPoll(generation,seconds){setTimeout(()=>pollGithub(generation),Math.max(1,seconds)*1000);}
+async function pollGithub(generation){
+  if(generation!==pollGeneration||!activeGithubFlow||!remainingSeconds())return;
+  try{
+    const response=await fetch('/auth/github/poll/'+encodeURIComponent(activeGithubFlow.id),{method:'POST'});
+    const result=await response.json().catch(()=>({}));
+    if(response.status===200&&result.status==='completed'){
+      clearSavedGithubFlow();clearInterval(countdownTimer);githubStatus.textContent='Signed in. Opening your presentations…';githubProgress.value=100;location.replace('/presentations');return;
+    }
+    if(response.status===202){githubStatus.textContent=result.status==='slow_down'?'Still waiting — take your time':'Waiting for you on GitHub…';scheduleGithubPoll(generation,result.retry_after||activeGithubFlow.interval||5);return;}
+    if(response.status===410){expireGithubFlow();return;}
+    if(response.status>=500){githubStatus.textContent='Connection interrupted. Retrying…';scheduleGithubPoll(generation,Math.max(activeGithubFlow.interval||5,8));return;}
+    githubStatus.textContent='GitHub needs a new code';setMessage(githubMessage,result.error||'This sign-in could not be completed.');
+  }catch(_){githubStatus.textContent='Connection interrupted. Retrying…';scheduleGithubPoll(generation,Math.max(activeGithubFlow.interval||5,8));}
+}
+async function startGithubFlow(openWindow){
+  const githubPopup=openWindow?window.open('about:blank','_blank'):null;
+  if(githubPopup){githubPopup.document.title='Opening GitHub…';githubPopup.document.body.textContent='Opening GitHub…';githubPopup.opener=null;}
+  githubButton.disabled=true;githubButton.textContent='Preparing GitHub…';setMessage(githubMessage,'');
+  try{
+    const response=await fetch('/auth/github/device',{method:'POST'}),data=await response.json().catch(()=>({}));
+    if(!response.ok||!data.user_code)throw new Error(data.error||'GitHub sign-in is unavailable right now.');
+    const expiresIn=Math.max(60,Number(data.expires_in)||900);
+    const flow={id:data.id,user_code:data.user_code,verification_uri:data.verification_uri,interval:Math.max(5,Number(data.interval)||5),expires_in:expiresIn,expires_at:Date.now()+expiresIn*1000};
+    pollGeneration++;showGithubFlow(flow);saveGithubFlow(flow);githubCode.focus({preventScroll:true});
+    if(githubPopup)githubPopup.location.replace(flow.verification_uri);
+    const generation=pollGeneration;scheduleGithubPoll(generation,flow.interval);
+  }catch(error){if(githubPopup)githubPopup.close();setMessage(githubMessage,error.message||'GitHub sign-in is unavailable right now.');}
+  finally{githubButton.disabled=false;githubButton.textContent='Continue with GitHub';}
+}
+
+loginForm.onsubmit=async event=>{event.preventDefault();setMessage(loginMessage,'');const data=new FormData(event.target);const response=await fetch('/api/auth/password/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:data.get('email'),password:data.get('password')})});const result=await response.json().catch(()=>({}));if(response.ok)location.replace('/presentations');else setMessage(loginMessage,result.error||'We couldn’t sign you in with those details.');};
+githubButton.onclick=()=>startGithubFlow(true);newGithubCode.onclick=()=>startGithubFlow(true);githubCode.onclick=copyDeviceCode;copyGithubCode.onclick=copyDeviceCode;
+forgotButton.onclick=async()=>{const email=loginForm.elements.email;if(!email.value){setMessage(loginMessage,'Enter your email address first, then choose “Forgot password?”.');email.focus();return;}await fetch('/api/auth/password/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value})});setMessage(loginMessage,'If that account exists, a reset link is on its way.',true);};
+try{const saved=JSON.parse(sessionStorage.getItem(flowStorageKey)||'null');if(saved&&saved.id&&saved.user_code&&saved.verification_uri){showGithubFlow(saved);if(remainingSeconds()){const generation=++pollGeneration;scheduleGithubPoll(generation,1);}else expireGithubFlow();}}catch(_){clearSavedGithubFlow();}
+if(location.hash.startsWith('#reset=')){const token=location.hash.slice(7);history.replaceState(null,'','/auth/login');const password=prompt('Create a new password (12+ characters)');if(password)fetch('/api/auth/password/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password})}).then(async response=>{const result=await response.json();setMessage(loginMessage,response.ok?'Password reset. Sign in with your new password.':(result.error||'Reset failed'),response.ok);});}
+`
+
+func collaborationLoginPage() string {
+	return authDocument("Sign in to Vessica Studio", "auth login-auth", collaborationLoginBody, collaborationLoginScript, collaborationLoginCSS)
 }
 
 func max(a, b int) int {
