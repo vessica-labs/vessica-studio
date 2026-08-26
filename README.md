@@ -50,8 +50,11 @@ and deployable with Git—without locking the deck inside a proprietary editor.
 - **Presentation and audience modes.** Present locally, publish a read-only
   audience surface, mint expiring deck links, and optionally enable chat, voice,
   SMS, email, and live audience pulse.
-- **Local-first, cloud-capable.** Author without a hosted service, or deploy the
-  player to Railway with presenter authentication and Git-backed content sync.
+- **Local-first, cloud-capable.** Author without a hosted service, or deploy a
+  team catalog and isolated player to Railway with Git-backed content sync.
+- **Single-team collaboration.** Invite teammates by email, keep per-user
+  private catalogs, share selected decks read-only, and fork shared work before
+  editing it.
 
 ## Installation
 
@@ -714,8 +717,10 @@ openai:
   base_url: https://api.openai.com/v1
 ```
 
-Other supported top-level settings include `public_host`, `share_secret_cmd`,
-and `storage`.
+Other supported top-level settings include `app_host`, `public_host`,
+`share_secret_cmd`, and `storage`. In hosted collaboration mode, `app_host` is
+the authenticated catalog/team origin and `public_host` is the separate player
+and audience origin.
 
 ### OpenAI
 
@@ -776,6 +781,11 @@ Environment variables take precedence over YAML.
 | `VSTD_SECRET` | Sign presenter sessions and audience links |
 | `VSTD_GITHUB_CLIENT_ID` | GitHub OAuth application with Device Flow enabled |
 | `VSTD_ALLOWED_GITHUB` | Comma-separated presenter login allowlist |
+| `VSTD_COLLABORATION` | Set to `1` to enable PostgreSQL-backed single-team collaboration |
+| `DATABASE_URL` | PostgreSQL connection URL; required in collaboration mode |
+| `VSTD_APP_ORIGIN` | Exact HTTPS origin for marketing, authentication, catalogs, and team administration |
+| `VSTD_PLAYER_ORIGIN` | Separate exact HTTPS origin for deck execution, audience links, and player APIs |
+| `VSTD_OWNER_GITHUB_LOGIN` | GitHub login that may bootstrap and administer the team |
 | `PUBLIC_URL` | Public base URL for audience and action links |
 | `VSTD_CONTENT_SYNC` | Set to `1` to enable authenticated hosted editing |
 | `VSTD_GIT_REPO` | Git content repository URL |
@@ -822,6 +832,49 @@ Video bytes remain outside Git and are synchronized through object storage.
 
 Without content sync, `public` mode remains read-only. Audiences enter through
 expiring deck-scoped links created by `vstd qr`.
+
+### Team collaboration mode
+
+Collaboration mode is additive and disabled by default. It requires public mode,
+PostgreSQL, and separate app/player origins:
+
+```yaml
+app_host: https://studio.example.com
+public_host: https://present.example.com
+```
+
+```sh
+VSTD_MODE=public
+VSTD_COLLABORATION=1
+DATABASE_URL=postgresql://...
+VSTD_APP_ORIGIN=https://studio.example.com
+VSTD_PLAYER_ORIGIN=https://present.example.com
+VSTD_OWNER_GITHUB_LOGIN=octocat
+```
+
+Startup runs additive schema migrations under a PostgreSQL advisory lock and
+reconciles filesystem decks into the catalog. The first matching GitHub login
+becomes the owner and claims previously unowned decks as private. The owner can
+invite members from `/team`; invitation and password-reset email uses
+`RESEND_API_KEY` and `RESEND_FROM`.
+
+Each user owns their decks. Team visibility grants other active members View,
+Present, export, and Fork access, but never Edit or sharing authority. Forks are
+private copies with upstream hashes and provenance. Removing a member revokes
+their sessions immediately and transfers their decks to the owner without
+changing visibility.
+
+The account cookie is host-only on the app origin and is never player
+authorization. App launches exchange a 60-second, single-use handoff for a
+12-hour deck/mode bearer kept in tab `sessionStorage`; every player request
+revalidates membership, deck ownership, visibility, and mode. Native media uses
+a separate player-host-only HttpOnly cookie accepted only by media handlers.
+Keep the deployment at one application replica while its writable Git checkout
+remains a single-writer process.
+
+To roll back application behavior without discarding collaboration data,
+disable `VSTD_COLLABORATION`, restore the former canonical `public_host`, and
+redeploy. Migrations are additive and are not reversed.
 
 See [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) for trust boundaries,
 existing controls, and hardening recommendations.
