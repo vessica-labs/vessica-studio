@@ -402,7 +402,11 @@ const token=location.hash.slice(1);document.getElementById('accept').onsubmit=as
 }
 
 func authShell(title, body, script string) string {
-	return `<!DOCTYPE html><html><head><meta name="referrer" content="no-referrer"><title>` + html.EscapeString(title) + `</title><style>` + appCSS + `</style></head><body><main class="auth"><h1>` + html.EscapeString(title) + `</h1>` + body + `</main><script>` + script + `</script></body></html>`
+	return authDocument(title, "auth", `<h1>`+html.EscapeString(title)+`</h1>`+body, script, "")
+}
+
+func authDocument(title, mainClass, body, script, extraCSS string) string {
+	return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="referrer" content="no-referrer"><title>` + html.EscapeString(title) + `</title><style>` + appCSS + extraCSS + `</style></head><body><main class="` + html.EscapeString(mainClass) + `">` + body + `</main><script>` + script + `</script></body></html>`
 }
 
 func (s *Server) sendSystemEmail(ctx context.Context, to, subject, bodyText string) error {

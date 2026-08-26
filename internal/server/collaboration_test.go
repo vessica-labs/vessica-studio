@@ -10,6 +10,37 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/collab"
 )
 
+func TestCollaborationLoginMakesGitHubDeviceFlowDurableAndCopyable(t *testing.T) {
+	s := New(testStudio(t), ModeStudio)
+	s.Collab = &collab.Store{}
+
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/auth/login", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	body := rr.Body.String()
+	for _, want := range []string{
+		`id="githubCode"`,
+		`aria-label="Copy GitHub device code"`,
+		`id="openGithub"`,
+		`id="githubExpires"`,
+		`sessionStorage`,
+		`navigator.clipboard.writeText`,
+		`window.open('about:blank','_blank')`,
+		`response.status===200&&result.status==='completed'`,
+		`Continue with GitHub`,
+		`We’ll open GitHub for you`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("login page missing %q", want)
+		}
+	}
+	if strings.Contains(body, `flow.innerHTML='Enter <b>'`) {
+		t.Fatal("login page still uses the transient one-line GitHub flow")
+	}
+}
+
 func TestCollaborationStartupFailsClosedBeforeListening(t *testing.T) {
 	t.Setenv("VSTD_COLLABORATION", "1")
 	if err := New(testStudio(t), ModeStudio).StartCollaboration(context.Background()); err == nil || !strings.Contains(err.Error(), "public") {
