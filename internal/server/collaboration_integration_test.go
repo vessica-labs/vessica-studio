@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -229,5 +230,61 @@ func TestPlayerHandoffExchangeRequiresPlayerOriginAndSetsMediaCookiePostgres(t *
 	}
 	if media == nil || !media.HttpOnly || !media.Secure || media.SameSite != http.SameSiteLaxMode {
 		t.Fatalf("player media cookie is not constrained: %#v", media)
+	}
+}
+
+func TestPlayerCapabilitiesAndExternalShareFollowLaunchModePostgres(t *testing.T) {
+	f := integrationCollaborationFixture(t)
+
+	present := exchangeMode(t, f, f.owner.ID, f.ownerDeck.ID, "present")
+	rr := httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, playerBearer(http.MethodGet, "/api/me", "", present))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("present identity status=%d; body=%s", rr.Code, rr.Body.String())
+	}
+	var identity struct {
+		Mode         string          `json:"mode"`
+		Editable     bool            `json:"editable"`
+		Deck         collab.Deck     `json:"deck"`
+		Capabilities map[string]bool `json:"capabilities"`
+	}
+	if err := json.Unmarshal(rr.Body.Bytes(), &identity); err != nil {
+		t.Fatal(err)
+	}
+	if identity.Mode != "present" || identity.Editable || !identity.Deck.Owned {
+		t.Fatalf("present identity=%+v", identity)
+	}
+	if !identity.Capabilities["view"] || !identity.Capabilities["present"] || identity.Capabilities["edit"] || identity.Capabilities["fork"] || identity.Capabilities["external_share"] {
+		t.Fatalf("present capabilities=%v", identity.Capabilities)
+	}
+
+	rr = httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, playerBearer(http.MethodPost, "/api/deck/demo/share", `{}`, present))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("present external share status=%d, want 403; body=%s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, playerBearer(http.MethodGet, "/api/deck/demo/share-qr.png", "", present))
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("present share QR status=%d, want 403", rr.Code)
+	}
+
+	edit := exchangeMode(t, f, f.owner.ID, f.ownerDeck.ID, "edit")
+	rr = httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, playerBearer(http.MethodGet, "/api/me", "", edit))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("edit identity status=%d; body=%s", rr.Code, rr.Body.String())
+	}
+	identity = struct {
+		Mode         string          `json:"mode"`
+		Editable     bool            `json:"editable"`
+		Deck         collab.Deck     `json:"deck"`
+		Capabilities map[string]bool `json:"capabilities"`
+	}{}
+	if err := json.Unmarshal(rr.Body.Bytes(), &identity); err != nil {
+		t.Fatal(err)
+	}
+	if identity.Mode != "edit" || !identity.Editable || !identity.Deck.Owned || !identity.Capabilities["external_share"] {
+		t.Fatalf("edit identity=%+v", identity)
 	}
 }
