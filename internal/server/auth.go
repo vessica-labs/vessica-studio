@@ -251,7 +251,7 @@ func (s *Server) handleMintShare(w http.ResponseWriter, r *http.Request) {
 	deck := r.PathValue("deck")
 	if s.Collab != nil {
 		ps, ok := s.playerSessionForDeck(r, deck)
-		if !ok || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") || (ps.Mode != "present" && ps.Mode != "edit") {
+		if !ok || ps.Mode != "edit" || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") {
 			jsonErr(w, fmt.Errorf("presentation owner access required"), http.StatusForbidden)
 			return
 		}
@@ -303,7 +303,7 @@ func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
 	deck := r.PathValue("deck")
 	if s.Collab != nil {
 		ps, ok := s.nativePlayerSessionForDeck(r, deck)
-		if !ok || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") || (ps.Mode != "present" && ps.Mode != "edit") {
+		if !ok || ps.Mode != "edit" || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
@@ -333,11 +333,13 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			owned := ps.Deck.OwnerUserID == ps.User.ID
 			present := ps.Mode == "present" || ps.Mode == "edit"
 			editable := ps.Mode == "edit" && owned && s.ContentSync.Editable()
+			deck := ps.Deck
+			deck.Owned = owned
 			writeJSON(w, map[string]any{
-				"mode": string(s.Mode), "presenter": present, "editable": editable, "audience": false,
-				"user": ps.User, "deck": ps.Deck,
+				"mode": ps.Mode, "presenter": present, "editable": editable, "audience": false,
+				"user": ps.User, "deck": deck,
 				"capabilities": map[string]bool{"view": true, "present": present, "edit": editable,
-					"fork": true, "change_visibility": false, "external_share": owned && present},
+					"fork": false, "change_visibility": false, "external_share": owned && ps.Mode == "edit"},
 				"content_sync": s.ContentSync.Status(), "app_origin": s.appOrigin,
 			})
 			return
