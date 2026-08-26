@@ -80,7 +80,12 @@ func (s *Server) handleSourceAttachmentUpload(w http.ResponseWriter, r *http.Req
 
 func (s *Server) handleSourceAttachment(w http.ResponseWriter, r *http.Request) {
 	deck, name := r.PathValue("deck"), r.PathValue("name")
-	if !s.canView(r, deck) {
+	allowed := s.canView(r, deck)
+	if s.Collab != nil && !allowed {
+		ps, ok := s.nativePlayerSessionForDeck(r, deck)
+		allowed = ok && s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "view")
+	}
+	if !allowed {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

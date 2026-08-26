@@ -503,13 +503,19 @@ func pptxChromeArgs(tmp, pageURL string) []string {
 // in PowerPoint. mode=editable retains the older best-effort native-object
 // conversion for users who prefer editability over pixel fidelity.
 func (s *Server) handleExportPPTX(w http.ResponseWriter, r *http.Request) {
-	if !s.isPresenter(r) {
-		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
-		return
-	}
 	deck := r.PathValue("deck")
 	if !studio.ValidDeckName(deck) {
 		jsonErr(w, fmt.Errorf("invalid deck"), http.StatusBadRequest)
+		return
+	}
+	if s.Collab != nil {
+		ps, ok := s.playerSessionForDeck(r, deck)
+		if !ok || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "view") {
+			jsonErr(w, fmt.Errorf("presentation access required"), http.StatusUnauthorized)
+			return
+		}
+	} else if !s.isPresenter(r) {
+		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
 		return
 	}
 	editable := r.URL.Query().Get("mode") == "editable"

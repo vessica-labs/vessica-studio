@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/collab"
 	"github.com/vessica-labs/vessica-studio/internal/oai"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"gopkg.in/yaml.v3"
@@ -58,6 +59,9 @@ type Server struct {
 	printJobs    map[string]printJob    // one-time keys for in-flight PDF exports (export.go)
 	Agent        *agentWorker
 	ContentSync  *ContentSync
+	Collab       *collab.Store
+	appOrigin    string
+	playerOrigin string
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
@@ -68,6 +72,20 @@ func New(st *studio.Studio, mode Mode) *Server {
 }
 
 func (s *Server) canEdit(r *http.Request) bool {
+	if s.Collab != nil {
+		deck := r.PathValue("deck")
+		if deck == "" {
+			deck = r.URL.Query().Get("deck")
+		}
+		var ps collab.PlayerSession
+		var ok bool
+		if deck == "" {
+			ps, ok = s.playerSession(r)
+		} else {
+			ps, ok = s.playerSessionForDeck(r, deck)
+		}
+		return ok && ps.Mode == "edit" && s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "edit") && s.ContentSync.Editable()
+	}
 	if s.Mode == ModeStudio {
 		return true
 	}
@@ -96,6 +114,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	deck := r.URL.Query().Get("deck")
+	if s.Collab != nil && deck == "" {
+		http.Error(w, "deck capability required", http.StatusForbidden)
+		return
+	}
 	if deck != "" && (!studio.ValidDeckName(deck) || !s.canView(r, deck)) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
@@ -120,6 +142,9 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case ev := <-ch:
+			if deck != "" && !eventVisibleToDeck(ev, deck) {
+				continue
+			}
 			name, data := ev, "1"
 			if i := strings.Index(ev, "|"); i >= 0 {
 				name, data = ev[:i], ev[i+1:]
@@ -133,9 +158,27 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func eventVisibleToDeck(event, deck string) bool {
+	name, data := event, ""
+	if i := strings.Index(event, "|"); i >= 0 {
+		name, data = event[:i], event[i+1:]
+	}
+	if name == "reload" || name == "hello" {
+		return true
+	}
+	if name == "follow" {
+		return strings.HasPrefix(data, deck+"|")
+	}
+	if data == deck || strings.HasPrefix(data, deck+"|") {
+		return true
+	}
+	// Vessica/audience events carry the deck in a compact JSON payload.
+	return strings.Contains(data, `"deck":"`+deck+`"`)
+}
+
 // ---- HTTP ----
 
-func (s *Server) Routes() *http.ServeMux {
+func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.handleSwitcher)
 	mux.HandleFunc("GET /presentations", s.handlePresenterSwitcher)
@@ -182,9 +225,29 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/me", s.handleMe)
 	mux.HandleFunc("POST /api/contact", s.handleContact)
 	mux.HandleFunc("GET /auth/login", s.handleLoginPage)
+	mux.HandleFunc("GET /auth/accept-invite", s.handleAcceptInvitePage)
 	mux.HandleFunc("GET /auth/config", s.handleAuthConfig)
 	mux.HandleFunc("POST /auth/github/device", s.handleGitHubDevice)
 	mux.HandleFunc("POST /auth/github/poll/{id}", s.handleGitHubPoll)
+	mux.HandleFunc("POST /api/auth/password/login", s.handlePasswordLogin)
+	mux.HandleFunc("POST /api/auth/logout", s.handleLogout)
+	mux.HandleFunc("POST /api/auth/invitations/accept", s.handleAcceptInvitation)
+	mux.HandleFunc("POST /api/auth/password/forgot", s.handleForgotPassword)
+	mux.HandleFunc("POST /api/auth/password/reset", s.handleResetPassword)
+	mux.HandleFunc("GET /team", s.handleTeamPage)
+	mux.HandleFunc("GET /api/app/decks", s.handleAppDecks)
+	mux.HandleFunc("POST /api/app/decks", s.handleCreateDeck)
+	mux.HandleFunc("PATCH /api/app/decks/{id}/visibility", s.handleDeckVisibility)
+	mux.HandleFunc("POST /api/app/decks/{id}/fork", s.handleForkDeck)
+	mux.HandleFunc("POST /api/app/decks/{id}/launch", s.handleLaunchDeck)
+	mux.HandleFunc("GET /api/app/team", s.handleAppTeam)
+	mux.HandleFunc("POST /api/app/team/invitations", s.handleCreateInvitation)
+	mux.HandleFunc("POST /api/app/team/invitations/{id}/resend", s.handleResendInvitation)
+	mux.HandleFunc("DELETE /api/app/team/invitations/{id}", s.handleRevokeInvitation)
+	mux.HandleFunc("DELETE /api/app/team/members/{id}", s.handleRemoveMember)
+	mux.HandleFunc("GET /session", s.handlePlayerSessionPage)
+	mux.HandleFunc("POST /api/player/session", s.handlePlayerSessionExchange)
+	mux.HandleFunc("GET /api/player/deck/{deck}/document", s.handlePlayerDocument)
 	mux.HandleFunc("GET /follow", s.handleFollowLanding)
 	mux.HandleFunc("GET /v/{deck}/{token}", s.handleShareLanding)
 	mux.HandleFunc("POST /api/deck/{deck}/share", s.handleMintShare)
@@ -194,6 +257,9 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /api/content-sync/status", s.handleContentSyncStatus)
 	s.VessicaRoutes(mux)      // demo tools: kb, tasks, display, sms, email, search, code
 	s.AudienceChatRoutes(mux) // QR-scanned per-person audience chat
+	if s.Collab != nil && s.Mode == ModePublic {
+		return s.hostDispatch(mux)
+	}
 	return mux
 }
 
@@ -241,6 +307,15 @@ func (s *Server) handleSwitcher(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handlePresenterSwitcher(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
+	if s.Collab != nil {
+		sess, ok := s.accountSession(r)
+		if !ok {
+			http.Redirect(w, r, "/auth/login", http.StatusFound)
+			return
+		}
+		s.renderCollabPresentations(w, r, sess)
+		return
+	}
 	if s.Mode == ModePublic && !s.isPresenter(r) {
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
@@ -279,6 +354,10 @@ a.deck:hover{border-color:#21BF61}
 }
 
 func (s *Server) handleDecks(w http.ResponseWriter, r *http.Request) {
+	if s.Collab != nil {
+		s.handleAppDecks(w, r)
+		return
+	}
 	if s.Mode == ModePublic && !s.isPresenter(r) {
 		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
 		return
@@ -312,6 +391,12 @@ func (s *Server) handleDeck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !s.canView(r, deck) {
+		if s.Collab != nil && s.isPlayerRequest(r) {
+			w.Header().Set("Cache-Control", "no-store")
+			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			io.WriteString(w, playerBootstrapHTML(deck, s.appOrigin))
+			return
+		}
 		http.Error(w, "This deck requires a share link or presenter sign-in.", http.StatusForbidden)
 		return
 	}
@@ -435,7 +520,11 @@ func (s *Server) handlePutTitle(w http.ResponseWriter, r *http.Request) {
 // "## Edit requests" (redesign pass pending) and queued image generations
 // attributed to a slide via the request yaml's deck:/slide: fields.
 func (s *Server) handleDeckStatus(w http.ResponseWriter, r *http.Request) {
-	if !s.hasAnyAccess(r) {
+	if s.Collab != nil && !s.canView(r, r.PathValue("deck")) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if s.Collab == nil && !s.hasAnyAccess(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

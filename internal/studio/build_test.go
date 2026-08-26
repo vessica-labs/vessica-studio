@@ -39,7 +39,8 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`id="hud"`,                                // HUD bar
 		`id="hudmore"`,                            // ⋯ overflow popover
 		`id="homebtn"`,                            // presenter return to the deck index
-		`location.assign('/presentations')`,       // Home control uses the authenticated index
+		`app+'/presentations'`,                    // Home control returns to the isolated authenticated catalog
+		`window.VSTDEventStream`,                  // authenticated fetch stream replaces cookie-only EventSource
 		`id="downloadbtn"`,                        // PDF/PPTX download menu
 		`id="sharebtn"`,                           // presenter-only deck sharing
 		`data-share="generate"`,                   // expiring share-link dialog
