@@ -277,6 +277,9 @@ func (w *agentWorker) nextAll() [][2]string {
 			continue
 		}
 		for _, id := range ids {
+			if w.s.St.IsLinkedSlide(d, id) {
+				continue
+			}
 			b, err := os.ReadFile(w.s.St.SlidePath(d, id, ".md"))
 			if err != nil {
 				continue
@@ -311,6 +314,9 @@ func (w *agentWorker) next() (string, string) {
 			continue
 		}
 		for _, id := range ids {
+			if w.s.St.IsLinkedSlide(d, id) {
+				continue
+			}
 			b, err := os.ReadFile(w.s.St.SlidePath(d, id, ".md"))
 			if err != nil {
 				continue
@@ -350,6 +356,10 @@ func (w *agentWorker) mark(deck, id, line string) {
 }
 
 func (w *agentWorker) runPass(deck, id string) {
+	if w.s.St.IsLinkedSlide(deck, id) {
+		log.Printf("agent: skipping linked read-only slide — %s/%s", deck, id)
+		return
+	}
 	log.Printf("agent: pass starting — %s/%s", deck, id)
 	preexisting := w.dirtyPaths() // human edits present before the pass — never revert these
 	w.mark(deck, id, "- (in progress — cloud agent — 40%)")

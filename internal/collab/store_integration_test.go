@@ -158,6 +158,58 @@ func TestCollaborationLifecyclePostgres(t *testing.T) {
 	}
 }
 
+func TestPersonalCatalogIsolationAndSharedDeckPlacementPostgres(t *testing.T) {
+	s := integrationStore(t)
+	ctx := context.Background()
+	owner, err := s.BootstrapGitHub(ctx, 111, "owner-login", map[string]string{"shared": "Shared"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, invite, err := s.CreateInvitation(ctx, owner.ID, "member-catalog@example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	member, err := s.AcceptInvitation(ctx, invite, "Member", "correct horse battery staple")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shared, err := s.DeckByStorage(ctx, "shared")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetVisibility(ctx, shared.ID, owner.ID, "team"); err != nil {
+		t.Fatal(err)
+	}
+	ownerFolder, err := s.CreateFolder(ctx, owner.ID, "Owner folder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	memberFolder, err := s.CreateFolder(ctx, member.ID, "Member folder")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MoveDecksToFolder(ctx, member.ID, []string{shared.ID}, memberFolder.ID); err != nil {
+		t.Fatalf("shared deck placement: %v", err)
+	}
+	ownerCatalog, _ := s.Catalog(ctx, owner.ID)
+	memberCatalog, _ := s.Catalog(ctx, member.ID)
+	if len(ownerCatalog.Folders) != 1 || ownerCatalog.Folders[0].ID != ownerFolder.ID {
+		t.Fatalf("owner folders leaked: %#v", ownerCatalog.Folders)
+	}
+	if len(memberCatalog.Folders) != 1 || memberCatalog.Folders[0].ID != memberFolder.ID || memberCatalog.Folders[0].Count != 1 {
+		t.Fatalf("member catalog wrong: %#v", memberCatalog)
+	}
+	if err := s.DeleteFolder(ctx, member.ID, memberFolder.ID); err != nil {
+		t.Fatal(err)
+	}
+	memberCatalog, _ = s.Catalog(ctx, member.ID)
+	for _, deck := range memberCatalog.Decks {
+		if deck.ID == shared.ID && deck.FolderID != "" {
+			t.Fatalf("deleted folder did not return shared deck to root: %#v", deck)
+		}
+	}
+}
+
 func TestPasswordResetRevokesAllSessionTypes(t *testing.T) {
 	s := integrationStore(t)
 	ctx := context.Background()

@@ -17,6 +17,15 @@ Each slide is TWO files with the same basename in `slides/`:
   `## Intent`, `## Key ideas`, `## Evidence & sources`, `## Talk track`,
   `## Visual direction`, `## Log`.
 
+Studio may also create an optional `NNNN-slug.link.yaml` provenance sidecar.
+This is a Vessica-managed logical link, never an OS symlink. The HTML/Markdown
+pair is the retained snapshot; the sidecar records the source deck/slide,
+content and attachment hashes, and last refresh time. A linked target slide is
+read-only: do not edit its fragment, companion, or attachments directly. Refresh
+it from the source or detach it into a normal pair first. Reordering is allowed,
+and copying a linked slide deliberately flattens its latest snapshot. Never
+create link-to-link chains by hand.
+
 Source artifacts used to create a slide live under `decks/<deck>/sources/` and
 are listed in that slide's companion frontmatter:
 

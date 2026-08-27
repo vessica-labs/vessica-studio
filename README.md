@@ -47,6 +47,9 @@ and deployable with Git—without locking the deck inside a proprietary editor.
   pass against the reference.
 - **Forkable decks.** Create audience- or client-specific variants while
   retaining upstream provenance and detecting later parent changes.
+- **Organized and reusable work.** Keep a personal one-level folder view of
+  owned and shared presentations, then send one or many slides to another deck
+  as editable copies or read-only linked snapshots.
 - **Presentation and audience modes.** Present locally, publish a read-only
   audience surface, mint expiring deck links, and optionally enable chat, voice,
   SMS, email, and live audience pulse.
@@ -269,9 +272,12 @@ my-studio/
         ├── deck.yaml              # title, theme, visibility, fork provenance
         ├── deck.css               # deck-specific style overrides
         ├── sources/               # original PDFs, PPTX files, images, and documents
+        ├── build/
+        │   └── assets/powerpoint/    # disposable per-slide PowerPoint cache
         └── slides/
             ├── 0010-cover.html    # one root <section class="slide">
-            └── 0010-cover.md      # companion evidence, intent, talk track, and log
+            ├── 0010-cover.md      # companion evidence, intent, talk track, and log
+            └── 0010-cover.link.yaml # optional Vessica-managed slide link provenance
 ```
 
 ### The slide pair
@@ -286,6 +292,15 @@ Each slide has two source files with the same basename:
 
 The companion is part of the content model, not optional documentation. It is
 the agent's context, evidence record, and presenter cue sheet.
+
+A linked slide still has the normal HTML/Markdown pair as a durable snapshot.
+Its optional `.link.yaml` sidecar points to the source deck and slide and records
+source hashes and the last refresh. Linked target slides are read-only until
+detached. When the target owner retains source access, Studio refreshes changed
+HTML, companion content, and source attachments. If the source disappears or
+access is revoked, the last snapshot continues to render and is marked stale to
+presenters; audience views and exports show only the slide. Copying a linked
+slide flattens its latest snapshot into an ordinary editable slide.
 
 Source files used to create a slide live in `decks/<deck>/sources/` and are
 declared in companion frontmatter:
@@ -396,13 +411,27 @@ local operator.
 
 #### PDF and PowerPoint export
 
-Start `vstd serve`, open a deck, and choose **Download → PDF** or **Download →
-PowerPoint (.pptx)** in the HUD. Export is presenter-only and requires Chrome or
-Chromium on the machine running `vstd`.
+Start `vstd serve`, open a deck, choose **Entire deck** or **Current slide** in
+the Download menu, and then choose PDF, visual-exact PowerPoint, or editable
+PowerPoint. Presenters receive all three formats; audience sessions receive PDF
+only. Browser-backed export requires Chrome or Chromium on the machine running
+`vstd`; visual-exact PowerPoint rasterization also requires Poppler.
 
-PDF is a fixed-layout document. PowerPoint export converts supported rendered
-elements into native PresentationML objects. Complex browser effects may not
-translate exactly, so review the downloaded deck before delivery.
+The HTTP routes accept an optional non-parked slide ID, for example
+`/api/deck/operating-model/export.pdf?slide=0030-economics` and
+`/api/deck/operating-model/export.pptx?mode=editable&slide=0030-economics`.
+Without `slide`, they preserve the existing whole-deck behavior.
+
+PDF is a fixed-layout document and is regenerated per request. PowerPoint
+stores disposable per-slide artifacts and a manifest under
+`decks/<deck>/build/assets/powerpoint/`. Repeating an export reuses unchanged
+slides; changing a fragment, referenced local asset, theme CSS, or deck CSS
+invalidates only the affected entries (theme/deck CSS naturally affect the
+whole deck). The cache is excluded from Git, content sync, file-watcher reloads,
+bundles, and source-asset manifests. Delete that directory at any time to force
+a clean rebuild. Editable PowerPoint converts supported rendered elements into
+native PresentationML objects; complex browser effects may not translate
+exactly, so review the downloaded deck before delivery.
 
 #### `vstd bundle <deck> [--root DIR]`
 
@@ -869,6 +898,23 @@ Present, export, and Fork access, but never Edit or sharing authority. Forks are
 private copies with upstream hashes and provenance. Removing a member revokes
 their sessions immediately and transfers their decks to the owner without
 changing visibility.
+
+The presentation directory adds one-level personal folders plus All, Mine,
+Shared, and Recent views. Folder placement belongs only to the signed-in user:
+moving a shared deck does not change its owner, visibility, team permissions, or
+any teammate's organization. Deleting a folder returns its presentations to the
+root. Local serving persists the same organization as an atomic mode-`0600` JSON
+file in the OS user-config directory, keyed by the canonical studio root, so it
+never enters deck content or Git.
+
+Slide transfer requires Fork access to the source and Edit access to an owned
+target. Copy creates a normal target-themed slide pair and content-deduplicated
+copies of companion attachments. Link creates a target-themed, read-only live
+snapshot; link-to-link chains are rejected. Player-grid selections cross to the
+app picker through a five-minute single-use intent bound to the authenticated
+user, carried only in the URL fragment. Retained linked snapshots intentionally
+remain in the target after source access is revoked; detach them if that
+continuity behavior is not appropriate for a particular deck.
 
 The account cookie is host-only on the app origin and is never player
 authorization. App launches exchange a 60-second, single-use handoff for a

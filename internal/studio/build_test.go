@@ -49,6 +49,13 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`if(window.__lastPresenterIdx!=null)show`, // late audience joins catch up immediately
 		`data-download="pptx"`,                    // visual-exact PowerPoint export
 		`data-download="pptx-editable"`,           // explicit best-effort editable fallback
+		`data-download-scope="deck"`,              // existing full-deck behavior remains the default
+		`data-download-scope="slide"`,             // current-slide downloads use the same menu
+		`params.set('slide',slide)`,               // selected slide reaches every export route
+		`/transfer-intent`,                        // player-grid selections cross via a short-lived handoff
+		`id="ovTransfer"`,                         // selected slides can be sent from the grid
+		`class="linkbar"`,                         // presenters can inspect linked snapshots
+		`data-link-action="detach"`,               // linked snapshots can be made editable
 		`document.querySelectorAll('#downloadMenu [data-download^="pptx"]')`, // audience never sees PowerPoint
 		`b.title='Download PDF'`,                                 // audience HUD exposes PDF directly
 		`data-presenter-control`,                                 // presenter controls fail closed before identity resolves

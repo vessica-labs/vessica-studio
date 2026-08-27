@@ -66,7 +66,7 @@ func TestPresenterIndexRequiresAuthenticationAndIsNotCached(t *testing.T) {
 
 	rr = httptest.NewRecorder()
 	h.ServeHTTP(rr, presenterRequest(s, http.MethodGet, "/presentations", ""))
-	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Demo") {
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "/api/app/catalog") || strings.Contains(rr.Body.String(), `<section class="slide">`) {
 		t.Fatalf("presenter status=%d body=%q", rr.Code, rr.Body.String())
 	}
 	if rr.Header().Get("Cache-Control") != "no-store" {

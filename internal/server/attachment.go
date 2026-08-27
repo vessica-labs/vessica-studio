@@ -25,6 +25,9 @@ var sourceExts = map[string]bool{
 }
 
 func (s *Server) handleSourceAttachmentUpload(w http.ResponseWriter, r *http.Request) {
+	if s.rejectLinkedContentWrite(w, r) {
+		return
+	}
 	deck, id := r.PathValue("deck"), r.PathValue("id")
 	filename := filepath.Base(strings.TrimSpace(r.URL.Query().Get("filename")))
 	ext := strings.ToLower(filepath.Ext(filename))

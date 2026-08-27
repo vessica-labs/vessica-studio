@@ -77,38 +77,68 @@ const printCSS = `
 // the result renders deterministically under a headless browser's
 // print-to-PDF. Returns the HTML and the page count.
 func (s *Studio) BuildPrintHTML(deck string) (string, int, error) {
+	html, ids, err := s.BuildPrintHTMLForSlides(deck, nil)
+	return html, len(ids), err
+}
+
+// BuildPrintHTMLForSlides builds the same deterministic print document for a
+// validated subset. A nil selection means every non-parked slide; a non-nil
+// selection is emitted in deck order rather than caller order.
+func (s *Studio) BuildPrintHTMLForSlides(deck string, selected []string) (string, []string, error) {
 	meta, err := s.LoadDeckMeta(deck)
 	if err != nil {
-		return "", 0, err
+		return "", nil, err
 	}
 	themeDir := s.ThemeDir(meta.Theme)
 	themeCSS, err := os.ReadFile(filepath.Join(themeDir, "theme.css"))
 	if err != nil {
-		return "", 0, fmt.Errorf("theme %q: %w", meta.Theme, err)
+		return "", nil, fmt.Errorf("theme %q: %w", meta.Theme, err)
 	}
 	deckCSS, _ := os.ReadFile(filepath.Join(s.DeckDir(deck), "deck.css"))
 
 	ids, err := s.SlideIDs(deck)
 	if err != nil {
-		return "", 0, err
+		return "", nil, err
+	}
+	wanted := map[string]bool{}
+	if selected != nil {
+		if len(selected) == 0 {
+			return "", nil, fmt.Errorf("select at least one slide")
+		}
+		for _, id := range selected {
+			if !ValidSlideID(id) || wanted[id] {
+				return "", nil, fmt.Errorf("invalid or duplicate slide %q", id)
+			}
+			wanted[id] = true
+		}
 	}
 	var pages strings.Builder
-	n := 0
+	var exported []string
 	for _, id := range ids {
-		frag, _, err := s.ReadSlide(deck, id)
-		if err != nil {
-			return "", 0, err
-		}
-		if SlideParked(frag) {
+		if selected != nil && !wanted[id] {
 			continue
 		}
-		n++
-		pages.WriteString(fmt.Sprintf(`<div class="vstd-page" id="vstd-page-%d">`, n))
+		frag, _, err := s.ReadSlide(deck, id)
+		if err != nil {
+			return "", nil, err
+		}
+		if SlideParked(frag) {
+			if selected != nil {
+				return "", nil, fmt.Errorf("slide %q is parked and cannot be exported", id)
+			}
+			continue
+		}
+		exported = append(exported, id)
+		delete(wanted, id)
+		pages.WriteString(fmt.Sprintf(`<div class="vstd-page" id="vstd-page-%d">`, len(exported)))
 		pages.WriteString(markActive(addPrintVideoPosters(stampFragment(frag, id))))
 		pages.WriteString("</div>\n")
 	}
-	if n == 0 {
-		return "", 0, fmt.Errorf("deck %q has no exportable slides", deck)
+	if len(wanted) != 0 {
+		return "", nil, fmt.Errorf("one or more selected slides do not exist")
+	}
+	if len(exported) == 0 {
+		return "", nil, fmt.Errorf("deck %q has no exportable slides", deck)
 	}
 
 	var b strings.Builder
@@ -124,5 +154,5 @@ func (s *Studio) BuildPrintHTML(deck string) (string, int, error) {
 	b.WriteString("</style>\n</head>\n<body>\n")
 	b.WriteString(pages.String())
 	b.WriteString("</body></html>\n")
-	return b.String(), n, nil
+	return b.String(), exported, nil
 }

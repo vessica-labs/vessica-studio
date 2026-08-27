@@ -373,9 +373,14 @@ func (s *Studio) renameSlide(deck, oldID, newID string) error {
 	if err := os.Rename(s.SlidePath(deck, oldID, ".html"), s.SlidePath(deck, newID, ".html")); err != nil {
 		return err
 	}
-	if _, err := os.Stat(s.SlidePath(deck, oldID, ".md")); err == nil {
-		os.Rename(s.SlidePath(deck, oldID, ".md"), s.SlidePath(deck, newID, ".md"))
+	for _, ext := range []string{".md", ".link.yaml"} {
+		if _, err := os.Stat(s.SlidePath(deck, oldID, ext)); err == nil {
+			if err := os.Rename(s.SlidePath(deck, oldID, ext), s.SlidePath(deck, newID, ext)); err != nil {
+				return err
+			}
+		}
 	}
+	s.rewriteSourceLinkRefs(deck, oldID, newID)
 	return nil
 }
 
@@ -385,7 +390,7 @@ func (s *Studio) renumber(deck string, order []string, moved string) (string, er
 	dir := filepath.Join(s.DeckDir(deck), "slides")
 	// phase 1: to temp names
 	for i, id := range order {
-		for _, ext := range []string{".html", ".md"} {
+		for _, ext := range []string{".html", ".md", ".link.yaml"} {
 			if _, err := os.Stat(s.SlidePath(deck, id, ext)); err == nil {
 				os.Rename(s.SlidePath(deck, id, ext), filepath.Join(dir, fmt.Sprintf("zztmp%04d%s", i, ext)))
 			}
@@ -396,7 +401,7 @@ func (s *Studio) renumber(deck string, order []string, moved string) (string, er
 	for i, id := range order {
 		slug := id[strings.Index(id, "-")+1:]
 		newID := fmt.Sprintf("%04d-%s", (i+1)*10, slug)
-		for _, ext := range []string{".html", ".md"} {
+		for _, ext := range []string{".html", ".md", ".link.yaml"} {
 			tmp := filepath.Join(dir, fmt.Sprintf("zztmp%04d%s", i, ext))
 			if _, err := os.Stat(tmp); err == nil {
 				os.Rename(tmp, s.SlidePath(deck, newID, ext))
@@ -405,6 +410,7 @@ func (s *Studio) renumber(deck string, order []string, moved string) (string, er
 		if id == moved {
 			movedNew = newID
 		}
+		s.rewriteSourceLinkRefs(deck, id, newID)
 	}
 	return movedNew, nil
 }

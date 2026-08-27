@@ -254,7 +254,7 @@ func TestPlayerCapabilitiesAndExternalShareFollowLaunchModePostgres(t *testing.T
 	if identity.Mode != "present" || identity.Editable || !identity.Deck.Owned {
 		t.Fatalf("present identity=%+v", identity)
 	}
-	if !identity.Capabilities["view"] || !identity.Capabilities["present"] || identity.Capabilities["edit"] || identity.Capabilities["fork"] || identity.Capabilities["external_share"] {
+	if !identity.Capabilities["view"] || !identity.Capabilities["present"] || identity.Capabilities["edit"] || !identity.Capabilities["fork"] || !identity.Capabilities["transfer_slides"] || identity.Capabilities["external_share"] {
 		t.Fatalf("present capabilities=%v", identity.Capabilities)
 	}
 
