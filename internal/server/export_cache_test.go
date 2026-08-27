@@ -142,3 +142,23 @@ func TestPowerPointCacheSerializesConcurrentCreation(t *testing.T) {
 		t.Fatalf("concurrent creation rendered %d times: %v", len(fake.visual), fake.visual)
 	}
 }
+
+func TestCatalogThumbnailGeneratesOnceThenUsesCache(t *testing.T) {
+	t.Setenv("VSTD_USER_CONFIG_DIR", t.TempDir())
+	st := testStudio(t)
+	fake := &recordingPowerPointRenderer{}
+	s := New(st, ModeStudio)
+	s.PowerPointRenderer = fake
+	h := s.Routes()
+
+	for i := range 2 {
+		rr := httptest.NewRecorder()
+		h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/app/decks/demo/thumbnail.png", nil))
+		if rr.Code != http.StatusOK || rr.Header().Get("Content-Type") != "image/png" {
+			t.Fatalf("request %d status=%d content-type=%q body=%q", i+1, rr.Code, rr.Header().Get("Content-Type"), rr.Body.String())
+		}
+	}
+	if !reflect.DeepEqual(fake.visual, [][]string{{"0010-a"}}) {
+		t.Fatalf("thumbnail renders = %v, want one first-slide render", fake.visual)
+	}
+}

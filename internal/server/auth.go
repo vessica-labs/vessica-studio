@@ -669,7 +669,8 @@ const collaborationLoginBody = `<section class="login-member">
 <progress id="githubProgress" max="100" value="100" aria-label="Time remaining for GitHub device code"></progress>
 </div>
 <p id="githubMessage" class="login-message" role="alert" aria-live="assertive"></p>
-</section>`
+</section>
+<dialog id="resetDialog"><h2>Create a new password</h2><p class="lede">Use at least 12 characters.</p><form id="resetForm" class="login-form"><label>New password<input id="resetPassword" type="password" autocomplete="new-password" minlength="12" required></label><button class="sign-in-button">Update password</button><button class="copy-code" type="button" id="cancelReset">Cancel</button></form><p id="resetMessage" class="login-message" role="alert"></p></dialog>`
 
 const collaborationLoginScript = `
 const flowStorageKey='vstd_github_device_flow';
@@ -748,7 +749,7 @@ loginForm.onsubmit=async event=>{event.preventDefault();setMessage(loginMessage,
 githubButton.onclick=()=>startGithubFlow(true);newGithubCode.onclick=()=>startGithubFlow(true);githubCode.onclick=copyDeviceCode;copyGithubCode.onclick=copyDeviceCode;
 forgotButton.onclick=async()=>{const email=loginForm.elements.email;if(!email.value){setMessage(loginMessage,'Enter your email address first, then choose “Forgot password?”.');email.focus();return;}await fetch('/api/auth/password/forgot',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:email.value})});setMessage(loginMessage,'If that account exists, a reset link is on its way.',true);};
 try{const saved=JSON.parse(sessionStorage.getItem(flowStorageKey)||'null');if(saved&&saved.id&&saved.user_code&&saved.verification_uri){showGithubFlow(saved);if(remainingSeconds()){const generation=++pollGeneration;scheduleGithubPoll(generation,1);}else expireGithubFlow();}}catch(_){clearSavedGithubFlow();}
-if(location.hash.startsWith('#reset=')){const token=location.hash.slice(7);history.replaceState(null,'','/auth/login');const password=prompt('Create a new password (12+ characters)');if(password)fetch('/api/auth/password/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password})}).then(async response=>{const result=await response.json();setMessage(loginMessage,response.ok?'Password reset. Sign in with your new password.':(result.error||'Reset failed'),response.ok);});}
+if(location.hash.startsWith('#reset=')){const token=location.hash.slice(7);history.replaceState(null,'','/auth/login');resetDialog.showModal();resetPassword.focus();cancelReset.onclick=()=>resetDialog.close();resetForm.onsubmit=async event=>{event.preventDefault();setMessage(resetMessage,'');const response=await fetch('/api/auth/password/reset',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({token,password:resetPassword.value})}),result=await response.json().catch(()=>({}));if(response.ok){resetDialog.close();setMessage(loginMessage,'Password reset. Sign in with your new password.',true);}else setMessage(resetMessage,result.error||'Reset failed');};}
 `
 
 func collaborationLoginPage() string {

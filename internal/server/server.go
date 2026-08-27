@@ -60,6 +60,7 @@ type Server struct {
 	printJobs          map[string]printJob    // one-time keys for in-flight PDF exports (export.go)
 	transferIntents    map[string]slideTransferIntent
 	exportLocks        sync.Map // deck key -> *sync.Mutex for PowerPoint cache assembly
+	thumbnailRenders   chan struct{}
 	Agent              *agentWorker
 	ContentSync        *ContentSync
 	Collab             *collab.Store
@@ -71,7 +72,7 @@ type Server struct {
 
 func New(st *studio.Studio, mode Mode) *Server {
 	c := oai.New(st.Config.OpenAI.BaseURL, st.Config.OpenAI.APIKeyCmd)
-	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}, presenting: map[string]presentingState{}, transferIntents: map[string]slideTransferIntent{}}
+	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}, presenting: map[string]presentingState{}, transferIntents: map[string]slideTransferIntent{}, thumbnailRenders: make(chan struct{}, 2)}
 	s.initAuth()
 	return s
 }

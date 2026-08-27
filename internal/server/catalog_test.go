@@ -35,6 +35,45 @@ func TestDocumentationURLDefaultsToPublicDocs(t *testing.T) {
 	}
 }
 
+func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	(&Server{}).renderCatalogPage(recorder, "presenter", "owner", "csrf", true)
+	body := recorder.Body.String()
+	for _, want := range []string{
+		"Fraunces",
+		"bootstrap-icons@1.11.3",
+		"bi-pencil-square",
+		"bi-play-fill",
+		"bi-files",
+		`class="nav-action" href="/team"`,
+		`id="actionDialog"`,
+		`id="folderDialog"`,
+		`id="confirmDialog"`,
+		"folderMenu(b.dataset.folderMenu)",
+		"el.ondblclick",
+		"d.owned?'edit':'view'",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("catalog page missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{"prompt(", "confirm(", "alert("} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("catalog page still uses native dialog %q", unwanted)
+		}
+	}
+}
+
+func TestCollaborationPasswordResetUsesStyledDialog(t *testing.T) {
+	body := collaborationLoginPage()
+	if !strings.Contains(body, `id="resetDialog"`) || !strings.Contains(body, "resetDialog.showModal()") {
+		t.Fatal("collaboration login is missing the styled password reset dialog")
+	}
+	if strings.Contains(body, "prompt(") {
+		t.Fatal("collaboration login still uses a native password reset prompt")
+	}
+}
+
 func TestLocalSlideTransferIntentIsBoundSingleUseAndOrdered(t *testing.T) {
 	t.Setenv("VSTD_USER_CONFIG_DIR", t.TempDir())
 	st := testStudio(t)
