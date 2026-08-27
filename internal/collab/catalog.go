@@ -17,12 +17,28 @@ func cleanFolderName(name string) (string, error) {
 	return name, nil
 }
 
+func (s *Store) ensureTrashFolder(ctx context.Context, userID string) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO vstd_folders(id,team_id,owner_user_id,name,position)
+SELECT $1,$2,$3,$4,COALESCE((SELECT max(position)+1 FROM vstd_folders WHERE team_id=$2 AND owner_user_id=$3),0)
+WHERE NOT EXISTS (SELECT 1 FROM vstd_folders WHERE team_id=$2 AND owner_user_id=$3 AND lower(name)=lower($4))
+ON CONFLICT DO NOTHING`, catalog.TrashFolderID(userID), DefaultTeamID, userID, catalog.TrashFolderName)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, `UPDATE vstd_folders SET name=$1,updated_at=now()
+WHERE team_id=$2 AND owner_user_id=$3 AND lower(name)=lower($1) AND name<>$1`, catalog.TrashFolderName, DefaultTeamID, userID)
+	return err
+}
+
 func (s *Store) Catalog(ctx context.Context, userID string) (catalog.Catalog, error) {
 	decks, err := s.ListDecks(ctx, userID)
 	if err != nil {
 		return catalog.Catalog{}, err
 	}
-	rows, err := s.db.QueryContext(ctx, `SELECT id,name,position FROM vstd_folders WHERE team_id=$1 AND owner_user_id=$2 ORDER BY position,lower(name)`, DefaultTeamID, userID)
+	if err := s.ensureTrashFolder(ctx, userID); err != nil {
+		return catalog.Catalog{}, err
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT id,name,position FROM vstd_folders WHERE team_id=$1 AND owner_user_id=$2 ORDER BY CASE WHEN lower(name)=lower($3) THEN 1 ELSE 0 END,position,lower(name)`, DefaultTeamID, userID, catalog.TrashFolderName)
 	if err != nil {
 		return catalog.Catalog{}, err
 	}
@@ -33,6 +49,7 @@ func (s *Store) Catalog(ctx context.Context, userID string) (catalog.Catalog, er
 		if err := rows.Scan(&f.ID, &f.Name, &f.Position); err != nil {
 			return catalog.Catalog{}, err
 		}
+		f.System = catalog.IsTrashFolderName(f.Name)
 		out.Folders = append(out.Folders, f)
 	}
 	if err := rows.Err(); err != nil {
@@ -82,6 +99,9 @@ func (s *Store) CreateFolder(ctx context.Context, userID, name string) (catalog.
 	if err != nil {
 		return catalog.Folder{}, err
 	}
+	if catalog.IsTrashFolderName(name) {
+		return catalog.Folder{}, fmt.Errorf("Trash is a permanent system folder")
+	}
 	f := catalog.Folder{ID: randomID("folder"), Name: name}
 	err = s.db.QueryRowContext(ctx, `INSERT INTO vstd_folders(id,team_id,owner_user_id,name,position)
 VALUES($1,$2,$3,$4,COALESCE((SELECT max(position)+1 FROM vstd_folders WHERE team_id=$2 AND owner_user_id=$3),0)) RETURNING position`, f.ID, DefaultTeamID, userID, name).Scan(&f.Position)
@@ -96,6 +116,13 @@ VALUES($1,$2,$3,$4,COALESCE((SELECT max(position)+1 FROM vstd_folders WHERE team
 }
 
 func (s *Store) RenameFolder(ctx context.Context, userID, id, name string) (catalog.Folder, error) {
+	var currentName string
+	if err := s.db.QueryRowContext(ctx, `SELECT name FROM vstd_folders WHERE id=$1 AND owner_user_id=$2`, id, userID).Scan(&currentName); err != nil {
+		return catalog.Folder{}, err
+	}
+	if catalog.IsTrashFolderName(currentName) {
+		return catalog.Folder{}, fmt.Errorf("Trash is a permanent system folder")
+	}
 	name, err := cleanFolderName(name)
 	if err != nil {
 		return catalog.Folder{}, err
@@ -110,6 +137,13 @@ func (s *Store) RenameFolder(ctx context.Context, userID, id, name string) (cata
 }
 
 func (s *Store) DeleteFolder(ctx context.Context, userID, id string) error {
+	var name string
+	if err := s.db.QueryRowContext(ctx, `SELECT name FROM vstd_folders WHERE id=$1 AND owner_user_id=$2`, id, userID).Scan(&name); err != nil {
+		return err
+	}
+	if catalog.IsTrashFolderName(name) {
+		return fmt.Errorf("Trash is a permanent system folder")
+	}
 	res, err := s.db.ExecContext(ctx, `DELETE FROM vstd_folders WHERE id=$1 AND owner_user_id=$2`, id, userID)
 	if err != nil {
 		return err

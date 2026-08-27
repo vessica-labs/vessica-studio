@@ -239,11 +239,30 @@ func TestPersonalCatalogIsolationAndSharedDeckPlacementPostgres(t *testing.T) {
 	}
 	ownerCatalog, _ := s.Catalog(ctx, owner.ID)
 	memberCatalog, _ := s.Catalog(ctx, member.ID)
-	if len(ownerCatalog.Folders) != 1 || ownerCatalog.Folders[0].ID != ownerFolder.ID {
+	if len(ownerCatalog.Folders) != 2 || ownerCatalog.Folders[0].ID != ownerFolder.ID || !ownerCatalog.Folders[1].System {
 		t.Fatalf("owner folders leaked: %#v", ownerCatalog.Folders)
 	}
-	if len(memberCatalog.Folders) != 1 || memberCatalog.Folders[0].ID != memberFolder.ID || memberCatalog.Folders[0].Count != 1 {
+	if len(memberCatalog.Folders) != 2 || memberCatalog.Folders[0].ID != memberFolder.ID || memberCatalog.Folders[0].Count != 1 || !memberCatalog.Folders[1].System {
 		t.Fatalf("member catalog wrong: %#v", memberCatalog)
+	}
+	trash := memberCatalog.Folders[1]
+	if _, err := s.RenameFolder(ctx, member.ID, trash.ID, "Archive"); err == nil {
+		t.Fatal("expected permanent Trash rename rejection")
+	}
+	if err := s.DeleteFolder(ctx, member.ID, trash.ID); err == nil {
+		t.Fatal("expected permanent Trash delete rejection")
+	}
+	if err := s.MoveDecksToFolder(ctx, member.ID, []string{shared.ID}, trash.ID); err != nil {
+		t.Fatalf("move shared deck to Trash: %v", err)
+	}
+	memberCatalog, _ = s.Catalog(ctx, member.ID)
+	for _, deck := range memberCatalog.Decks {
+		if deck.ID == shared.ID && deck.FolderID != trash.ID {
+			t.Fatalf("shared deck was not moved to Trash: %#v", deck)
+		}
+	}
+	if err := s.MoveDecksToFolder(ctx, member.ID, []string{shared.ID}, memberFolder.ID); err != nil {
+		t.Fatalf("restore shared deck to member folder: %v", err)
 	}
 	if err := s.DeleteFolder(ctx, member.ID, memberFolder.ID); err != nil {
 		t.Fatal(err)

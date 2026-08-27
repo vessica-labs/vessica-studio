@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/vessica-labs/vessica-studio/internal/catalog"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
@@ -46,6 +47,7 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 		"bi-play-fill",
 		"bi-files",
 		"bi-folder2",
+		"bi-trash3",
 		"bi-three-dots",
 		"bi-chevron-down",
 		`aria-haspopup="listbox"`,
@@ -63,12 +65,16 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 		"folderMenu(b.dataset.folderMenu)",
 		"el.ondblclick",
 		"d.owned?'edit':'view'",
+		`class="secondary" data-launch="'+openMode+'"`,
+		`class="secondary icon-action" data-trash`,
+		"f.system?'bi-trash3':'bi-folder2'",
+		"data.decks.filter(d=>d.folder_id!==trashID)",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("catalog page missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{"prompt(", "confirm(", "alert(", ">Manage</button>", "img.loading='lazy'", "new Image()", `<select id="sort"`} {
+	for _, unwanted := range []string{"prompt(", "confirm(", "alert(", ">Manage</button>", "img.loading='lazy'", "new Image()", `<select id="sort"`, `class="primary" data-launch="'+openMode+'"`} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("catalog page still uses native dialog %q", unwanted)
 		}
@@ -113,6 +119,42 @@ func TestCollaborationPasswordResetUsesStyledDialog(t *testing.T) {
 	}
 	if strings.Contains(body, "prompt(") {
 		t.Fatal("collaboration login still uses a native password reset prompt")
+	}
+}
+
+func TestLocalCatalogExposesPermanentTrashAndMovesPresentation(t *testing.T) {
+	t.Setenv("VSTD_USER_CONFIG_DIR", t.TempDir())
+	s := New(testStudio(t), ModeStudio)
+	h := s.Routes()
+
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/app/catalog", nil))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("catalog status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	var before catalog.Catalog
+	if err := json.Unmarshal(rr.Body.Bytes(), &before); err != nil {
+		t.Fatal(err)
+	}
+	if len(before.Folders) != 1 || !before.Folders[0].System || before.Folders[0].Name != catalog.TrashFolderName {
+		t.Fatalf("catalog folders = %#v", before.Folders)
+	}
+	trash := before.Folders[0]
+
+	rr = httptest.NewRecorder()
+	move := `{"deck_ids":["demo"],"folder_id":"` + trash.ID + `"}`
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodPut, "/api/app/decks/demo/folder", strings.NewReader(move)))
+	if rr.Code != http.StatusOK {
+		t.Fatalf("move status=%d body=%s", rr.Code, rr.Body.String())
+	}
+	rr = httptest.NewRecorder()
+	h.ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/app/catalog", nil))
+	var after catalog.Catalog
+	if err := json.Unmarshal(rr.Body.Bytes(), &after); err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Decks) != 1 || after.Decks[0].FolderID != trash.ID || after.Folders[0].Count != 1 {
+		t.Fatalf("trash move was not reflected: %#v", after)
 	}
 }
 
