@@ -264,9 +264,24 @@ func TestPlayerCapabilitiesAndExternalShareFollowLaunchModePostgres(t *testing.T
 		t.Fatalf("present external share status=%d, want 403; body=%s", rr.Code, rr.Body.String())
 	}
 	rr = httptest.NewRecorder()
-	f.handler.ServeHTTP(rr, playerBearer(http.MethodGet, "/api/deck/demo/share-qr.png", "", present))
+	qrReq := httptest.NewRequest(http.MethodGet, "/api/deck/demo/share-qr.png", nil)
+	qrReq.Host = "present.example.test"
+	qrReq.AddCookie(&http.Cookie{Name: playerMediaCookie, Value: present})
+	f.handler.ServeHTTP(rr, qrReq)
+	if rr.Code != http.StatusOK || rr.Header().Get("Content-Type") != "image/png" || !strings.HasPrefix(rr.Body.String(), "\x89PNG") {
+		t.Fatalf("present share QR status=%d type=%q body=%q", rr.Code, rr.Header().Get("Content-Type"), rr.Body.String())
+	}
+	if err := f.store.SetVisibility(context.Background(), f.ownerDeck.ID, f.owner.ID, "team"); err != nil {
+		t.Fatal(err)
+	}
+	memberPresent := exchangeMode(t, f, f.member.ID, f.ownerDeck.ID, "present")
+	rr = httptest.NewRecorder()
+	nonOwnerQR := httptest.NewRequest(http.MethodGet, "/api/deck/demo/share-qr.png", nil)
+	nonOwnerQR.Host = "present.example.test"
+	nonOwnerQR.AddCookie(&http.Cookie{Name: playerMediaCookie, Value: memberPresent})
+	f.handler.ServeHTTP(rr, nonOwnerQR)
 	if rr.Code != http.StatusForbidden {
-		t.Fatalf("present share QR status=%d, want 403", rr.Code)
+		t.Fatalf("non-owner present share QR status=%d, want 403", rr.Code)
 	}
 
 	edit := exchangeMode(t, f, f.owner.ID, f.ownerDeck.ID, "edit")
