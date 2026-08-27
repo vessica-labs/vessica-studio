@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -308,9 +307,9 @@ func (s *Server) handleAppDeckSlides(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]any{"deck": deck, "slides": out})
 }
 
-// handleAppDeckThumbnail serves only an already-generated first-slide cache
-// artifact. Directory browsing must never start Chromium or expose slide HTML
-// on the account/app origin.
+// handleAppDeckThumbnail serves a cached first-slide artifact, generating the
+// artifact on demand when it is missing. Rendering is bounded across decks and
+// slide HTML never crosses onto the account/app origin.
 func (s *Server) handleAppDeckThumbnail(w http.ResponseWriter, r *http.Request) {
 	userID, ok := s.requireCatalog(w, r, false)
 	if !ok {
@@ -338,23 +337,31 @@ func (s *Server) handleAppDeckThumbnail(w http.ResponseWriter, r *http.Request) 
 		http.NotFound(w, r)
 		return
 	}
-	base := s.powerpointCacheDir(deck.StorageKey)
-	manifest := readPowerPointManifest(base)
-	entry, exists := manifest.Entries[cacheKey("visual", first)]
-	fingerprint, fpErr := s.slidePowerPointFingerprint(deck.StorageKey, first, "visual")
-	if !exists || fpErr != nil || entry.Fingerprint != fingerprint {
+	select {
+	case s.thumbnailRenders <- struct{}{}:
+		defer func() { <-s.thumbnailRenders }()
+	case <-r.Context().Done():
+		return
+	}
+	images, _, err := s.cachedVisualPowerPointSlides(r.Context(), r, deck.StorageKey, []string{first})
+	if err != nil || len(images) != 1 {
 		http.NotFound(w, r)
 		return
 	}
-	body, err := os.ReadFile(filepath.Join(base, filepath.FromSlash(entry.File)))
+	fingerprint, err := s.slidePowerPointFingerprint(deck.StorageKey, first, "visual")
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
+	etag := `"` + fingerprint + `"`
+	if r.Header.Get("If-None-Match") == etag {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
 	w.Header().Set("Content-Type", "image/png")
 	w.Header().Set("Cache-Control", "private, max-age=300")
-	w.Header().Set("ETag", `"`+fingerprint+`"`)
-	_, _ = w.Write(body)
+	w.Header().Set("ETag", etag)
+	_, _ = w.Write(images[0])
 }
 
 func (s *Server) canMutateLocalCatalogContent(r *http.Request) bool {
