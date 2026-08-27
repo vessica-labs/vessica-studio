@@ -303,7 +303,11 @@ func (s *Server) handleShareQR(w http.ResponseWriter, r *http.Request) {
 	deck := r.PathValue("deck")
 	if s.Collab != nil {
 		ps, ok := s.nativePlayerSessionForDeck(r, deck)
-		if !ok || ps.Mode != "edit" || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") {
+		// Presentation pages embed this endpoint directly in <img> elements, so
+		// owner presentation sessions must be able to render the QR even though
+		// the general link-minting API remains edit-only. Can(external_share)
+		// keeps shared/non-owner presentation sessions out of this path.
+		if !ok || (ps.Mode != "edit" && ps.Mode != "present") || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "external_share") {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
