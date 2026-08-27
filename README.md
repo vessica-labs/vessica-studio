@@ -919,10 +919,13 @@ changing visibility.
 The presentation directory adds one-level personal folders plus All, Mine,
 Shared, and Recent views. Folder placement belongs only to the signed-in user:
 moving a shared deck does not change its owner, visibility, team permissions, or
-any teammate's organization. Deleting a folder returns its presentations to the
-root. Local serving persists the same organization as an atomic mode-`0600` JSON
-file in the OS user-config directory, keyed by the canonical studio root, so it
-never enters deck content or Git.
+any teammate's organization. A permanent personal Trash folder keeps removed
+presentations intact and out of the normal catalog views; moving them to another
+folder restores them. Trash cannot be renamed, deleted, or emptied. Deleting a
+regular folder returns its presentations to the root. Local serving persists the
+same organization as an atomic mode-`0600` JSON file in the OS user-config
+directory, keyed by the canonical studio root, so it never enters deck content
+or Git.
 
 Slide transfer requires Fork access to the source and Edit access to an owned
 target. Copy creates a normal target-themed slide pair and content-deduplicated

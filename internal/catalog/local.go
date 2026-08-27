@@ -57,7 +57,38 @@ func OpenLocal(studioRoot string) (*LocalStore, error) {
 	if s.state.Placements == nil {
 		s.state.Placements = map[string]localPlacement{}
 	}
+	if s.ensureTrashLocked() {
+		if err := s.saveLocked(); err != nil {
+			return nil, err
+		}
+	}
 	return s, nil
+}
+
+func (s *LocalStore) ensureTrashLocked() bool {
+	trashIndex := -1
+	maxPosition := -1
+	for i := range s.state.Folders {
+		if IsTrashFolderName(s.state.Folders[i].Name) {
+			if trashIndex == -1 {
+				trashIndex = i
+			}
+			continue
+		}
+		if s.state.Folders[i].Position > maxPosition {
+			maxPosition = s.state.Folders[i].Position
+		}
+	}
+	if trashIndex == -1 {
+		s.state.Folders = append(s.state.Folders, Folder{ID: TrashFolderID(""), Name: TrashFolderName, Position: maxPosition + 1, System: true})
+		return true
+	}
+	f := &s.state.Folders[trashIndex]
+	changed := f.Name != TrashFolderName || f.Position != maxPosition+1 || !f.System
+	f.Name = TrashFolderName
+	f.Position = maxPosition + 1
+	f.System = true
+	return changed
 }
 
 func randomFolderID() string {
@@ -95,6 +126,7 @@ func validateFolderName(name string) (string, error) {
 func (s *LocalStore) Snapshot(decks []Deck) Catalog {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	s.ensureTrashLocked()
 	out := Catalog{Folders: append([]Folder{}, s.state.Folders...), Decks: append([]Deck{}, decks...)}
 	counts := map[string]int{}
 	for i := range out.Decks {
@@ -126,6 +158,9 @@ func (s *LocalStore) CreateFolder(name string) (Folder, error) {
 	if err != nil {
 		return Folder{}, err
 	}
+	if IsTrashFolderName(name) {
+		return Folder{}, fmt.Errorf("Trash is a permanent system folder")
+	}
 	for _, f := range s.state.Folders {
 		if strings.EqualFold(f.Name, name) {
 			return Folder{}, fmt.Errorf("a folder with that name already exists")
@@ -139,6 +174,11 @@ func (s *LocalStore) CreateFolder(name string) (Folder, error) {
 func (s *LocalStore) RenameFolder(id, name string) (Folder, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	for _, f := range s.state.Folders {
+		if f.ID == id && (f.System || IsTrashFolderName(f.Name)) {
+			return Folder{}, fmt.Errorf("Trash is a permanent system folder")
+		}
+	}
 	name, err := validateFolderName(name)
 	if err != nil {
 		return Folder{}, err
@@ -164,6 +204,9 @@ func (s *LocalStore) DeleteFolder(id string) error {
 	keep := s.state.Folders[:0]
 	for _, f := range s.state.Folders {
 		if f.ID == id {
+			if f.System || IsTrashFolderName(f.Name) {
+				return fmt.Errorf("Trash is a permanent system folder")
+			}
 			found = true
 			continue
 		}
