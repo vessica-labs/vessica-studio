@@ -1,177 +1,294 @@
 # Vessica Studio Threat Model
 
-Status: review of the repository as of 2026-08-11. This document describes the
-current implementation and recommends future work. It does not claim that the
-recommended controls have been implemented.
+Status: updated 2026-08-26 following a source review of `vessica-studio`, a
+review of the `vessica-studio-mattkropp` implementation, and non-destructive
+inspection of the associated Railway deployment. This document records the
+intended architecture, current controls, residual risks, and remediation work.
+It is not a substitute for an authorized external penetration test.
 
-## Scope and assumptions
+## Scope and product assumptions
 
-This review covers the `vstd` process, studio content repositories, the browser
-player, public hosting, the optional Claude worker, OpenAI APIs, GitHub Device
-Flow, Telnyx, Resend, S3-compatible storage, headless Chrome, FFmpeg, and Git.
+This review covers the `vstd` engine, studio content repositories, the browser
+player, collaboration and public hosting, the Codex redesign worker, Railway
+Sandbox execution, OpenAI APIs, GitHub authentication and content sync,
+Telnyx, Resend, S3-compatible storage, PostgreSQL, headless Chrome,
+LibreOffice, FFmpeg, and Git.
 
-The default intended deployment is a trusted operator authoring locally.
-`public` mode adds untrusted audience traffic and presenter authentication.
+Vessica Studio is intentionally a presentation publishing platform. Decks may
+be publicly shareable, public links may be forwarded, and public audience
+members are expected to load presentation HTML and referenced media. Public
+availability of a deck explicitly classified and published as public is not a
+confidentiality failure.
+
+That product choice does not make every resource public. The security boundary
+must continue to prevent a public deck or share link from granting access to:
+
+- private or unlisted decks;
+- media and source attachments belonging only to another deck;
+- account, team, editing, presenter, or provider-action authority;
+- audience personal data, call/SMS records, agent inputs, or credentials; and
+- repository, database, object-storage, or deployment administration.
+
+Public links should therefore be treated as bearer capabilities that can be
+forwarded. They provide convenient distribution, not strong recipient identity.
+Confidential presentations require an authenticated or explicitly restricted
+sharing mode.
+
+The default local deployment remains a trusted operator authoring locally.
 `studio` and `present` modes treat the machine owner as the presenter. A studio
 repository, its slides, companions, themes, configuration, and queued requests
-must therefore be treated as executable or semi-executable input—not as passive
+must be treated as executable or semi-executable input rather than passive
 documents.
 
-This is a code review and architecture threat model, not a live penetration test
-or audit of a particular Railway deployment, OAuth application, bucket policy,
-or provider account.
+## Hosted execution architecture
+
+The required hosted architecture separates the public API service from Codex
+execution:
+
+1. The main Railway API service authenticates users, serves the catalog and
+   player, accepts bounded redesign requests, and records job state.
+2. Each hosted Codex job executes in a disposable Railway Sandbox, not inside
+   the main API service.
+3. The sandbox receives only the job's scoped content, minimal short-lived
+   credentials, explicit network policy, and a bounded execution lifetime.
+4. The sandbox returns a reviewable result or proposed content change. It does
+   not receive the API service's database, Telnyx, Resend, S3, session-signing,
+   or unrelated repository credentials.
+5. Publication remains a separate, attributable action with branch and content
+   scope enforcement.
+
+The engine still contains an in-process `VSTD_AGENT` runner for local or legacy
+operation. That path is not an acceptable isolation boundary for a hosted
+deployment. Production conformance requires evidence that the API service does
+not enable the in-process runner, does not contain a usable Codex execution
+credential, and dispatches jobs only to Railway Sandbox. This is tracked as
+TM-001 until verified by an automated deployment test and live configuration
+evidence.
 
 ## Security objectives
 
-- Prevent unauthorized reading or mutation of private decks and presenter data.
-- Keep OpenAI, Telnyx, Resend, S3, Git, and session credentials confidential.
-- Prevent untrusted content or audience input from gaining presenter authority.
-- Preserve deck, library, audience, and Git integrity.
-- Limit external actions, compute spend, uploads, and agent runs to authorized
-  users and expected volumes.
+- Prevent unauthorized reading or mutation of content not intentionally
+  published as public.
+- Preserve the intended visibility classification of every deck and asset.
+- Keep OpenAI, Telnyx, Resend, S3, Git, database, and session credentials
+  confidential and out of public-facing execution contexts.
+- Prevent public or executable deck content from gaining account, presenter,
+  editing, provider-action, or cross-deck authority.
+- Contain prompt injection and untrusted repository content inside a disposable
+  Railway Sandbox with minimal authority.
+- Preserve deck, library, audience, database, and Git integrity.
+- Limit external actions, compute spend, uploads, connections, and agent runs
+  to authorized users and expected volumes.
 - Keep presenter and audience experiences available during a live event.
 - Maintain an attributable record of sensitive actions without logging secrets
   or unnecessary personal data.
+- Produce sufficient security, recovery, and provenance evidence for an IT
+  review and authorized penetration test.
 
 ## Assets
 
 | Asset | Sensitivity | Where it exists |
 |---|---|---|
-| Decks, companions, themes, evidence | Private to public | Content repository and built HTML |
-| Audience names, messages, phone numbers, call transcripts | Personal/confidential | `_vessica/<deck>` and process memory |
-| Provider credentials | Secret | Environment, configured credential commands, process memory |
-| Presenter and share sessions | Authentication material | HMAC-signed cookies and URLs |
-| Git remote credentials and repository state | Secret/integrity-critical | Environment, command arguments, `.git`, remote |
-| Generated assets and artifacts | Private to public | `library`, `_vessica`, S3-compatible storage |
+| Public decks and referenced presentation media | Intentionally public after publication | Content repository, built HTML, player, object storage |
+| Private/unlisted decks, companions, themes, sources, and evidence | Confidential | Content repository, sandbox job inputs, storage |
+| Audience names, messages, phone numbers, and call transcripts | Personal/confidential | PostgreSQL, runtime state, provider systems |
+| Provider and deployment credentials | Secret | Railway variables, credential broker, short-lived sandbox injection |
+| Account, player, presenter, share, and handoff sessions | Authentication material | Hashed database records, signed tokens, cookies, tab session storage |
+| Git remote credentials and repository state | Secret/integrity-critical | Credential broker, GitHub, sandbox or sync worker |
+| Generated assets and artifacts | Public or private according to owning deck | Library, sandbox outputs, S3-compatible storage |
 | OpenAI usage and external actions | Financial/reputational | Provider accounts and API calls |
+| Audit and deployment evidence | Security-sensitive | PostgreSQL, logs, CI, Railway, GitHub |
 
 ## Actors
 
 - Trusted local author or presenter.
-- Allowlisted hosted presenter.
-- Audience member holding a valid share link.
-- Anonymous internet user without a share link.
-- Contributor or supplier of a studio repository, deck, theme, or agent prompt.
+- Hosted account owner, administrator, editor, or presenter.
+- Audience member holding a public or restricted share link.
+- Anonymous internet user without a valid deck capability.
+- Contributor or supplier of a studio repository, deck, theme, attachment, or
+  agent prompt.
 - Malicious webhook or WebSocket caller impersonating Telnyx.
-- Compromised third-party provider, dependency, CLI, browser, or media tool.
-- Compromised or prompt-injected headless agent.
+- Compromised third-party provider, dependency, CLI, browser, media tool, or
+  build source.
+- Compromised or prompt-injected Codex process inside a Railway Sandbox.
+- Attacker with a stolen password, browser session, player bearer, Git token,
+  or provider credential.
 
 ## Trust boundaries and data flow
 
-1. **Browser to `vstd`:** deck HTML and JavaScript share an origin with edit,
-   presenter, audience, export, and external-action endpoints.
-2. **Local versus public mode:** local modes implicitly trust the caller;
-   public mode uses GitHub allowlisting and HMAC-signed sessions/share links.
-3. **Studio repository to host process:** YAML configuration can select service
-   endpoints and shell commands; slide HTML runs in the browser; queued work can
-   trigger image/video processing or an agent.
-4. **`vstd` to providers:** bearer keys and personal data cross into OpenAI,
-   Telnyx, Resend, GitHub, and S3-compatible services.
-5. **`vstd` to subprocesses:** shell, Claude CLI, Git, Chrome, FFmpeg, and
-   FFprobe inherit host capabilities and often the process environment.
-6. **Audience to presenter:** names, chat, SMS, and call events are persisted and
-   broadcast into a live presentation context.
-7. **Local disk to hosted object storage:** video bytes are uploaded under
-   content-derived keys and later served locally or through presigned URLs.
+1. **Browser to app origin:** account/catalog cookies, team state, deck
+   metadata, and editing actions cross this boundary.
+2. **Browser to player origin:** executable deck HTML receives only a
+   deck-and-mode capability; app cookies must remain unavailable.
+3. **Public deck to private estate:** intentionally public content must not
+   authorize other decks, private library media, sources, or account actions.
+4. **API service to Railway Sandbox:** an untrusted redesign request becomes a
+   bounded job with scoped files, minimal credentials, controlled egress, and
+   a terminal lifetime.
+5. **Studio repository to local process:** YAML can select endpoints and local
+   credential commands; slide HTML runs in a browser; media invokes native
+   tools. An untrusted repository requires explicit trust.
+6. **Services to providers:** bearer keys and personal data cross into OpenAI,
+   Telnyx, Resend, GitHub, Railway, PostgreSQL, and S3-compatible services.
+7. **Provider to callback endpoints:** Telnyx HTTP and media events arrive from
+   the public internet and require independent provider authentication and
+   replay protection.
+8. **Audience to presenter:** names, chat, SMS, and call events are persisted
+   and broadcast into a live presentation context.
+9. **Source to production:** GitHub revisions, container images, Railway
+   configuration, and content synchronization determine the running artifact.
 
 ## Existing controls
 
+- Collaboration mode separates the account/catalog origin from executable deck
+  content and rejects an invalid same-origin configuration.
+- Account cookies are host-only. Player launches use short-lived, single-use
+  handoffs and deck/mode-scoped sessions.
+- Collaboration account mutations require both an exact app Origin and a
+  per-session CSRF token. Player mutations require an Authorization bearer.
+- Passwords use Argon2id. Account and player session tokens are stored as
+  hashes, are revocable, and use bounded lifetimes.
 - Deck and slide identifiers use restrictive validation before filesystem
   access in `internal/studio` and most server handlers.
-- Public deck access uses deck-scoped, expiring HMAC tokens; cookies are
-  `HttpOnly`, `SameSite=Lax`, and secure in public mode.
-- Legacy presenter sessions are HMAC-signed, expire after 12 hours, and are
-  accepted only for GitHub logins in `VSTD_ALLOWED_GITHUB`. Optional
-  collaboration mode instead stores hashed, revocable account and deck-scoped
-  player sessions in PostgreSQL.
-- Collaboration mode separates the account/catalog origin from executable deck
-  content. Player launches use short-lived single-use handoffs, keep the
-  deck/mode bearer in tab session storage, and revalidate membership, ownership,
-  visibility, and mode on every request.
-- Collaboration account mutations require both an exact app Origin and a
-  per-session CSRF token. The app cookie is host-only and is never accepted by
-  player APIs.
+- Public deck access uses deck-scoped, expiring capabilities. Public sharing is
+  an intentional product feature, not an assumption that all studio content is
+  public.
 - Collaboration events record authentication, invitation, password reset,
   membership, visibility, external-share, and fork actions without secrets.
-- Public content mutation routes are blocked by the serving mode, while Vessica
-  action routes use a presenter gate.
+- Content mutation routes are constrained by serving mode, while Vessica action
+  routes use a presenter gate.
 - Request bodies, uploads, API responses, calls, chat turns, chat sessions,
   realtime token mints, agent runs, and PDF rendering have several explicit
   size, count, rate, or time limits.
-- Private library assets require some valid access in public mode.
 - The PDF print route uses a random one-time job key and loopback access.
-- Provider secrets stay server-side in the intended flow, and `vstd key check`
-  does not print the resolved OpenAI key.
-- Video object keys are content-addressed; S3 downloads use short-lived signed
-  URLs.
-- The agent records output and makes a best-effort attempt to revert newly
-  introduced out-of-scope Git changes after a pass. This cleanup is not a
-  reliable containment boundary.
+- Video object keys are content-addressed and S3 downloads use short-lived
+  signed URLs.
+- The production database is not directly exposed through a Railway public
+  domain or TCP proxy.
+- The application container runs as a non-root user.
+- The hosted engine revision can be pinned to an exact Git commit.
+- Existing Go tests and `go vet` pass; the docs-site dependency audit and
+  repository secret scans were clean at the time of review.
 
-These controls reduce risk but do not close the gaps below.
+These controls reduce risk but do not close the residual risks below.
 
 ## Threat analysis
 
-| Category | Scenario | Current control | Residual risk |
+| Category | Scenario | Current or intended control | Residual risk |
 |---|---|---|---|
-| Spoofing / tampering | An attacker forges a Telnyx webhook or connects to the media WebSocket, injects messages, or changes call state. | Endpoints are inert without a configured Telnyx key; unknown SMS senders and call IDs are ignored. | Requests are not authenticated with Telnyx signatures. The WebSocket upgrader accepts every origin. Known numbers/call IDs can be targeted. |
-| Elevation / tampering | A malicious slide or theme runs JavaScript when a presenter views it and calls privileged endpoints. | Collaboration mode serves executable decks from a separate player origin with only one deck/mode capability; app cookies are unavailable. | Deck code intentionally receives its current player capability and can exercise every authority of that mode. Legacy non-collaboration public mode remains same-origin. No CSP or iframe sandbox is applied. |
-| Elevation / disclosure | A cloned studio sets `openai.api_key_cmd`, `share_secret_cmd`, or storage credential commands to shell payloads. | Commands are explicit configuration fields and run locally. | Opening or serving an untrusted repository can execute arbitrary shell commands. A malicious OpenAI `base_url` can receive the operator's API key on the next API call. |
-| Elevation / disclosure | Companion text or repository content prompt-injects the headless Claude worker. | Prompt states a file scope; Git later reverts new out-of-scope changes; hourly and concurrency caps exist. | The worker is launched with permission bypass, Bash, inherited environment, and network access. Post-hoc Git cleanup cannot undo secret exfiltration, external actions, deletion outside Git, or pushed commits. |
-| Spoofing / CSRF | Another origin induces a logged-in user to change catalog or team state. | Collaboration account mutations require exact Origin and a per-session CSRF token; cookies use `SameSite=Lax`. Player mutations require an Authorization bearer. | Legacy non-collaboration presenter routes do not have the same CSRF-token scheme, and provider callbacks need their own authentication rather than browser CSRF controls. |
-| Information disclosure | `studio` mode is started on a laptop and becomes reachable from the LAN. | Documentation describes it as local authoring. | `http.ListenAndServe(":port", ...)` binds all interfaces, and local modes treat every caller as presenter. Edit, upload, tool, and token routes are therefore exposed to reachable peers. |
-| Information disclosure | A share holder fetches unrelated library content. | `/library` requires presenter, loopback, or any valid share cookie. | Access is not scoped to the deck that references an asset. One shared deck can grant access to other private library assets if paths are guessed or learned. |
-| Information disclosure / tampering | Git credentials embedded in `VSTD_GIT_REMOTE` leak through `.git/config`, process inspection, or error logs. | The variable is optional and Git is used only when the worker is configured for it. | The remote is passed on the command line, stored by Git, and included in formatted Git errors. A token-bearing URL can be exposed. |
-| Tampering | Crafted file paths escape expected roots during uploads, artifacts, requests, or bundle/export operations. | Deck, slide, asset, and artifact identifiers have several regular-expression checks; video request paths use `filepath.Rel`. | Validation is distributed and some filesystem helpers accept raw path components. Symlink traversal and platform-specific containment deserve dedicated tests and a centralized safe-join boundary. |
-| Denial of service / cost | Audience or anonymous callers create excessive model calls, uploads, SSE clients, OAuth flows, or provider actions. | Chat sessions/turns and realtime token mints are capped; uploads and bodies have size limits. | Several limits are process-global, in-memory, or absent. Restarts reset counters; SSE subscribers, device flows, image requests, and external actions can exhaust memory, spend, sockets, or provider quotas. |
-| Repudiation | A sensitive action occurs during a live session and cannot be attributed. | Collaboration mode has a PostgreSQL audit schema for identity, membership, visibility, external sharing, and forks; some calls, messages, and agent runs are also logged. | Audit retention, request/provider correlation IDs, a tamper-resistant sink, and complete coverage of tool-side effects remain undefined. |
-| Supply chain | A dependency, downloaded Railway installer, Chrome/FFmpeg binary, Claude CLI, or repository asset is compromised. | Go dependencies are versioned in `go.sum`; the engine is buildable from source. | The Railway helper downloads and runs a remote shell installer; optional binaries and GitHub actions/releases are not covered by an explicit provenance or vulnerability-scanning policy. |
+| Spoofing / tampering | An attacker forges a Telnyx webhook or media connection and injects messages or changes call state. | Unknown senders and call IDs are filtered. | HTTP requests are not yet proven to use Telnyx signature, timestamp, and replay verification. The media connection needs a high-entropy per-call credential before upgrade. |
+| Elevation / disclosure | A companion, attachment, or repository prompt-injects Codex. | Hosted Codex execution is required to run in a disposable Railway Sandbox outside the API service. | Sandbox isolation, job-scoped credentials, egress policy, publication boundaries, and absence of the in-process production runner require automated and live verification. |
+| Elevation / tampering | A malicious public slide executes JavaScript and invokes privileged endpoints. | Collaboration mode uses separate app/player origins and a deck/mode capability. | Deck code can exercise the authority available to its player mode and can read a bearer held in tab storage. It must not gain account cookies, unrelated deck access, or unrestricted provider actions. No sandboxed content iframe or effective CSP is yet established. |
+| Information disclosure | A public share holder fetches unrelated library content. | Public access is expected for the shared deck and its referenced media. | Library authorization is not yet proven to be scoped to assets referenced by that deck. Public deck A must not disclose private deck B's assets. |
+| Spoofing / abuse | An attacker performs credential stuffing or abuses password recovery. | Passwords use Argon2id, errors are generic, and account mutations use exact Origin plus CSRF. | Durable per-account/IP throttling, failed-login audit, MFA/passkeys, and privileged-session management remain incomplete. Origin validation is not authentication for a non-browser client. |
+| Spoofing / CSRF | Another origin induces a logged-in user to change account, team, or deck state. | Collaboration account mutations require exact Origin and CSRF; player mutations require a bearer. | Legacy hosted routes require equivalent coverage, and provider callbacks require provider authentication rather than browser CSRF controls. |
+| Elevation / disclosure | A cloned studio sets credential commands or an alternate OpenAI endpoint to malicious values. | Commands and endpoints are explicit configuration. | Opening an untrusted repository can execute a shell command or send a key to an attacker-controlled host unless repository trust and endpoint policy are enforced. |
+| Information disclosure | Local studio mode becomes reachable from the LAN. | Documentation describes local mode as trusted authoring. | The listener binds all interfaces by default and local modes treat callers as presenters. |
+| Tampering | Crafted paths or symlinks escape expected content roots. | Identifiers have multiple regular-expression checks and some containment checks. | Validation is distributed. A centralized safe-join and symlink policy with adversarial tests is still needed. |
+| Denial of service / cost | Public traffic consumes chat, model, upload, SSE, callback, export, or provider capacity. | Several body, count, concurrency, and process-local limits exist. | Some limits are global, reset on restart, trust forwarded headers, or do not work across replicas. Public sharing increases the importance of distributed abuse controls and provider budgets. |
+| Repudiation | A sensitive provider or publishing action cannot be attributed. | Collaboration mode records identity, membership, visibility, sharing, and fork events. | Failed authentication, agent dispatch/result, provider actions, correlation IDs, retention, and a tamper-resistant audit sink remain incomplete. |
+| Supply chain | A dependency, base image, downloaded installer, global Codex package, browser/media binary, or content revision is compromised. | Go modules are recorded in `go.sum` and the engine supports exact revision pinning. | Images, installers, and global packages are not all version-and-digest pinned; SBOM, image signing, container scanning, and protected deployment provenance are incomplete. |
+| Availability / recovery | A deploy, corruption, or provider outage loses audience state or interrupts an event. | Git stores content and PostgreSQL stores collaboration state. | Backup/PITR restore evidence, runtime-state durability, multi-instance behavior, and an event recovery runbook have not been demonstrated. |
 
-## Prioritized recommendations
+## Risk treatment for public sharing
 
-This table tracks remaining hardening work. Collaboration-mode controls that
-now exist are called out explicitly so they are not mistaken for coverage in
-legacy serving modes.
+The following are accepted product characteristics when a deck is explicitly
+classified as public:
 
-| Priority | Recommendation | Likelihood / impact | Proposed change | Verification |
-|---|---|---|---|---|
-| P0 | Treat studio configuration as executable and require explicit trust. | Medium / critical | Do not run `*_cmd` fields automatically for an untrusted root. Add a trust prompt or repository trust record, prefer argv-based credential helpers, restrict `openai.base_url` to HTTPS and require an explicit opt-in before sending credentials to non-OpenAI hosts. | Open a hostile fixture and prove no command runs and no key leaves the process before trust is granted. |
-| P0 | Sandbox the headless agent before recommending hosted use. | High when enabled / critical | Run it in a disposable container or OS sandbox with a minimal environment, scoped filesystem mount, egress policy, separate short-lived credentials, protected Git branch, and approval gates for external actions. Remove permission bypass as the security boundary; retain Git cleanup only as defense in depth. | Prompt-injection tests attempt environment reads, network egress, out-of-root writes, destructive commands, and direct pushes; each must be blocked and audited. |
-| P0 | Authenticate Telnyx HTTP and media callbacks. | Medium / high | Verify Telnyx webhook signatures against the raw body and timestamp, reject replay, and authenticate the media WebSocket with a high-entropy per-call token bound to the active call ID. Tighten origin/host handling where applicable. | Provider-signed fixtures pass; missing, invalid, expired, replayed, and wrong-call signatures fail before state changes. |
-| P1 | Bind local authoring to loopback by default. | Medium / high | Add an explicit `--bind` setting, default local modes to `127.0.0.1`, and require an intentional opt-in plus authentication for non-loopback studio access. | Integration tests confirm the default listener is loopback and public mode remains deployable. |
-| P1 | Extend executable-content isolation beyond collaboration mode. | Medium / high | Collaboration mode now uses separate origins and deck/mode capabilities. Add a sandboxed iframe or narrower bridge, CSP, and equivalent isolation for legacy hosted mode. | A malicious slide cannot exceed the selected deck/mode capability or access legacy presenter authority. |
-| P1 | Complete request-integrity coverage. | Medium / high | Collaboration account routes now use exact Origin plus CSRF tokens. Add equivalent protection to legacy presenter routes and independently authenticate provider callbacks. | Cross-origin browser mutations fail in both modes; provider callbacks pass only with valid provider authentication. |
-| P1 | Fail closed on missing public-mode security configuration. | Medium / high | Refuse to start public mode without a durable `VSTD_SECRET`, configured presenter identity provider, and non-empty allowlist. Keep ephemeral secrets only behind an explicit development flag. | Startup tests cover every missing/empty combination and show no public listener starts. |
-| P1 | Scope assets to authorized decks. | Medium / medium-high | Maintain a deck-to-asset reference index or issue deck-scoped asset URLs/tokens. Do not treat any share cookie as authority for the entire library. | A share for deck A can load A's referenced assets but receives 403 for assets private to deck B. |
-| P1 | Centralize safe filesystem joins and symlink policy. | Low-medium / high | Add root-aware helpers using cleaned relative paths and evaluated-parent checks; reject absolute paths, `..`, and symlink escapes. Use them for requests, artifacts, uploads, agent logs, and bundles. | Table tests cover traversal, encoded separators, symlink escapes, Windows-style input, and valid nested paths. |
-| P2 | Replace process-global in-memory abuse controls. | High at public events / medium | Add per-IP/session/account rate limits, bounded SSE/device-flow/session maps, expiry cleanup, provider budgets, and reverse-proxy body/connection limits. Use a shared store for multi-instance hosting. | Load tests demonstrate bounded memory, stable latency, predictable 429 responses, and limits that survive instance scaling. |
-| P2 | Protect Git credentials and pushes. | Medium when enabled / high | Use a credential helper or short-lived app token instead of token-bearing remote URLs; redact command arguments and errors; require protected target branches and reviewable pull requests. | Logs and `.git/config` contain no token; a worker cannot force-push or bypass branch protection. |
-| P2 | Add consistent security headers and cache policy. | High / medium | Apply HSTS in TLS deployments, `X-Content-Type-Options`, a deliberate referrer policy, frame restrictions, permissions policy, and endpoint-specific cache headers. Design CSP together with content isolation rather than adding an ineffective permissive policy. | Automated HTTP tests assert the header matrix for engine pages, decks, APIs, assets, and downloads. |
-| P2 | Constrain uploads and outbound destinations. | Medium / medium-high | Verify media by decoded type, enforce lower configurable size/dimension/duration limits, scan where appropriate, restrict redirect behavior and endpoint schemes, and apply allowlists/private-network blocking to configurable outbound hosts. | Polyglot, decompression-bomb, redirect, loopback, link-local, oversized, and wrong-MIME fixtures are rejected. |
-| P2 | Mature structured, privacy-aware audit logging. | Medium / medium | Extend the collaboration audit schema with request/result/provider correlation, retention, and a tamper-resistant sink while continuing to redact tokens and minimize message/phone content. | Tests exercise redaction and correlation; operational review can reconstruct a sensitive action without exposing credentials. |
-| P3 | Establish dependency and release provenance checks. | Medium / medium | Add `govulncheck`, secret scanning, dependency review, pinned/checksummed installer flows, SBOM generation, signed releases, and documented patch cadence. Avoid executing an unpinned remote installer from the application when possible. | CI blocks known reachable vulnerabilities/secrets and release artifacts verify against published provenance. |
+- anyone with the public URL may view the presentation;
+- the URL may be indexed, copied, forwarded, recorded, or screenshotted;
+- presentation HTML and referenced public media are delivered to an untrusted
+  browser; and
+- audience participation endpoints are exposed to internet traffic and must be
+  designed for abuse resistance.
+
+This acceptance does not extend to private decks, cross-deck media, source
+attachments, presenter capabilities, account data, provider actions, or
+audience personal data. The product should make the classification clear at
+publication time and require a restricted sharing mode for confidential decks.
+
+## Remediation tracker
+
+All remediation items are owned by **Matt Kropp**. Status values are `Open`,
+`Verify`, `Planned`, `Accepted`, or `Complete`. An item is complete only when
+its exit evidence is recorded against the exact production revision.
+
+| ID | Priority | Status | Owner | Remediation | Exit evidence |
+|---|---|---|---|---|---|
+| TM-001 | P0 | Verify | Matt Kropp | Enforce Railway Sandbox as the only hosted Codex execution path. Keep the in-process `VSTD_AGENT` path disabled in the API service. Give each sandbox a scoped filesystem, minimal short-lived credentials, bounded lifetime, controlled egress, and no database, Telnyx, Resend, S3, signing, or unrelated Git authority. | Deployment test and live evidence prove the API has no active in-process runner or Codex credential; prompt-injection tests cannot read API secrets, reach blocked networks, write outside the job root, or publish directly; the sandbox and job are destroyed at termination. |
+| TM-002 | P0 | Open | Matt Kropp | Authenticate Telnyx HTTP callbacks using the raw-body signature and timestamp, reject stale or replayed events, and authenticate media connections with a random expiring token bound to the call ID before WebSocket upgrade. | Valid provider fixtures pass; missing, invalid, expired, replayed, and wrong-call requests fail before any state change. |
+| TM-003 | P0 | Open | Matt Kropp | Treat studio configuration as executable. Require explicit repository trust before running `*_cmd` fields, prefer argv-based helpers, require HTTPS, and require explicit approval before sending credentials to a non-approved OpenAI endpoint. | A hostile studio fixture cannot execute a command or receive a credential before trust is granted. |
+| TM-004 | P1 | Open | Matt Kropp | Add durable per-IP/account login and recovery throttling, progressive delay, failed-auth audit, session management, and MFA or passkeys for owner/admin/presenter roles. | Automated abuse tests receive stable 429/lockout behavior across replicas; privileged access requires the configured second factor; sessions can be listed and revoked. |
+| TM-005 | P1 | Open | Matt Kropp | Isolate executable slide content with a sandboxed content iframe or narrower capability bridge. Keep app cookies and player authority out of the content frame, add a deliberate CSP, and require confirmation or step-up authorization for external provider actions. | A malicious public slide cannot read a player bearer, call account APIs, access another deck, or send email/SMS/calls without an authorized parent-mediated action. |
+| TM-006 | P1 | Open | Matt Kropp | Scope media, library files, source attachments, and exports to the authorized deck and visibility classification. | A public capability for deck A loads A's referenced public assets but receives 403 for private or unrelated assets belonging to deck B. |
+| TM-007 | P1 | Open | Matt Kropp | Upgrade vulnerable Go modules and the Go toolchain, pin builder/runtime images and global packages by version and digest, and rebuild the production artifact. | `govulncheck` against the production source/toolchain has no accepted reachable Critical/High finding; container scanning has no unremediated Critical/High finding; exact image digest and SBOM are recorded. |
+| TM-008 | P1 | Open | Matt Kropp | Centralize root-aware filesystem joins and symlink policy for requests, attachments, artifacts, uploads, agent results, and exports. | Table-driven tests reject traversal, encoded separators, absolute paths, symlink escapes, and platform-specific bypasses while allowing valid nested content. |
+| TM-009 | P1 | Open | Matt Kropp | Bind trusted local modes to `127.0.0.1` by default and require an explicit bind plus authentication/TLS decision for non-loopback access. | Integration tests prove the default listener is loopback and a non-loopback studio listener cannot start without explicit configuration. |
+| TM-010 | P2 | Open | Matt Kropp | Add explicit HTTP read-header, request, write, and idle timeouts; bounded SSE/WebSocket connections; distributed per-IP/session/account/deck limits; trusted-proxy IP extraction; upload limits; and provider budgets. | Load tests show bounded memory and connections, predictable 429 responses, preserved presenter availability, and limits that work across replicas. |
+| TM-011 | P2 | Open | Matt Kropp | Apply an origin- and route-specific security-header/cache matrix: HSTS after subdomain validation, `X-Content-Type-Options`, referrer policy, frame restrictions, permissions policy, CSP, and appropriate cache control. | Automated HTTP tests assert the expected header matrix for app, player, public deck, APIs, assets, and downloads. |
+| TM-012 | P2 | Open | Matt Kropp | Protect Git and deployment integrity with short-lived GitHub App credentials, protected branches, required review and CI, PR-based sandbox output, redacted Git errors, and immutable production revisions. | No token appears in logs or `.git/config`; the sandbox cannot push to a protected production branch; a deployment maps to a reviewed commit, signed image digest, and content revision. |
+| TM-013 | P2 | Open | Matt Kropp | Add supply-chain gates: secret scanning, dependency review, SBOM generation, signed provenance, container scanning, pinned/checksummed installer flows, and documented patch cadence. | CI blocks secrets and unaccepted reachable vulnerabilities; released artifacts verify against published provenance and SBOM. |
+| TM-014 | P2 | Open | Matt Kropp | Extend structured audit coverage to failed authentication, sandbox creation/destruction, agent inputs/results, publication, exports, and Telnyx/Resend/OpenAI actions with correlation IDs, retention, redaction, and a tamper-resistant sink. | An operational review can reconstruct each sensitive action and actor without exposing credentials or unnecessary message/phone content. |
+| TM-015 | P2 | Open | Matt Kropp | Document data classification, audience/call/chat consent, subprocessors, retention/deletion, incident response, secret rotation, and breach handling. | IT review package contains approved policies, data-flow and subprocessor inventory, retention settings, and a completed incident-response exercise. |
+| TM-016 | P2 | Open | Matt Kropp | Configure and test encrypted PostgreSQL backup/PITR and define recovery for runtime presentation state and provider outages. | A dated restore drill meets recorded RPO/RTO targets and an event recovery runbook is exercised. |
+| TM-017 | P2 | Verify | Matt Kropp | Reconcile local source, GitHub content revision, engine revision, container image, and Railway deployment so the complete production artifact is reproducible. | A manifest maps the running service to immutable engine/content commits, image digest, configuration version, SBOM, and test results. |
+| TM-018 | P3 | Accepted | Matt Kropp | Maintain public sharing as an intentional product capability with explicit deck classification and clear publisher warning that public URLs are forwardable and not recipient authentication. | Product tests prove public and restricted modes are distinct; publication UI records classification; no public capability crosses into private content or privileged actions. |
+
+## IT and penetration-test readiness gates
+
+Use OWASP ASVS Level 2 as the minimum application-control baseline and maintain
+a control-to-evidence mapping. Do not represent the platform as ready for an
+external penetration test until all P0 items are complete and each P1 item is
+complete or has a documented, time-bounded risk acceptance.
+
+The review package should contain:
+
+- the current architecture and data-flow diagram, including the API-to-Railway
+  Sandbox boundary;
+- a live configuration assertion proving the in-process API worker is disabled;
+- sandbox lifecycle, filesystem, secret, credential, egress, and teardown test
+  evidence;
+- authentication, authorization, CSRF, deck/asset isolation, callback replay,
+  and abuse-control test results;
+- the exact source revisions, image digest, SBOM, dependency and container scan
+  results, and deployment provenance;
+- Railway and GitHub access lists, MFA evidence, protected-branch settings, and
+  secret rotation history;
+- data classification, retention, deletion, consent, subprocessor, and incident
+  response documentation;
+- backup/PITR configuration and a successful restore-drill record; and
+- the external penetration-test report, remediation evidence, and retest letter.
 
 ## Suggested security test sequence
 
-1. Add unit tests around safe joins, auth/session expiry, share scope, webhook
-   verification, request origins, and public configuration validation.
-2. Add handler-level adversarial tests for every state-changing public route.
-3. Run a hostile-studio fixture against a sandboxed process with fake provider
-   endpoints and canary credentials.
-4. Run an agent prompt-injection suite in the proposed container/egress sandbox.
-5. Exercise a staging deployment with rate/load tests and provider test accounts.
-6. Only then perform an authorized external penetration test against the exact
-   hosted deployment, including OAuth, share links, WebSockets, uploads, and
-   callback replay.
+1. Add unit and handler tests for safe joins, session expiry, deck/asset scope,
+   webhook verification, request origins, public configuration, and rate limits.
+2. Add a deployment assertion that hosted API instances cannot start with the
+   local/in-process Codex runner enabled.
+3. Run a hostile-studio fixture against fake provider endpoints and canary
+   credentials.
+4. Run a prompt-injection suite inside a real Railway Sandbox and verify secret,
+   filesystem, egress, publication, and terminal teardown boundaries.
+5. Exercise a staging deployment with public-audience load tests, provider test
+   accounts, callbacks, WebSockets, uploads, and recovery scenarios.
+6. Complete an OWASP ASVS Level 2 verification pass and close or formally
+   accept every applicable control.
+7. Perform an authorized external penetration test against the exact immutable
+   staging or production candidate, then retest every material finding.
 
 ## Review triggers
 
 Revisit this threat model when any of these change:
 
-- serving-mode authorization or listener binding;
-- deck/player execution or origin layout;
-- agent permissions, Git automation, or hosted worker topology;
-- OAuth, webhook, SMS/call/email, or audience chat behavior;
+- serving-mode authorization, deck visibility, public-link behavior, or
+  listener binding;
+- app/player/content origin layout or executable deck capabilities;
+- Railway Sandbox lifecycle, credentials, filesystem, egress, teardown, or
+  publication behavior;
+- the availability or configuration of the legacy in-process agent runner;
+- OAuth, webhook, SMS/call/email, audience chat, or provider-action behavior;
 - configurable endpoints or credential resolution;
-- object storage visibility and share-link semantics;
-- upload, export, browser, or media-processing pipelines.
+- object-storage visibility and deck-to-asset authorization;
+- upload, export, browser, or media-processing pipelines; or
+- build inputs, GitHub protections, image provenance, backups, or Railway
+  deployment topology.
