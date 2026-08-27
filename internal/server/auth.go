@@ -224,6 +224,7 @@ func (s *Server) handleShareLanding(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.setShareCookie(w, r, deck, tok)
+	s.recordQRScan(w, r, deck, "share_qr")
 	http.Redirect(w, r, "/d/"+deck+"/", http.StatusFound)
 }
 
@@ -243,6 +244,7 @@ func (s *Server) handleFollowLanding(w http.ResponseWriter, r *http.Request) {
 	}
 	tok := s.MintShare(deck, 24*time.Hour)
 	s.setShareCookie(w, r, deck, tok)
+	s.recordQRScan(w, r, deck, "follow_qr")
 	w.Header().Set("Cache-Control", "no-store")
 	http.Redirect(w, r, "/d/"+deck+"/?follow=1", http.StatusFound)
 }

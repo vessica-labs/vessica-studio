@@ -1401,6 +1401,20 @@ body.editmode .slide.active{cursor:default}
 
   // engine link: SSE (reload + live-follow), identity, presenter broadcast
   window.__vme=null;
+  const observedSlides=new Set();let observedDeck=false;
+  function reportObservedView(){
+    if(!window.__vme||!window.VSTD||!window.VSTD.deck)return;
+    const active=document.querySelector('#frame > .slide.active'),slide=active&&active.dataset.vstd;
+    if(!observedDeck){observedDeck=true;fetch('/api/observability/view',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck}),keepalive:true}).catch(()=>{});}
+    if(slide&&!observedSlides.has(slide)){observedSlides.add(slide);fetch('/api/observability/view',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck,slide:slide}),keepalive:true}).catch(()=>{});}
+  }
+  window.__vreportOpenAIUsage=(response,source)=>{
+    const u=response&&response.usage;if(!u||!window.VSTD||!window.VSTD.deck)return;
+    const input=u.input_tokens||0,output=u.output_tokens||0,total=u.total_tokens||(input+output),details=u.input_token_details||u.input_tokens_details||{},cached=details.cached_tokens||0;
+    if(!total&&!input&&!output)return;
+    const rt=window.VSTD.realtime||{};
+    fetch('/api/observability/openai-usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck,source:source||'realtime',model:rt.model||'gpt-realtime-2',response_id:response.id||'',input_tokens:input,output_tokens:output,cached_input_tokens:cached,total_tokens:total}),keepalive:true}).catch(()=>{});
+  };
   let deferredReload=false;
   function interactionSurfaceOpen(){
     const sticky=document.getElementById('stickyPad');
@@ -1496,6 +1510,7 @@ body.editmode .slide.active{cursor:default}
           syncFollowChip(true);
           document.body.appendChild(chip);
         }else if(me.presenter===true)publishPresenterPosition(cur);
+        reportObservedView();
         document.dispatchEvent(new CustomEvent('vstd:identity',{detail:{me,audience}}));
       }).catch(()=>{});
       function publishPresenterPosition(index){
@@ -1505,6 +1520,7 @@ body.editmode .slide.active{cursor:default}
       }
       document.addEventListener('vstd:slide',e=>{
         publishPresenterPosition(e.detail.index);
+        reportObservedView();
       });
     }catch(_){}
   }
@@ -2096,7 +2112,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     if(m.type==='response.done'&&m.response&&m.response.status==='failed')console.warn('vessica response FAILED:',JSON.stringify(m.response.status_details||m.response).slice(0,400));
     if(m.type==='session.updated')console.log('vessica session updated ok — tools registered:',(m.session&&m.session.tools&&m.session.tools.length)||0);
     if(m.type==='response.created')respActive=true;
-    if(m.type==='response.done')respDone();
+    if(m.type==='response.done'){if(window.__vreportOpenAIUsage)window.__vreportOpenAIUsage(m.response,'realtime');respDone();}
     if(m.type==='response.function_call_arguments.done'){
       let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
       runTool(m.name,args,m.call_id);
@@ -2608,6 +2624,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
 
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
+    if(m.type==='response.done'&&window.__vreportOpenAIUsage)window.__vreportOpenAIUsage(m.response,'dictation');
     if(m.type==='conversation.item.input_audio_transcription.completed'&&m.transcript)
       trans('“'+m.transcript.trim().slice(-90)+'”');
     if(m.type==='response.function_call_arguments.done'){

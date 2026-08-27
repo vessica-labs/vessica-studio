@@ -111,7 +111,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{version: 1, sql: schemaSQL}, {version: 2, sql: catalogSchemaSQL}} {
+	}{{version: 1, sql: schemaSQL}, {version: 2, sql: catalogSchemaSQL}, {version: 3, sql: observabilitySchemaSQL}} {
 		var applied bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM vstd_schema_migrations WHERE version=$1)`, migration.version).Scan(&applied); err != nil {
 			return err

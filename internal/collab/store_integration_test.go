@@ -158,6 +158,52 @@ func TestCollaborationLifecyclePostgres(t *testing.T) {
 	}
 }
 
+func TestObservabilityDashboardPostgres(t *testing.T) {
+	s := integrationStore(t)
+	ctx := context.Background()
+	owner, err := s.BootstrapGitHub(ctx, 6789, "owner-login", map[string]string{"demo": "Demo deck"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := s.CreateSession(ctx, owner.ID); err != nil {
+		t.Fatal(err)
+	}
+	deck, err := s.DeckByStorage(ctx, "demo")
+	if err != nil {
+		t.Fatal(err)
+	}
+	when := time.Now().UTC()
+	events := []ObservabilityEvent{
+		{Kind: EventAudienceQRScan, VisitorID: "visitor-one-abcdefghijkl", DeckID: deck.ID, DeckStorageKey: deck.StorageKey, Source: "share_qr", OccurredAt: when},
+		{Kind: EventAudienceChatJoin, VisitorID: "visitor-one-abcdefghijkl", VisitorName: "Avery", DeckID: deck.ID, DeckStorageKey: deck.StorageKey, Source: "chat_qr", OccurredAt: when},
+		{Kind: EventAudienceDeckView, VisitorID: "visitor-one-abcdefghijkl", DeckID: deck.ID, DeckStorageKey: deck.StorageKey, Source: "share_qr", OccurredAt: when},
+		{Kind: EventAudienceSlideView, VisitorID: "visitor-one-abcdefghijkl", DeckID: deck.ID, DeckStorageKey: deck.StorageKey, SlideID: "0010-title", Source: "share_qr", OccurredAt: when},
+		{Kind: EventTeamSlideView, ActorUserID: owner.ID, DeckID: deck.ID, DeckStorageKey: deck.StorageKey, SlideID: "0010-title", Source: "present", OccurredAt: when},
+		{Kind: EventServerError, ActorUserID: owner.ID, DeckStorageKey: deck.StorageKey, Method: "GET", Path: "/api/example", StatusCode: 500, OccurredAt: when},
+		{Kind: EventOpenAIUsage, ActorUserID: owner.ID, DeckID: deck.ID, DeckStorageKey: deck.StorageKey, Source: "realtime", Model: "gpt-realtime-test", InputTokens: 90, OutputTokens: 10, TotalTokens: 100, DedupeKey: "usage-one", OccurredAt: when},
+		{Kind: EventOpenAIUsage, ActorUserID: owner.ID, DeckID: deck.ID, DeckStorageKey: deck.StorageKey, Source: "realtime", Model: "gpt-realtime-test", InputTokens: 90, OutputTokens: 10, TotalTokens: 100, DedupeKey: "usage-one", OccurredAt: when},
+	}
+	if err := s.RecordObservability(ctx, events); err != nil {
+		t.Fatal(err)
+	}
+	dashboard, err := s.ObservabilityDashboard(ctx, owner.ID, 30, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dashboard.Summary.AudienceViewers != 1 || dashboard.Summary.QRScans != 1 || dashboard.Summary.PresentationViews != 1 || dashboard.Summary.SlideViews != 1 {
+		t.Fatalf("audience summary = %#v", dashboard.Summary)
+	}
+	if dashboard.Summary.ServerErrors != 1 || dashboard.Summary.OpenAIRequests != 1 || dashboard.Summary.OpenAITokens != 100 {
+		t.Fatalf("operations summary = %#v", dashboard.Summary)
+	}
+	if len(dashboard.Viewers) != 1 || dashboard.Viewers[0].Name != "Avery" || len(dashboard.Viewers[0].Presentations) != 1 || len(dashboard.Viewers[0].Presentations[0].Slides) != 1 {
+		t.Fatalf("viewer detail = %#v", dashboard.Viewers)
+	}
+	if len(dashboard.Team) != 1 || dashboard.Team[0].SlideViews != 1 || dashboard.Team[0].OpenAITokens != 100 {
+		t.Fatalf("team detail = %#v", dashboard.Team)
+	}
+}
+
 func TestPersonalCatalogIsolationAndSharedDeckPlacementPostgres(t *testing.T) {
 	s := integrationStore(t)
 	ctx := context.Background()
