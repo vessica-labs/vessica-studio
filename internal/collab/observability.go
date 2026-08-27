@@ -151,6 +151,20 @@ type ObservabilityDashboard struct {
 	Truncated     bool                 `json:"truncated"`
 }
 
+func newObservabilityDashboard(days int, generatedAt time.Time, dropped uint64) ObservabilityDashboard {
+	return ObservabilityDashboard{
+		RangeDays:     days,
+		GeneratedAt:   generatedAt,
+		Daily:         []ObservabilityDaily{},
+		Viewers:       []ViewerUsage{},
+		Presentations: []PresentationUsage{},
+		Team:          []TeamUsage{},
+		Errors:        []ServerErrorUsage{},
+		OpenAI:        []OpenAIUsage{},
+		DroppedEvents: dropped,
+	}
+}
+
 // RecordObservability writes a background batch in one statement. The caller
 // is the server's bounded recorder, never an audience request goroutine.
 func (s *Store) RecordObservability(ctx context.Context, events []ObservabilityEvent) error {
@@ -266,7 +280,7 @@ func (s *Store) ObservabilityDashboard(ctx context.Context, ownerID string, days
 	if days != 7 && days != 30 && days != 90 {
 		days = 30
 	}
-	out := ObservabilityDashboard{RangeDays: days, GeneratedAt: s.now().UTC(), DroppedEvents: dropped}
+	out := newObservabilityDashboard(days, s.now().UTC(), dropped)
 	cutoff := s.now().Add(-time.Duration(days) * 24 * time.Hour)
 	if err := s.db.QueryRowContext(ctx, `SELECT
 COUNT(DISTINCT visitor_id) FILTER (WHERE visitor_id IS NOT NULL),
