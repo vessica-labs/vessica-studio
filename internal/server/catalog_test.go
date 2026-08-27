@@ -50,7 +50,8 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 		"bi-chevron-down",
 		"--control-radius:12px",
 		"IntersectionObserver",
-		"img.loading='eager'",
+		"createImageBitmap",
+		"credentials:'same-origin'",
 		`class="nav-action" href="/team"`,
 		`id="actionDialog"`,
 		`id="folderDialog"`,
@@ -63,7 +64,7 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 			t.Fatalf("catalog page missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{"prompt(", "confirm(", "alert(", ">Manage</button>", "img.loading='lazy'"} {
+	for _, unwanted := range []string{"prompt(", "confirm(", "alert(", ">Manage</button>", "img.loading='lazy'", "new Image()"} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("catalog page still uses native dialog %q", unwanted)
 		}
