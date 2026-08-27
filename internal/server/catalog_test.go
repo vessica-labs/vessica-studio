@@ -48,6 +48,9 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 		"bi-folder2",
 		"bi-three-dots",
 		"bi-chevron-down",
+		`aria-haspopup="listbox"`,
+		`role="option"`,
+		"wireSort()",
 		"--control-radius:12px",
 		"IntersectionObserver",
 		"createImageBitmap",
@@ -65,9 +68,40 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 			t.Fatalf("catalog page missing %q", want)
 		}
 	}
-	for _, unwanted := range []string{"prompt(", "confirm(", "alert(", ">Manage</button>", "img.loading='lazy'", "new Image()"} {
+	for _, unwanted := range []string{"prompt(", "confirm(", "alert(", ">Manage</button>", "img.loading='lazy'", "new Image()", `<select id="sort"`} {
 		if strings.Contains(body, unwanted) {
 			t.Fatalf("catalog page still uses native dialog %q", unwanted)
+		}
+	}
+}
+
+func TestTeamPageMatchesCatalogDesignSystem(t *testing.T) {
+	body := teamPageHTML("Studio Owner", "csrf")
+	for _, want := range []string{
+		"Fraunces",
+		"bootstrap-icons@1.11.3",
+		`class="app"`,
+		`class="side team-side"`,
+		`class="invite-card"`,
+		`class="team-columns"`,
+		`id="memberDialog"`,
+		`id="inviteDialog"`,
+		"bi-person-plus",
+		"bi-person-dash",
+		"bi-arrow-clockwise",
+		"bi-x-circle",
+		"--control-radius:12px",
+		"Signed in as Studio Owner",
+		`href="/presentations"`,
+		`href="/observability"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("team page missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{` onclick="`, "prompt(", "confirm(", "alert(", `background:#fff`} {
+		if strings.Contains(body, unwanted) {
+			t.Fatalf("team page contains legacy UI %q", unwanted)
 		}
 	}
 }
