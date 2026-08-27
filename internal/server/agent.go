@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/vessica-labs/vessica-studio/internal/chromium"
+	"github.com/vessica-labs/vessica-studio/internal/collab"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"gopkg.in/yaml.v3"
 )
@@ -223,6 +224,63 @@ func (w *agentWorker) allow() bool {
 
 var editReqRe = regexp.MustCompile(`## Edit requests\n([\s\S]*?)(\n## |\z)`)
 
+var (
+	codexModelRe   = regexp.MustCompile(`(?m)^model:\s*([^\r\n]+?)\s*$`)
+	codexSessionRe = regexp.MustCompile(`(?m)^session id:\s*([A-Za-z0-9_-]+)\s*$`)
+	codexTokensRe  = regexp.MustCompile(`(?m)^tokens used\r?\n\s*([0-9][0-9,]*)\s*$`)
+)
+
+type codexUsage struct {
+	Model       string
+	SessionID   string
+	TotalTokens int64
+}
+
+// parseCodexUsage reads the privacy-safe execution metadata printed by
+// `codex exec`. Prompts, responses, diffs, and tool calls are deliberately not
+// persisted in observability; the existing agent log remains the diagnostic
+// record for those details.
+func parseCodexUsage(out []byte) (codexUsage, bool) {
+	usage := codexUsage{Model: "codex"}
+	if match := codexModelRe.FindSubmatch(out); len(match) == 2 {
+		usage.Model = strings.TrimSpace(string(match[1]))
+	}
+	if match := codexSessionRe.FindSubmatch(out); len(match) == 2 {
+		usage.SessionID = strings.TrimSpace(string(match[1]))
+	}
+	matches := codexTokensRe.FindAllSubmatch(out, -1)
+	if len(matches) == 0 {
+		return codexUsage{}, false
+	}
+	raw := strings.ReplaceAll(string(matches[len(matches)-1][1]), ",", "")
+	total, err := strconv.ParseInt(raw, 10, 64)
+	if err != nil || total <= 0 {
+		return codexUsage{}, false
+	}
+	usage.TotalTokens = total
+	return usage, true
+}
+
+func (w *agentWorker) recordCodexUsage(deck, slide, phase string, out []byte, duration time.Duration, success bool) {
+	if filepath.Base(w.bin) != "codex" {
+		return
+	}
+	usage, ok := parseCodexUsage(out)
+	if !ok {
+		return
+	}
+	dedupe := ""
+	if usage.SessionID != "" {
+		dedupe = "codex:" + usage.SessionID
+	}
+	w.s.recordObservability(collab.ObservabilityEvent{
+		Kind: collab.EventOpenAIUsage, DeckStorageKey: deck, SlideID: slide,
+		Source: "codex." + phase, Model: usage.Model, TotalTokens: usage.TotalTokens,
+		DurationMS: duration.Milliseconds(), DedupeKey: dedupe,
+		Metadata: map[string]any{"runner": "codex", "phase": phase, "success": success},
+	})
+}
+
 // actionable reports whether an Edit requests section body contains live
 // work: "- " bullets other than resolved history or awaiting-imagery holds.
 func actionable(sec string) bool {
@@ -406,7 +464,9 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 	ctx, cancel := context.WithTimeout(context.Background(), agentPassTimeout())
 	defer cancel()
 	cmd := agentCommand(ctx, w.bin, w.s.St.Root, prompt)
+	started := time.Now()
 	out, err := cmd.CombinedOutput()
+	w.recordCodexUsage(deck, id, "agent", out, time.Since(started), err == nil)
 	w.enforceScope(preexisting)
 	// full output always lands in a log file for diagnosis
 	logDir := w.s.St.Root + "/_agent-logs"
@@ -548,7 +608,9 @@ Modify only decks/%s/slides/%s.html and its paired Markdown companion. Do not al
 	ctx, cancel := context.WithTimeout(context.Background(), agentCriticTimeout())
 	defer cancel()
 	cmd := agentCommandWithImages(ctx, w.bin, w.s.St.Root, prompt, images)
+	started := time.Now()
 	out, runErr := cmd.CombinedOutput()
+	w.recordCodexUsage(deck, id, "source_critic", out, time.Since(started), runErr == nil)
 	w.enforceScope(preexisting)
 	logDir := filepath.Join(w.s.St.Root, "_agent-logs")
 	os.MkdirAll(logDir, 0o755)

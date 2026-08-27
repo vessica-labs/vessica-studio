@@ -26,12 +26,18 @@ func TestCatalogMonitoringLinkIsOwnerOnlyAndAboveDocumentation(t *testing.T) {
 
 func TestObservabilityPageHasOwnerDashboardViewsAndResponsiveDesign(t *testing.T) {
 	for _, want := range []string{
-		"Owner workspace", "Audience viewers", "Reliability", "OpenAI usage", "Codex usage", "Excluded",
+		"Owner workspace", "Audience viewers", "Reliability", "OpenAI usage", "Codex tokens",
+		"API requests and Codex runs", "All tracked Railway model usage",
 		`data-tab="viewers"`, `data-tab="team"`, `data-tab="reliability"`, `data-tab="ai"`,
 		"Viewer identities come from QR chat names", "@media(max-width:760px)", "Fraunces", "bootstrap-icons",
 	} {
 		if !strings.Contains(observabilityPageHTML, want) {
 			t.Fatalf("monitoring page missing %q", want)
+		}
+	}
+	for _, unwanted := range []string{"Codex usage','Excluded", "Intentionally not collected", "OpenAI API only"} {
+		if strings.Contains(observabilityPageHTML, unwanted) {
+			t.Fatalf("monitoring page still excludes Railway Codex usage with %q", unwanted)
 		}
 	}
 }
