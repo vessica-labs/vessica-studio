@@ -54,6 +54,7 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 		`role="option"`,
 		"wireSort()",
 		"--control-radius:12px",
+		".actions{flex-wrap:nowrap}",
 		"IntersectionObserver",
 		"createImageBitmap",
 		"credentials:'same-origin'",
