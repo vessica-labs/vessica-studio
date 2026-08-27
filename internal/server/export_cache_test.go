@@ -157,8 +157,24 @@ func TestCatalogThumbnailGeneratesOnceThenUsesCache(t *testing.T) {
 		if rr.Code != http.StatusOK || rr.Header().Get("Content-Type") != "image/png" {
 			t.Fatalf("request %d status=%d content-type=%q body=%q", i+1, rr.Code, rr.Header().Get("Content-Type"), rr.Body.String())
 		}
+		if got := rr.Header().Get("Cache-Control"); got != "private, max-age=300" {
+			t.Fatalf("request %d cache-control=%q", i+1, got)
+		}
 	}
 	if !reflect.DeepEqual(fake.visual, [][]string{{"0010-a"}}) {
 		t.Fatalf("thumbnail renders = %v, want one first-slide render", fake.visual)
+	}
+}
+
+func TestCatalogThumbnailFailuresAreNotCached(t *testing.T) {
+	t.Setenv("VSTD_USER_CONFIG_DIR", t.TempDir())
+	s := New(testStudio(t), ModeStudio)
+	rr := httptest.NewRecorder()
+	s.Routes().ServeHTTP(rr, httptest.NewRequest(http.MethodGet, "/api/app/decks/missing/thumbnail.png", nil))
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("status=%d body=%q", rr.Code, rr.Body.String())
+	}
+	if got := rr.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("cache-control=%q", got)
 	}
 }

@@ -52,6 +52,7 @@ func TestCatalogPageUsesStyledDialogsAndOpenGestures(t *testing.T) {
 		"IntersectionObserver",
 		"createImageBitmap",
 		"credentials:'same-origin'",
+		"thumbnail.png?v=2&attempt=",
 		`class="nav-action" href="/team"`,
 		`id="actionDialog"`,
 		`id="folderDialog"`,
