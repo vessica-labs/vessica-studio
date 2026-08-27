@@ -80,6 +80,7 @@ exec codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check
       for (const remotePath of await listFiles(sandbox, remoteRoot)) {
         const relative = remotePath.slice("/workspace/".length);
         if (!isAllowed(relative, input.outputPrefixes)) throw new Error(`sandbox output escaped scope: ${relative}`);
+        if (isGeneratedOutput(relative)) continue;
         const stat = await sandbox.files.stat(remotePath);
         const bytes = await sandbox.files.read(remotePath, { format: "bytes" });
         const digest = crypto.createHash("sha256").update(bytes).digest("hex");
@@ -126,6 +127,10 @@ function isAllowed(relative, prefixes) {
   const normalized = path.posix.normalize(relative);
   if (normalized !== relative || normalized.startsWith("../")) return false;
   return prefixes.some(prefix => normalized.startsWith(prefix) && normalized.length > prefix.length);
+}
+
+function isGeneratedOutput(relative) {
+  return /^decks\/[^/]+\/build(?:\/|$)/.test(relative);
 }
 
 function safeLocalJoin(root, relative) {
