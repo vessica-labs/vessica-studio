@@ -113,6 +113,15 @@ func TestApplyRailwaySandboxChangesRejectsEscapeAndConcurrentEdit(t *testing.T) 
 	}
 }
 
+func TestRailwaySandboxOutputRejectsGeneratedDeckBuild(t *testing.T) {
+	if sandboxOutputAllowed("demo", "decks/demo/build/index.html") {
+		t.Fatal("generated deck build was accepted as sandbox output")
+	}
+	if !sandboxOutputAllowed("demo", "decks/demo/slides/0010-a.html") {
+		t.Fatal("slide content was rejected as sandbox output")
+	}
+}
+
 func TestApplyRailwaySandboxChangesWritesScopedResult(t *testing.T) {
 	st := testStudio(t)
 	inputs, _, err := collectRailwaySandboxInputs(st.Root, "demo", "0010-a", nil, "")
@@ -140,7 +149,7 @@ func TestApplyRailwaySandboxChangesWritesScopedResult(t *testing.T) {
 
 func TestEmbeddedRailwayRunnerEnforcesIsolationAndTeardown(t *testing.T) {
 	script := string(railwaySandboxRunnerJS)
-	for _, required := range []string{`networkIsolation: "ISOLATED"`, "forbidden sandbox environment", "input.remoteImages ?? []", "await sandbox.destroy()", "finally"} {
+	for _, required := range []string{`networkIsolation: "ISOLATED"`, "forbidden sandbox environment", "input.remoteImages ?? []", "isGeneratedOutput(relative)", "await sandbox.destroy()", "finally"} {
 		if !strings.Contains(script, required) {
 			t.Errorf("embedded dispatcher missing %q", required)
 		}

@@ -541,6 +541,9 @@ func sandboxOutputAllowed(deck, rel string) bool {
 	if clean != rel || strings.HasPrefix(clean, "/") || clean == "." || strings.Contains(clean, "\x00") {
 		return false
 	}
+	if clean == "decks/"+deck+"/build" || strings.HasPrefix(clean, "decks/"+deck+"/build/") {
+		return false
+	}
 	for _, prefix := range sandboxOutputPrefixes(deck) {
 		if strings.HasPrefix(clean, prefix) && len(clean) > len(prefix) {
 			return true
