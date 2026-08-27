@@ -612,7 +612,15 @@ VSTD_AGENT=1 vstd agent
 
 Use `vstd serve --agent` or `VSTD_AGENT=1 vstd serve` for a continuous background
 worker. The default coding agent is Claude; set `VSTD_AGENT_CMD` or the related
-agent environment variables to use another command and tune limits.
+agent environment variables to use another command and tune limits. Hosted
+Codex workers must set `VSTD_AGENT_SANDBOX=railway`: the API service dispatches
+each pass to a disposable, network-isolated Railway Sandbox and refuses to run
+Codex in-process in public mode. The dispatcher requires a project-scoped
+`RAILWAY_TOKEN`, `RAILWAY_ENVIRONMENT_ID`, and the Railway JavaScript SDK at
+`VSTD_RAILWAY_SDK` (default `/opt/vstd-sandbox/node_modules/railway/dist/index.js`).
+The sandbox receives only the requested deck, its theme and referenced library
+assets, matching asset requests, the `vstd` binary, and an OpenAI credential
+resolved by Railway variable reference.
 
 ### Keys and audience links
 
@@ -841,6 +849,11 @@ Environment variables take precedence over YAML.
 | `VSTD_GIT_POLL_SECONDS` | Remote polling interval |
 | `VSTD_AGENT` | Set to `1` to enable the redesign worker |
 | `VSTD_AGENT_CMD` | Agent command or supported agent name |
+| `VSTD_AGENT_SANDBOX` | Set to `railway` for hosted Codex execution; required for Codex in public mode |
+| `VSTD_AGENT_SANDBOX_SECRET_SERVICE` | Railway service name that owns the Codex credential; defaults to `RAILWAY_SERVICE_NAME` |
+| `VSTD_AGENT_SANDBOX_SECRET_VARIABLE` | Railway variable referenced as the sandbox Codex credential; defaults to `OPENAI_API_KEY` |
+| `VSTD_RAILWAY_SDK` | Absolute path to the Railway JavaScript SDK entrypoint |
+| `RAILWAY_TOKEN` | Project-scoped Railway token used only by the sandbox dispatcher |
 | `VSTD_AGENT_TIMEOUT` | Redesign timeout, such as `30m` |
 | `VSTD_AGENT_CRITIC_TIMEOUT` | Source-critic timeout, such as `20m` |
 | `VSTD_AGENT_CONCURRENCY` | Maximum concurrent redesign jobs |
@@ -951,7 +964,7 @@ linked from the presentation catalog immediately above Documentation. It shows
 7-, 30-, and 90-day audience summaries, named QR-chat participants, anonymous
 privacy-preserving visitor labels, presentation and slide views, team activity,
 sanitized HTTP 5xx routes, and model token usage from both direct OpenAI API
-requests and Codex agent runs inside the Railway service.
+requests and Codex agent runs dispatched to Railway Sandboxes.
 
 Audience and player requests never wait for analytics writes. Events enter a
 bounded in-process queue and are flushed to PostgreSQL in small background
@@ -961,8 +974,9 @@ The engine does not store viewer IP addresses, user agents, share tokens,
 prompts, model responses, or error response bodies in observability data.
 OpenAI API totals come from response usage and authenticated Realtime events.
 Codex totals come from the privacy-safe model, session, and total-token summary
-printed by each CLI run; the CLI does not report an input/output split, so that
-breakdown is intentionally left blank in the dashboard.
+printed by each CLI run. Sandbox execution metadata records the disposable
+sandbox identifier for attribution; the CLI does not report an input/output
+split, so that breakdown is intentionally left blank in the dashboard.
 The owner route and its JSON API re-check the permanent team-owner capability
 on every request; ordinary team members and the player origin cannot access
 them.
