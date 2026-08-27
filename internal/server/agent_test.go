@@ -105,3 +105,32 @@ func TestAgentCommandAddsCriticImagesForCodex(t *testing.T) {
 		t.Fatalf("args = %#v, want %#v", cmd.Args, want)
 	}
 }
+
+func TestParseCodexUsageFromHeadlessRunLog(t *testing.T) {
+	out := []byte(`OpenAI Codex v0.150.0
+--------
+model: gpt-5.6-sol
+provider: openai
+session id: 01a043c1-1716-7bd1-b8e8-a2755f4225a5
+--------
+codex
+Updated the slide.
+
+tokens used
+33,453
+Updated the slide.
+`)
+	usage, ok := parseCodexUsage(out)
+	if !ok {
+		t.Fatal("Codex usage was not detected")
+	}
+	if usage.Model != "gpt-5.6-sol" || usage.SessionID != "01a043c1-1716-7bd1-b8e8-a2755f4225a5" || usage.TotalTokens != 33453 {
+		t.Fatalf("usage = %#v", usage)
+	}
+}
+
+func TestParseCodexUsageRequiresReportedTokens(t *testing.T) {
+	if usage, ok := parseCodexUsage([]byte("model: gpt-5.6-sol\nsession id: run-123\n")); ok {
+		t.Fatalf("unexpected usage without token summary: %#v", usage)
+	}
+}

@@ -950,8 +950,8 @@ Collaboration mode also enables an owner-only `/observability` workspace,
 linked from the presentation catalog immediately above Documentation. It shows
 7-, 30-, and 90-day audience summaries, named QR-chat participants, anonymous
 privacy-preserving visitor labels, presentation and slide views, team activity,
-sanitized HTTP 5xx routes, and OpenAI API token usage. Codex usage is not
-collected.
+sanitized HTTP 5xx routes, and model token usage from both direct OpenAI API
+requests and Codex agent runs inside the Railway service.
 
 Audience and player requests never wait for analytics writes. Events enter a
 bounded in-process queue and are flushed to PostgreSQL in small background
@@ -959,7 +959,10 @@ batches; if that queue reaches capacity, events are dropped and the count is
 shown to the owner. Viewer records use a random first-party HttpOnly identifier.
 The engine does not store viewer IP addresses, user agents, share tokens,
 prompts, model responses, or error response bodies in observability data.
-OpenAI totals come from API response usage and authenticated Realtime events.
+OpenAI API totals come from response usage and authenticated Realtime events.
+Codex totals come from the privacy-safe model, session, and total-token summary
+printed by each CLI run; the CLI does not report an input/output split, so that
+breakdown is intentionally left blank in the dashboard.
 The owner route and its JSON API re-check the permanent team-owner capability
 on every request; ordinary team members and the player origin cannot access
 them.
