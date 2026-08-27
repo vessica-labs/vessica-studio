@@ -1,0 +1,19 @@
+<div class="architecture" role="img" aria-label="Local authoring and Railway projection architecture">
+  <div class="arch-lane">
+    <span class="arch-kicker">Local authoring</span>
+    <div class="arch-node arch-node-accent"><b>Codex + Vessica plugin</b><span>Loads the canonical workflow and edits transparent files</span></div>
+    <i aria-hidden="true">↓</i>
+    <div class="arch-node"><b>Studio content repository</b><span>HTML slide + Markdown companion pairs, assets, deck metadata</span></div>
+    <i aria-hidden="true">↔</i>
+    <div class="arch-node"><b><code>vstd</code> CLI</b><span>Builds, serves, validates, exports, and watches</span></div>
+  </div>
+  <div class="arch-bridge" aria-hidden="true"><span>git push</span><b>→</b><span>poll + sync</span><b>←</b></div>
+  <div class="arch-lane">
+    <span class="arch-kicker">Railway projection</span>
+    <div class="arch-node arch-node-accent"><b>Vessica Studio service</b><span>Immutable engine image + checked-out content revision</span></div>
+    <i aria-hidden="true">↓</i>
+    <div class="arch-node"><b>Presenter session</b><span>Authenticated web editor, voice copilot, live saves</span></div>
+    <i aria-hidden="true">↓</i>
+    <div class="arch-node"><b>Audience projection</b><span>Signed, deck-scoped, read-only presentation surface</span></div>
+  </div>
+</div>

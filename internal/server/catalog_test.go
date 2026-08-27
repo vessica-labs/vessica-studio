@@ -10,6 +10,31 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
+func TestCatalogPageLinksToDocumentationInNewTab(t *testing.T) {
+	t.Setenv("VSTD_DOCS_URL", "https://docs.example.test/guide")
+	recorder := httptest.NewRecorder()
+	(&Server{}).renderCatalogPage(recorder, "presenter", "owner", "csrf", true)
+
+	body := recorder.Body.String()
+	for _, want := range []string{
+		`href="https://docs.example.test/guide"`,
+		`target="_blank"`,
+		`rel="noopener noreferrer"`,
+		`>Documentation</span>`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("catalog page missing %q", want)
+		}
+	}
+}
+
+func TestDocumentationURLDefaultsToPublicDocs(t *testing.T) {
+	t.Setenv("VSTD_DOCS_URL", "")
+	if got := documentationURL(); got != "https://vessica-studio-docs-production.up.railway.app" {
+		t.Fatalf("documentationURL() = %q", got)
+	}
+}
+
 func TestLocalSlideTransferIntentIsBoundSingleUseAndOrdered(t *testing.T) {
 	t.Setenv("VSTD_USER_CONFIG_DIR", t.TempDir())
 	st := testStudio(t)

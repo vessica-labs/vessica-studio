@@ -1,0 +1,88 @@
+---
+layout: ../layouts/DocsLayout.astro
+title: Vessica voice agent
+description: Use Vessica as a silent presentation copilot, conversational editor, dictation partner, and audience-aware assistant.
+---
+import Callout from "../components/Callout.astro";
+
+<span class="eyebrow">The presentation that listens</span>
+
+# Present and edit with Vessica
+
+Vessica is a realtime voice copilot inside the presenter player. It listens silently, follows the talk track, navigates conservatively, highlights the idea you are discussing, and speaks only after the wake word.
+
+![Vessica Studio presenter with the Vessica control visible in the HUD](/screenshots/vessica-presenter.png)
+<span class="caption">The Vessica control is presenter-only. Audience sessions remain read-only and do not receive the copilot controls.</span>
+
+## Before you start
+
+You need presenter access, an OpenAI API key available to the server, and microphone permission in the browser.
+
+Locally, resolve the key through `OPENAI_API_KEY`, `VSTD_OPENAI_KEY`, or `openai.api_key_cmd`, then verify it:
+
+```sh
+vstd key check
+vstd serve product-story
+```
+
+On Railway, store the key as a service variable. Never include it in a studio file or browser code.
+
+## Use Vessica while presenting
+
+<ol class="step-list">
+  <li><h3>Open the deck as a presenter</h3><p>Choose <strong>Present</strong> from the catalog or open an owned deck in the presenter player.</p></li>
+  <li><h3>Enter presentation mode</h3><p>Choose <strong>Present</strong> in the HUD or press <code>P</code>. Fullscreen is optional but keeps the stage clean.</p></li>
+  <li><h3>Start Vessica</h3><p>Choose <strong>Vessica</strong> or press <code>V</code>. Grant microphone permission if the browser asks.</p></li>
+  <li><h3>Deliver naturally</h3><p>Vessica listens without talking, uses the companion talk track as context, can advance when your narration clearly moves on, and highlights a visible idea when useful.</p></li>
+  <li><h3>Say “Vessica” to begin a conversation</h3><p>Ask a short question, request a navigation jump, or make an edit. Tell Vessica “that's all,” “be quiet,” or thank it to return to silent copilot mode.</p></li>
+</ol>
+
+<Callout title="Vessica is silent by default">Starting the copilot does not start a conversation. It stays silent until it hears the wake word, but it can still use tools for navigation and highlighting while you present.</Callout>
+
+## Ask for navigation and delivery help
+
+Try:
+
+- “Vessica, go to slide 12.”
+- “Vessica, go to the slide about customer economics.”
+- “Next slide.”
+- “Highlight the retention number.”
+- “What is the transition to the next slide?”
+
+Vessica sees the deck map, current slide, talk track, next-slide cue, and a list of highlightable elements. Natural progression is conservative; explicit navigation happens immediately.
+
+## Make live edits by voice
+
+After the wake word, request small changes directly:
+
+- “Change ‘pilot’ to ‘production rollout’.”
+- “Retitle this slide ‘The adoption gap’.”
+- “Add a bullet about implementation risk.”
+- “Remove the last bullet.”
+- “Open the companion and rewrite the talk track.”
+
+Exact text and companion edits save immediately when the presenter has edit authority. A large request—new imagery, a full redesign, or narrative restructuring—is recorded as an edit request for the Codex redesign pass rather than improvised on stage.
+
+## Talk a new slide into existence
+
+There are two voice paths:
+
+### Conversational authoring with Vessica
+
+Say “Vessica, give me a blank slide titled …” and begin explaining it. Vessica distills points, records narration in the talk track, and can set the lead. Say you are done to leave authoring mode.
+
+### Silent dictation mode
+
+Press `D`. The realtime model becomes a silent scribe: narration flows into the companion talk track while distinct ideas become draft bullets. Directives such as “new slide,” “change the title,” “note the source,” and “that's it” are executed without spoken replies.
+
+<Callout title="Dictation creates a draft" tone="warning">Voice capture optimizes for speed and fidelity, not final design. End with the Vessica Studio <code>slide-edit</code> or <code>deck-review</code> skill so Codex can run the layout, visual, and critic pass.</Callout>
+
+## Use audience-aware tools
+
+When configured, Vessica can ask the audience for input, show a scan-to-chat QR, summarize aggregate replies on a live display, send an SMS or email, place a short call, search the web, or run code-backed analysis. These are presenter-only tools and degrade explicitly when a provider is not configured.
+
+The important stage rule is aggregation: Vessica synthesizes audience pulses and avoids reading individual replies aloud one by one.
+
+## Stop safely
+
+Press `V` again to end the realtime session. Press `Esc` to leave fullscreen. A navigation away during blank-slide authoring saves the draft before leaving authoring mode.

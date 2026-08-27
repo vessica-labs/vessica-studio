@@ -1,0 +1,84 @@
+---
+layout: ../layouts/DocsLayout.astro
+title: Web editor
+description: Learn the Vessica Studio presentation catalog, canvas editor, companions, assets, sharing, slide reuse, and export workflow.
+---
+import Callout from "../components/Callout.astro";
+
+<span class="eyebrow">Visual authoring</span>
+
+# Work in the web editor
+
+The hosted catalog is the launch point for organizing, editing, presenting, sharing, and reusing decks. The player adds an object editor, companion drawer, asset controls, sticky instructions, and exports without hiding the underlying files.
+
+![Vessica Studio presentation catalog with folders and deck cards](/screenshots/presentation-catalog.png)
+<span class="caption">The authenticated catalog separates owned and shared decks, supports folders and search, and exposes the action that is safe for each deck.</span>
+
+## Organize and launch presentations
+
+- **All / Mine / Shared / Recent** filters keep personal and team work distinct.
+- **Folders** are a personal, one-level organization layer.
+- **Search and sort** find a deck by title, key, or owner.
+- **Edit** opens the full writable player for a deck you own.
+- **Present** opens the presenter surface.
+- **View** opens a shared deck without granting edit authority.
+- **Fork** creates a private, editable variant with upstream provenance.
+- **Send slides** copies selected slides or creates linked, read-only snapshots in another owned deck.
+
+<Callout title="Shared means viewable, not editable">Team visibility grants View, Present, export, transfer, and Fork access. It does not grant write or sharing authority over the original deck.</Callout>
+
+## Edit slide objects
+
+Open a deck with **Edit**, then choose **Edit** in the player HUD or press `E`.
+
+![Vessica Studio slide canvas in edit mode with the formatting ribbon](/screenshots/web-editor.png)
+<span class="caption">Edit mode keeps the presentation visible while exposing selection, typography, alignment, fill, position, layering, crop, and deletion controls.</span>
+
+Common actions:
+
+1. Click text, images, video, charts, or CSS shapes to select them.
+2. Double-click supported text to edit it directly.
+3. Drag a selected object or use arrow keys for precise nudging.
+4. Marquee-select or modifier-click to work with multiple objects.
+5. Paste an image from the clipboard or drag a video onto the canvas.
+6. Exit edit mode to save changed slide fragments.
+
+<Callout title="Source files stay authoritative">The browser edits the current slide fragment. Git-backed content sync can batch hosted saves back to the content repository. Generated <code>build/</code> output is disposable.</Callout>
+
+## Use the slide companion
+
+Every slide's Markdown companion carries the reasoning around the visual:
+
+- intent and key ideas;
+- evidence and sources;
+- visual direction;
+- talk track and next-slide transition;
+- edit requests and completed-change log;
+- attached PDFs, PowerPoint files, documents, spreadsheets, or images.
+
+Open **Companion** from the HUD. Preview the Markdown, switch to edit mode, attach a source, and save. Codex and Vessica read this same record when they work on the slide.
+
+## Leave an instruction instead of forcing a redesign
+
+Press `S` or choose **Sticky** to attach a focused instruction to the current slide or selected object. Small edits can happen immediately; large layout, image, or narrative changes become a redesign request for the agent workflow.
+
+## Present, share, and export
+
+- **Present** enters fullscreen presenter mode.
+- **Share** mints an expiring, deck-scoped audience link and QR code.
+- Audience viewers are read-only and can follow the presenter live or browse independently.
+- **Download** exports the current slide or full deck as PDF, visual-exact PowerPoint, or editable PowerPoint. Audience sessions receive PDF only.
+
+## Keyboard shortcuts
+
+| Key | Action |
+| --- | --- |
+| ← / → | Move between visible slides |
+| E | Toggle object edit mode |
+| P | Enter presentation mode |
+| V | Start or stop Vessica |
+| D | Start or stop voice dictation |
+| S | Open a sticky edit instruction |
+| N | Toggle presenter notes |
+| G | Open the slide grid |
+| M | Open the agenda |

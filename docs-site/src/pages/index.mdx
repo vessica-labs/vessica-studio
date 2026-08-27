@@ -1,0 +1,58 @@
+---
+layout: ../layouts/DocsLayout.astro
+title: Documentation
+description: Learn how Vessica Studio connects file-native authoring, a visual web editor, Codex workflows, Railway publishing, and a live voice copilot.
+---
+import FeatureGrid from "../components/FeatureGrid.astro";
+
+<span class="eyebrow">File-native presentations</span>
+
+# Make the deck a living system.
+
+Vessica Studio connects ordinary HTML and Markdown files to a visual editor, repeatable Codex workflows, a Railway-hosted presentation surface, and a voice agent that can listen, navigate, edit, and help you present.
+
+<div class="hero-card">
+  <div>
+    <h2>One presentation, four ways to work</h2>
+    <p>Start in the browser, continue in Codex, refine from the CLI, and present with Vessica. Every surface writes back to the same understandable content model.</p>
+  </div>
+  <ul>
+    <li>Visual editing with direct saves</li>
+    <li>Companion files for evidence and talk track</li>
+    <li>Local-first creation with hosted projection</li>
+    <li>Voice-aware presenting and editing</li>
+  </ul>
+</div>
+
+## Choose your starting point
+
+<FeatureGrid>
+  <div><h3>Use the web editor</h3><p>Organize decks, edit slide objects, work with companions, transfer slides, share, present, and export.</p><p><a href="/web-editor/">Explore the editor →</a></p></div>
+  <div><h3>Install the tools</h3><p>Install the <code>vstd</code> CLI and the Vessica Studio plugin for Codex.</p><p><a href="/install/">Install CLI + plugin →</a></p></div>
+  <div><h3>Build with Codex</h3><p>Use six purpose-built skills for new decks, edits, reviews, forks, additions, and market refreshes.</p><p><a href="/codex/">Use Codex →</a></p></div>
+  <div><h3>Present with Vessica</h3><p>Let the voice copilot follow your talk track, move through the deck, highlight ideas, and make edits on request.</p><p><a href="/voice-agent/">Meet the voice agent →</a></p></div>
+</FeatureGrid>
+
+## What stays under your control
+
+The source of truth is a content repository. Each slide is an HTML fragment paired with a Markdown companion that records intent, evidence, sources, visual direction, talk track, and edit history. Git makes the deck diffable; the CLI makes it buildable; the browser makes it tactile; Codex makes the workflow agent-ready.
+
+The hosted Railway instance is a projection of that repository. Presenter-only saves can be synchronized back to Git, while audience links remain signed, deck-scoped, and read-only.
+
+<div class="cards-3">
+  <div><b>Inspectable</b><span>No opaque slide database. Read every source file.</span></div>
+  <div><b>Portable</b><span>Build, bundle, export, fork, and deploy without changing formats.</span></div>
+  <div><b>Agent-ready</b><span>Codex works against explicit content and evidence contracts.</span></div>
+</div>
+
+## A quick first run
+
+```sh
+go install github.com/vessica-labs/vessica-studio/cmd/vstd@latest
+vstd init my-studio
+cd my-studio
+vstd new product-story --title "Our Product Story"
+vstd serve product-story
+```
+
+Open `http://localhost:4400/d/product-story/`, then use the editor yourself or ask Codex to build the narrative with the `deck-new` skill.
