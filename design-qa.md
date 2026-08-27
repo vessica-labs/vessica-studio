@@ -4,6 +4,8 @@
 - Implementation: `/Users/kroppmatthew/.codex/visualizations/2026/08/26/01a04072-6bc6-7ba1-ba71-2e5bd76bc720/presentations-compact-actions-final.png`
 - Combined comparison: `/Users/kroppmatthew/.codex/visualizations/2026/08/26/01a04072-6bc6-7ba1-ba71-2e5bd76bc720/compact-actions-comparison.png`
 - Focused dialog evidence: `/Users/kroppmatthew/.codex/visualizations/2026/08/26/01a04072-6bc6-7ba1-ba71-2e5bd76bc720/folder-dialog.png`
+- Production control baseline: `/Users/kroppmatthew/.codex/visualizations/2026/08/26/01a04072-6bc6-7ba1-ba71-2e5bd76bc720/production-catalog-before-controls.png`
+- Refined controls and thumbnail evidence: `/Users/kroppmatthew/.codex/visualizations/2026/08/26/01a04072-6bc6-7ba1-ba71-2e5bd76bc720/presentation-directory-controls-after.png`
 - Viewport: 1280 x 720 CSS pixels, device scale factor 1
 - Pixels: source catalog 1280 x 890; final full-page implementation 1280 x 1003; dialog 1280 x 720. The paired comparison displays the previous and compact-action catalogs at equal CSS width and density.
 - State: local Studio catalog with six presentations, one folder, all first-slide thumbnails loaded, no selection, no search filter.
@@ -18,6 +20,8 @@ No actionable P0, P1, or P2 differences remain.
 - Image quality and asset fidelity: cards use real cached 1280 x 720 first-slide renders with correct 16:9 crops. No substitute illustrations or fake thumbnails are used.
 - Copy and content: folder management explains personal-folder semantics; destructive confirmation explains root-folder fallback; action labels are direct and consistent.
 - Interaction and accessibility: compact controls retain visible text, tooltips, and accessible names. The real Bootstrap Icons font loaded successfully, all four local actions stayed on one line at the tested card width, and the Fork dialog opened and closed correctly. Folder management, custom create/fork dialogs, delete confirmation, keyboard selection, Enter-to-open, and double-click-to-edit were also exercised in the browser. No native JavaScript prompt or confirm appeared, and no console warnings or errors were present.
+- Control consistency: search, sort, primary actions, folder navigation, folder options, and card actions now share the same 12px corner-radius token. The search and sort surfaces use the same translucent dark fill, restrained outline, icon sizing, hover treatment, and green focus ring.
+- Thumbnail loading: production diagnosis proved the thumbnail endpoint returned a valid 1280 x 720 PNG while native image lazy loading never initiated catalog requests. The directory now observes previews near the viewport and explicitly requests only those thumbnails, with one bounded retry. Local browser verification loaded all six visible thumbnails at their natural 1280 x 720 dimensions.
 
 ## Comparison history
 
@@ -26,6 +30,7 @@ No actionable P0, P1, or P2 differences remain.
 3. Post-fix evidence: `design-comparison-final.png` shows the source and final implementation together. The final catalog keeps all six decks within two rows and has no remaining P0/P1/P2 issue.
 4. Compact-action refinement: replaced the large stacked action grid with a 30px-high Bootstrap Icons toolbar. The first pass wrapped Fork to a second line; reducing horizontal padding and the gap keeps all four actions on one line without removing their labels.
 5. Final evidence: `compact-actions-comparison.png` shows the prior stacked controls and compact icon toolbar together. The final page is 192px shorter with the same six-card content and no remaining P0/P1/P2 issue.
+6. Production refinement: replaced the folder `Manage` label with an accessible three-dot icon, restored folder glyphs, unified control radii, and restyled the search/sort row. `presentation-directory-controls-after.png` verifies the final local result with real thumbnails loaded.
 
 ## Focused-region comparison
 
