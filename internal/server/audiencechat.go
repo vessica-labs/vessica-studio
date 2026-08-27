@@ -28,6 +28,7 @@ import (
 	mrand "math/rand"
 
 	qrcode "github.com/skip2/go-qrcode"
+	"github.com/vessica-labs/vessica-studio/internal/collab"
 )
 
 const (
@@ -41,11 +42,12 @@ type chatMsg struct {
 }
 
 type chatSession struct {
-	Deck    string
-	Name    string
-	mu      sync.Mutex
-	history []chatMsg
-	turns   int
+	Deck      string
+	Name      string
+	VisitorID string
+	mu        sync.Mutex
+	history   []chatMsg
+	turns     int
 }
 
 var (
@@ -137,6 +139,7 @@ func (s *Server) chatAccess(w http.ResponseWriter, r *http.Request, deck string)
 		http.SetCookie(w, &http.Cookie{Name: shareCookieName(deck), Value: tok, Path: "/",
 			HttpOnly: true, Secure: r.TLS != nil || s.Mode == ModePublic, SameSite: http.SameSiteLaxMode,
 			MaxAge: 60 * 60 * 24})
+		s.recordQRScan(w, r, deck, "chat_qr")
 		return true
 	}
 	return s.canView(r, deck)
@@ -220,10 +223,13 @@ func (s *Server) handleChatStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	chatSeen++
-	cs := &chatSession{Deck: deck, Name: name}
+	visitorID := s.visitorID(w, r, true)
+	cs := &chatSession{Deck: deck, Name: name, VisitorID: visitorID}
 	sid := newSID()
 	chats[sid] = cs
 	chatMu.Unlock()
+	s.recordObservability(collab.ObservabilityEvent{Kind: collab.EventAudienceChatJoin,
+		VisitorID: visitorID, VisitorName: name, DeckStorageKey: deck, Source: "chat_qr"})
 
 	cs.mu.Lock()
 	defer cs.mu.Unlock()

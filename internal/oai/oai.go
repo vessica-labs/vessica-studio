@@ -28,6 +28,21 @@ type Client struct {
 	BaseURL string
 	Key     string
 	HTTP    *http.Client
+	Observe func(Observation)
+}
+
+// Observation contains operational metadata from a direct OpenAI API call.
+// It intentionally excludes prompts, responses, authorization material, and
+// Codex activity. The hosted server uses it to feed its owner-only dashboard.
+type Observation struct {
+	Path              string
+	Model             string
+	StatusCode        int
+	InputTokens       int64
+	OutputTokens      int64
+	CachedInputTokens int64
+	TotalTokens       int64
+	DurationMS        int64
 }
 
 // New resolves the API key in order: OPENAI_API_KEY env, VSTD_OPENAI_KEY
@@ -76,6 +91,8 @@ func (c *Client) GetRaw(path string) ([]byte, int, error) {
 
 func (c *Client) post(path string, payload any) ([]byte, int, error) {
 	b, _ := json.Marshal(payload)
+	model := payloadModel(b)
+	started := time.Now()
 	req, err := http.NewRequest("POST", c.BaseURL+path, bytes.NewReader(b))
 	if err != nil {
 		return nil, 0, err
@@ -84,11 +101,54 @@ func (c *Client) post(path string, payload any) ([]byte, int, error) {
 	req.Header.Set("Content-Type", "application/json")
 	res, err := c.HTTP.Do(req)
 	if err != nil {
+		c.observe(Observation{Path: path, Model: model, DurationMS: time.Since(started).Milliseconds()})
 		return nil, 0, err
 	}
 	defer res.Body.Close()
 	body, _ := io.ReadAll(res.Body)
+	usage := responseUsage(body)
+	usage.Path = path
+	usage.Model = model
+	usage.StatusCode = res.StatusCode
+	usage.DurationMS = time.Since(started).Milliseconds()
+	c.observe(usage)
 	return body, res.StatusCode, nil
+}
+
+func (c *Client) observe(observation Observation) {
+	if c.Observe != nil {
+		c.Observe(observation)
+	}
+}
+
+func payloadModel(body []byte) string {
+	var payload struct {
+		Model   string `json:"model"`
+		Session struct {
+			Model string `json:"model"`
+		} `json:"session"`
+	}
+	_ = json.Unmarshal(body, &payload)
+	if payload.Model != "" {
+		return payload.Model
+	}
+	return payload.Session.Model
+}
+
+func responseUsage(body []byte) Observation {
+	var response struct {
+		Usage struct {
+			InputTokens       int64 `json:"input_tokens"`
+			OutputTokens      int64 `json:"output_tokens"`
+			TotalTokens       int64 `json:"total_tokens"`
+			InputTokenDetails struct {
+				CachedTokens int64 `json:"cached_tokens"`
+			} `json:"input_tokens_details"`
+		} `json:"usage"`
+	}
+	_ = json.Unmarshal(body, &response)
+	return Observation{InputTokens: response.Usage.InputTokens, OutputTokens: response.Usage.OutputTokens,
+		CachedInputTokens: response.Usage.InputTokenDetails.CachedTokens, TotalTokens: response.Usage.TotalTokens}
 }
 
 // ---- image generation ----

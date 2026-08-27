@@ -941,6 +941,26 @@ a separate player-host-only HttpOnly cookie accepted only by media handlers.
 Keep the deployment at one application replica while its writable Git checkout
 remains a single-writer process.
 
+### Owner monitoring
+
+Collaboration mode also enables an owner-only `/observability` workspace,
+linked from the presentation catalog immediately above Documentation. It shows
+7-, 30-, and 90-day audience summaries, named QR-chat participants, anonymous
+privacy-preserving visitor labels, presentation and slide views, team activity,
+sanitized HTTP 5xx routes, and OpenAI API token usage. Codex usage is not
+collected.
+
+Audience and player requests never wait for analytics writes. Events enter a
+bounded in-process queue and are flushed to PostgreSQL in small background
+batches; if that queue reaches capacity, events are dropped and the count is
+shown to the owner. Viewer records use a random first-party HttpOnly identifier.
+The engine does not store viewer IP addresses, user agents, share tokens,
+prompts, model responses, or error response bodies in observability data.
+OpenAI totals come from API response usage and authenticated Realtime events.
+The owner route and its JSON API re-check the permanent team-owner capability
+on every request; ordinary team members and the player origin cannot access
+them.
+
 To roll back application behavior without discarding collaboration data,
 disable `VSTD_COLLABORATION`, restore the former canonical `public_host`, and
 redeploy. Migrations are additive and are not reversed.

@@ -60,6 +60,9 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`b.title='Download PDF'`,                                 // audience HUD exposes PDF directly
 		`data-presenter-control`,                                 // presenter controls fail closed before identity resolves
 		`window.VSTDPresenterControl`,                            // all client control paths share the same presenter gate
+		`/api/observability/view`,                                // audience and team slide views feed the owner dashboard asynchronously
+		`/api/observability/openai-usage`,                        // authenticated Realtime usage is reported without exposing the API key
+		`keepalive:true`,                                         // telemetry never blocks navigation or unload
 		`new MutationObserver(lockAudienceHUD)`,                  // dynamically injected HUD controls are also hidden
 		`chip.setAttribute('role','status')`,                     // follow state is an indicator, not an audience control
 		`document.dispatchEvent(new CustomEvent('vstd:identity'`, // late-created controls sync after auth resolves

@@ -414,6 +414,10 @@ KNOWLEDGE BASE (context on the company and audience):
 				Arguments  string `json:"arguments"`
 				CallID     string `json:"call_id"`
 				Error      any    `json:"error"`
+				Response   struct {
+					ID    string          `json:"id"`
+					Usage json.RawMessage `json:"usage"`
+				} `json:"response"`
 			}
 			if json.Unmarshal(msg, &ev) != nil {
 				continue
@@ -425,6 +429,11 @@ KNOWLEDGE BASE (context on the company and audience):
 				respActive = true
 			case "response.done":
 				respActive = false
+				dedupe := ""
+				if ev.Response.ID != "" {
+					dedupe = "phone:" + ev.Response.ID
+				}
+				s.recordRealtimeUsage(ev.Response.Usage, cs.Deck, "phone_realtime", model, "", dedupe)
 			case "response.output_audio.delta":
 				sendTelnyx(map[string]any{"event": "media", "media": map[string]string{"payload": ev.Delta}})
 			case "input_audio_buffer.speech_started":

@@ -125,3 +125,37 @@ CREATE TABLE IF NOT EXISTS vstd_deck_placements (
 );
 CREATE INDEX IF NOT EXISTS vstd_placement_folder ON vstd_deck_placements(user_id,folder_id);
 `
+
+const observabilitySchemaSQL = `
+CREATE TABLE IF NOT EXISTS vstd_observability_events (
+  id bigserial PRIMARY KEY,
+  team_id text NOT NULL REFERENCES vstd_teams(id) ON DELETE CASCADE,
+  kind text NOT NULL,
+  actor_user_id text REFERENCES vstd_users(id) ON DELETE SET NULL,
+  visitor_id text,
+  visitor_name text,
+  deck_id text REFERENCES vstd_decks(id) ON DELETE SET NULL,
+  deck_storage_key text,
+  slide_id text,
+  source text,
+  method text,
+  path text,
+  status_code integer,
+  model text,
+  input_tokens bigint NOT NULL DEFAULT 0,
+  output_tokens bigint NOT NULL DEFAULT 0,
+  cached_input_tokens bigint NOT NULL DEFAULT 0,
+  total_tokens bigint NOT NULL DEFAULT 0,
+  duration_ms bigint NOT NULL DEFAULT 0,
+  dedupe_key text,
+  metadata jsonb NOT NULL DEFAULT '{}'::jsonb,
+  occurred_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS vstd_observability_dedupe
+  ON vstd_observability_events(team_id,dedupe_key) WHERE dedupe_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS vstd_observability_time ON vstd_observability_events(team_id,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS vstd_observability_kind_time ON vstd_observability_events(team_id,kind,occurred_at DESC);
+CREATE INDEX IF NOT EXISTS vstd_observability_visitor_time ON vstd_observability_events(visitor_id,occurred_at DESC) WHERE visitor_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS vstd_observability_actor_time ON vstd_observability_events(actor_user_id,occurred_at DESC) WHERE actor_user_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS vstd_observability_deck_time ON vstd_observability_events(deck_storage_key,occurred_at DESC) WHERE deck_storage_key IS NOT NULL;
+`

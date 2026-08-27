@@ -158,13 +158,13 @@ func (s *Server) hostDispatch(next http.Handler) http.Handler {
 }
 
 func appOnlyPath(path string) bool {
-	return path == "/" || path == "/presentations" || path == "/team" || strings.HasPrefix(path, "/site/") ||
+	return path == "/" || path == "/presentations" || path == "/team" || path == "/observability" || strings.HasPrefix(path, "/site/") ||
 		strings.HasPrefix(path, "/auth/") || strings.HasPrefix(path, "/api/auth/") ||
 		strings.HasPrefix(path, "/api/app/") || path == "/api/decks" || path == "/api/contact"
 }
 
 func playerOnlyPath(path string) bool {
-	for _, prefix := range []string{"/d/", "/library/", "/assets/", "/api/deck/", "/api/player/", "/api/events", "/api/me", "/api/agent/", "/api/realtime/", "/api/vessica/", "/api/chat/", "/api/telnyx/", "/api/asset/", "/api/content-sync/", "/session"} {
+	for _, prefix := range []string{"/d/", "/library/", "/assets/", "/api/deck/", "/api/player/", "/api/events", "/api/me", "/api/agent/", "/api/realtime/", "/api/observability/", "/api/vessica/", "/api/chat/", "/api/telnyx/", "/api/asset/", "/api/content-sync/", "/session"} {
 		if strings.HasPrefix(path, prefix) {
 			return true
 		}

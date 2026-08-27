@@ -61,6 +61,7 @@ type Server struct {
 	transferIntents    map[string]slideTransferIntent
 	exportLocks        sync.Map // deck key -> *sync.Mutex for PowerPoint cache assembly
 	thumbnailRenders   chan struct{}
+	observability      *observabilityRecorder
 	Agent              *agentWorker
 	ContentSync        *ContentSync
 	Collab             *collab.Store
@@ -73,6 +74,7 @@ type Server struct {
 func New(st *studio.Studio, mode Mode) *Server {
 	c := oai.New(st.Config.OpenAI.BaseURL, st.Config.OpenAI.APIKeyCmd)
 	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}, presenting: map[string]presentingState{}, transferIntents: map[string]slideTransferIntent{}, thumbnailRenders: make(chan struct{}, 2)}
+	s.OAI.Observe = s.observeOpenAI
 	s.initAuth()
 	return s
 }
@@ -243,6 +245,10 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/password/forgot", s.handleForgotPassword)
 	mux.HandleFunc("POST /api/auth/password/reset", s.handleResetPassword)
 	mux.HandleFunc("GET /team", s.handleTeamPage)
+	mux.HandleFunc("GET /observability", s.handleObservabilityPage)
+	mux.HandleFunc("GET /api/app/observability", s.handleObservabilityData)
+	mux.HandleFunc("POST /api/observability/view", s.handleObservabilityView)
+	mux.HandleFunc("POST /api/observability/openai-usage", s.handleReportedOpenAIUsage)
 	mux.HandleFunc("GET /api/app/decks", s.handleAppDecks)
 	mux.HandleFunc("GET /api/app/catalog", s.handleCatalog)
 	mux.HandleFunc("POST /api/app/folders", s.handleCreateFolder)
@@ -276,10 +282,11 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/content-sync/status", s.handleContentSyncStatus)
 	s.VessicaRoutes(mux)      // demo tools: kb, tasks, display, sms, email, search, code
 	s.AudienceChatRoutes(mux) // QR-scanned per-person audience chat
+	var handler http.Handler = mux
 	if s.Collab != nil && s.Mode == ModePublic {
-		return s.hostDispatch(mux)
+		handler = s.hostDispatch(handler)
 	}
-	return mux
+	return s.observeHTTP(handler)
 }
 
 func (s *Server) editOnly(h http.HandlerFunc) http.HandlerFunc {

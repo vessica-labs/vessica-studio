@@ -196,6 +196,45 @@ func TestCollaborationHandlerAuthorizationMatrixPostgres(t *testing.T) {
 	}
 }
 
+func TestOwnerMonitoringRoutesPostgres(t *testing.T) {
+	f := integrationCollaborationFixture(t)
+
+	ownerPage := httptest.NewRequest(http.MethodGet, "/observability", nil)
+	ownerPage.Host = "app.example.test"
+	ownerPage.AddCookie(&http.Cookie{Name: accountSessionCookie, Value: f.ownerCookie})
+	rr := httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, ownerPage)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), "Owner workspace") {
+		t.Fatalf("owner monitoring page status=%d body=%q", rr.Code, rr.Body.String())
+	}
+
+	memberPage := httptest.NewRequest(http.MethodGet, "/observability", nil)
+	memberPage.Host = "app.example.test"
+	memberPage.AddCookie(&http.Cookie{Name: accountSessionCookie, Value: f.memberCookie})
+	rr = httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, memberPage)
+	if rr.Code != http.StatusForbidden {
+		t.Fatalf("member monitoring page status=%d, want 403", rr.Code)
+	}
+
+	ownerData := httptest.NewRequest(http.MethodGet, "/api/app/observability?days=7", nil)
+	ownerData.Host = "app.example.test"
+	ownerData.AddCookie(&http.Cookie{Name: accountSessionCookie, Value: f.ownerCookie})
+	rr = httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, ownerData)
+	if rr.Code != http.StatusOK || !strings.Contains(rr.Body.String(), `"range_days":7`) {
+		t.Fatalf("owner monitoring API status=%d body=%q", rr.Code, rr.Body.String())
+	}
+
+	playerHost := httptest.NewRequest(http.MethodGet, "/observability", nil)
+	playerHost.Host = "present.example.test"
+	rr = httptest.NewRecorder()
+	f.handler.ServeHTTP(rr, playerHost)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("player-host monitoring page status=%d, want 404", rr.Code)
+	}
+}
+
 func TestPlayerHandoffExchangeRequiresPlayerOriginAndSetsMediaCookiePostgres(t *testing.T) {
 	f := integrationCollaborationFixture(t)
 	handoff, err := f.store.CreateHandoff(context.Background(), f.member.ID, f.memberDeck.ID, "edit")
