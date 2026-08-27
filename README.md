@@ -3,7 +3,7 @@
 **A local-first, agent-driven presentation studio built on ordinary files.**
 
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/doc/install)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [Documentation](https://studio-docs.vessica.ai/) ·
 [Install the CLI and Codex plugin](https://studio-docs.vessica.ai/install/) ·
@@ -985,4 +985,4 @@ OpenAI, GitHub, Railway, Telnyx, Resend, or S3 credentials.
 
 ## License
 
-[MIT](LICENSE) © Vessica Labs
+[Apache License 2.0](LICENSE) © Vessica Labs
