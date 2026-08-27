@@ -52,7 +52,8 @@ try {
     throw new Error(forbiddenEnvironment.stderr || "sandbox received forbidden environment variables");
   }
   await sandbox.files.write("/workspace/.vstd/prompt.txt", input.prompt, { mode: 0o600 });
-  const imageArgs = input.remoteImages.map(image => ` -i ${shellQuote(image)}`).join("");
+  const remoteImages = input.remoteImages ?? [];
+  const imageArgs = remoteImages.map(image => ` -i ${shellQuote(image)}`).join("");
   const runScript = `#!/usr/bin/env bash
 set -uo pipefail
 export PATH="/workspace/bin:$PATH"
