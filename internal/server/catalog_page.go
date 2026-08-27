@@ -21,7 +21,7 @@ func documentationURL() string {
 	if configured := strings.TrimSpace(os.Getenv("VSTD_DOCS_URL")); configured != "" {
 		return configured
 	}
-	return "https://vessica-studio-docs-production.up.railway.app"
+	return "https://studio-docs.vessica.ai"
 }
 
 func (s *Server) renderCatalogPage(w http.ResponseWriter, userName, role, csrf string, collaboration bool) {

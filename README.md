@@ -5,6 +5,12 @@
 [![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/doc/install)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+[Documentation](https://studio-docs.vessica.ai/) ·
+[Install the CLI and Codex plugin](https://studio-docs.vessica.ai/install/) ·
+[Web editor guide](https://studio-docs.vessica.ai/web-editor/) ·
+[Architecture](https://studio-docs.vessica.ai/architecture/) ·
+[Vessica voice agent](https://studio-docs.vessica.ai/voice-agent/)
+
 Vessica Studio turns a directory of HTML slide fragments and Markdown
 companions into a live, editable presentation. Use the `vstd` CLI to create,
 serve, review, fork, export, and deploy decks. Use Codex or another coding
@@ -16,6 +22,7 @@ and deployable with Git—without locking the deck inside a proprietary editor.
 ## Contents
 
 - [Why Vessica Studio](#why-vessica-studio)
+- [Documentation](https://studio-docs.vessica.ai/)
 - [Installation](#installation)
 - [Five-minute quickstart](#five-minute-quickstart)
 - [Use Vessica Studio with Codex](#use-vessica-studio-with-codex)
@@ -60,6 +67,9 @@ and deployable with Git—without locking the deck inside a proprietary editor.
   editing it.
 
 ## Installation
+
+For the visual setup path, including Codex desktop and CLI plugin installation,
+see the [installation guide](https://studio-docs.vessica.ai/install/).
 
 ### Requirements
 
@@ -176,18 +186,23 @@ vstd skill conventions
 vstd skill slide-edit
 ```
 
-### Install the Codex workflow launchers
+### Install the Codex plugin
 
-Clone this repository once, then run:
+Add the repository's marketplace, then install Vessica Studio:
 
 ```sh
-./codex/install.sh
+codex plugin marketplace add vessica-labs/vessica-studio --ref main
+codex plugin add vessica-studio@vessica-studio
 ```
 
-The installer copies thin launchers into `${CODEX_HOME:-$HOME/.codex}/prompts`.
-Start a new Codex session after installation. The launchers call `vstd skill`
-at runtime, so updating the `vstd` binary also updates the workflow instructions
-without reinstalling the launchers.
+Start a new Codex task after installation so the six plugin skills are
+discovered. In Codex CLI, `/plugins` opens the plugin browser; in Codex desktop,
+use the Plugins surface. Verify the install with `codex plugin list`.
+
+The repository also retains legacy thin prompt launchers for environments that
+do not support plugins. Clone the repository and run `./codex/install.sh`; it
+copies launchers into `${CODEX_HOME:-$HOME/.codex}/prompts`. The launchers call
+`vstd skill` at runtime and require a new Codex session after installation.
 
 Use a launcher explicitly:
 
@@ -215,11 +230,12 @@ content repository to make those rules persistent for that repository. The
 guide tells Codex to preserve slide/companion pairs, use the canonical skills,
 and avoid generated build output.
 
-If Vessica Studio is installed as a Codex plugin in your environment, its skills
-may also be invoked explicitly from Codex's skill picker or with the `$` skill
-syntax. Codex can also select a skill implicitly from its description. See the
+Plugin skills may be invoked explicitly from Codex's skill picker or with the
+`$` skill syntax, for example `$vessica-studio:slide-edit`. Codex can also select
+a skill implicitly from its description. See the
+[Codex plugin documentation](https://learn.chatgpt.com/docs/plugins) and
 [Codex skills documentation](https://learn.chatgpt.com/docs/build-skills) for
-current discovery and invocation behavior.
+current installation, discovery, and invocation behavior.
 
 ### What the skills enforce
 
@@ -814,7 +830,7 @@ Environment variables take precedence over YAML.
 | `DATABASE_URL` | PostgreSQL connection URL; required in collaboration mode |
 | `VSTD_APP_ORIGIN` | Exact HTTPS origin for marketing, authentication, catalogs, and team administration |
 | `VSTD_PLAYER_ORIGIN` | Separate exact HTTPS origin for deck execution, audience links, and player APIs |
-| `VSTD_DOCS_URL` | Documentation-site URL opened from the presentation catalog; defaults to the hosted Vessica Studio documentation |
+| `VSTD_DOCS_URL` | Documentation-site URL opened from the presentation catalog; defaults to `https://studio-docs.vessica.ai` |
 | `VSTD_OWNER_GITHUB_LOGIN` | GitHub login that may bootstrap and administer the team |
 | `PUBLIC_URL` | Public base URL for audience and action links |
 | `VSTD_CONTENT_SYNC` | Set to `1` to enable authenticated hosted editing |

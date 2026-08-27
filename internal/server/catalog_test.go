@@ -30,7 +30,7 @@ func TestCatalogPageLinksToDocumentationInNewTab(t *testing.T) {
 
 func TestDocumentationURLDefaultsToPublicDocs(t *testing.T) {
 	t.Setenv("VSTD_DOCS_URL", "")
-	if got := documentationURL(); got != "https://vessica-studio-docs-production.up.railway.app" {
+	if got := documentationURL(); got != "https://studio-docs.vessica.ai" {
 		t.Fatalf("documentationURL() = %q", got)
 	}
 }

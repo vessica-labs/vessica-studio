@@ -6,7 +6,7 @@
     "name": "Vessica Labs",
     "url": "https://github.com/vessica-labs"
   },
-  "homepage": "https://vessica-studio-docs-production.up.railway.app/install/",
+  "homepage": "https://studio-docs.vessica.ai/install/",
   "repository": "https://github.com/vessica-labs/vessica-studio",
   "license": "MIT",
   "keywords": ["presentations", "slides", "vstd", "vessica"],
@@ -18,7 +18,7 @@
     "developerName": "Vessica Labs",
     "category": "Productivity",
     "capabilities": ["Write"],
-    "websiteURL": "https://vessica-studio-docs-production.up.railway.app/",
+    "websiteURL": "https://studio-docs.vessica.ai/",
     "defaultPrompt": [
       "Create a new presentation from my brief.",
       "Redesign this slide and preserve its evidence.",
