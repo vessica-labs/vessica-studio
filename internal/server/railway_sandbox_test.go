@@ -140,7 +140,7 @@ func TestApplyRailwaySandboxChangesWritesScopedResult(t *testing.T) {
 
 func TestEmbeddedRailwayRunnerEnforcesIsolationAndTeardown(t *testing.T) {
 	script := string(railwaySandboxRunnerJS)
-	for _, required := range []string{`networkIsolation: "ISOLATED"`, "forbidden sandbox environment", "await sandbox.destroy()", "finally"} {
+	for _, required := range []string{`networkIsolation: "ISOLATED"`, "forbidden sandbox environment", "input.remoteImages ?? []", "await sandbox.destroy()", "finally"} {
 		if !strings.Contains(script, required) {
 			t.Errorf("embedded dispatcher missing %q", required)
 		}
