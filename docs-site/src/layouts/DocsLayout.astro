@@ -1,5 +1,6 @@
 ---
 import "../styles/global.css";
+import "../styles/sidebar.css";
 
 const { frontmatter = {} } = Astro.props;
 const title = frontmatter.title || "Vessica Studio documentation";
@@ -35,24 +36,22 @@ const active = (href: string) => href === "/" ? path === "/" : path.startsWith(h
     <div class="shell">
       <aside class="sidebar">
         <a class="brand" href="/" aria-label="Vessica Studio documentation home">
-          <span class="brand-mark">V</span>
-          <span><b>Vessica Studio</b><small>Documentation</small></span>
+          Vessica Studio
         </a>
         <nav aria-label="Documentation">
           {groups.map((group) => (
             <section>
               <h2>{group.label}</h2>
-              {group.items.map((item) => <a class:list={[active(item.href) && "active"]} href={item.href}>{item.label}</a>)}
+              {group.items.map((item) => <a class:list={[active(item.href) && "active"]} href={item.href} aria-current={active(item.href) ? "page" : undefined}>{item.label}</a>)}
             </section>
           ))}
         </nav>
         <div class="sidebar-foot">
-          <a href="https://github.com/vessica-labs/vessica-studio" target="_blank" rel="noreferrer">GitHub <span>↗</span></a>
-          <a href="https://mattkropp.vessica.ai/presentations" target="_blank" rel="noreferrer">Open Studio <span>↗</span></a>
+          <a href="https://github.com/vessica-labs/vessica-studio" target="_blank" rel="noreferrer"><span>GitHub</span><span>Open</span></a>
+          <a href="https://mattkropp.vessica.ai/presentations" target="_blank" rel="noreferrer"><span>Vessica Studio</span><span>Open</span></a>
         </div>
       </aside>
       <main>
-        <div class="mobile-brand"><a href="/">Vessica Studio</a><span>Docs</span></div>
         <article class="prose">
           <slot />
         </article>
