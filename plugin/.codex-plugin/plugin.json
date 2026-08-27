@@ -1,0 +1,29 @@
+{
+  "name": "vessica-studio",
+  "version": "0.3.0",
+  "description": "Agent-driven presentation building on the Vessica Studio engine: create, edit, fork, refresh, and review file-native decks.",
+  "author": {
+    "name": "Vessica Labs",
+    "url": "https://github.com/vessica-labs"
+  },
+  "homepage": "https://vessica-studio-docs-production.up.railway.app/install/",
+  "repository": "https://github.com/vessica-labs/vessica-studio",
+  "license": "MIT",
+  "keywords": ["presentations", "slides", "vstd", "vessica"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Vessica Studio",
+    "shortDescription": "Build and edit file-native presentations",
+    "longDescription": "Create, edit, fork, refresh, and review Vessica Studio decks with companion-first evidence and visual QA workflows.",
+    "developerName": "Vessica Labs",
+    "category": "Productivity",
+    "capabilities": ["Write"],
+    "websiteURL": "https://vessica-studio-docs-production.up.railway.app/",
+    "defaultPrompt": [
+      "Create a new presentation from my brief.",
+      "Redesign this slide and preserve its evidence.",
+      "Review this deck before I present it."
+    ],
+    "brandColor": "#0A2112"
+  }
+}

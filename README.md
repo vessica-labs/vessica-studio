@@ -814,6 +814,7 @@ Environment variables take precedence over YAML.
 | `DATABASE_URL` | PostgreSQL connection URL; required in collaboration mode |
 | `VSTD_APP_ORIGIN` | Exact HTTPS origin for marketing, authentication, catalogs, and team administration |
 | `VSTD_PLAYER_ORIGIN` | Separate exact HTTPS origin for deck execution, audience links, and player APIs |
+| `VSTD_DOCS_URL` | Documentation-site URL opened from the presentation catalog; defaults to the hosted Vessica Studio documentation |
 | `VSTD_OWNER_GITHUB_LOGIN` | GitHub login that may bootstrap and administer the team |
 | `PUBLIC_URL` | Public base URL for audience and action links |
 | `VSTD_CONTENT_SYNC` | Set to `1` to enable authenticated hosted editing |

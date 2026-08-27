@@ -1,0 +1,63 @@
+---
+import "../styles/global.css";
+
+const { frontmatter = {} } = Astro.props;
+const title = frontmatter.title || "Vessica Studio documentation";
+const description = frontmatter.description || "Create, edit, present, and publish with Vessica Studio.";
+const path = Astro.url.pathname;
+const groups = [
+  { label: "Start here", items: [
+    { href: "/", label: "Overview" },
+    { href: "/install/", label: "Install CLI + plugin" },
+  ]},
+  { label: "Use Studio", items: [
+    { href: "/web-editor/", label: "Web editor" },
+    { href: "/codex/", label: "Work with Codex" },
+    { href: "/voice-agent/", label: "Vessica voice agent" },
+  ]},
+  { label: "Understand", items: [
+    { href: "/architecture/", label: "Architecture" },
+  ]},
+];
+const active = (href: string) => href === "/" ? path === "/" : path.startsWith(href);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#07180d" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <title>{title} · Vessica Studio</title>
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <a class="brand" href="/" aria-label="Vessica Studio documentation home">
+          <span class="brand-mark">V</span>
+          <span><b>Vessica Studio</b><small>Documentation</small></span>
+        </a>
+        <nav aria-label="Documentation">
+          {groups.map((group) => (
+            <section>
+              <h2>{group.label}</h2>
+              {group.items.map((item) => <a class:list={[active(item.href) && "active"]} href={item.href}>{item.label}</a>)}
+            </section>
+          ))}
+        </nav>
+        <div class="sidebar-foot">
+          <a href="https://github.com/vessica-labs/vessica-studio" target="_blank" rel="noreferrer">GitHub <span>↗</span></a>
+          <a href="https://mattkropp.vessica.ai/presentations" target="_blank" rel="noreferrer">Open Studio <span>↗</span></a>
+        </div>
+      </aside>
+      <main>
+        <div class="mobile-brand"><a href="/">Vessica Studio</a><span>Docs</span></div>
+        <article class="prose">
+          <slot />
+        </article>
+        <footer>Built with ordinary MDX files, just like the ideas it documents.</footer>
+      </main>
+    </div>
+  </body>
+</html>

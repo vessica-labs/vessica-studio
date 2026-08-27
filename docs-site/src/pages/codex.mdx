@@ -1,0 +1,92 @@
+---
+layout: ../layouts/DocsLayout.astro
+title: Work with Codex
+description: Use the Vessica Studio plugin and CLI inside Codex to create, edit, fork, refresh, and review presentations safely.
+---
+import Callout from "../components/Callout.astro";
+
+<span class="eyebrow">Agent workflows</span>
+
+# Build presentations with Codex
+
+The Vessica Studio plugin gives Codex a durable authoring contract, not a bag of slide prompts. Each workflow reads the deck's companion evidence, works directly on the source files, and closes with visual QA.
+
+## Start a Codex task in the content repository
+
+Open the folder that contains `studio.yaml`. Codex should also see the downstream `AGENTS.md` installed by `vstd init`, which preserves the slide/companion contract and routes work through the canonical skills.
+
+Ask naturally and name the outcome:
+
+```text
+Use the Vessica Studio deck-new skill to create a 12-slide board presentation
+about our product strategy. The audience is the executive committee. Use the
+attached research, keep every factual claim sourced, and run a visual review.
+```
+
+Or invoke a skill explicitly with Codex's `$` skill syntax:
+
+```text
+$vessica-studio:slide-edit redesign slide 0060 around the attached source PDF
+```
+
+The exact prefix shown by your skill picker can vary by installed marketplace. Select the Vessica Studio skill whose name matches the task.
+
+## Match the workflow to the job
+
+| You want to… | Use |
+|---|---|
+| Create a narrative and full deck | `deck-new` |
+| Insert one or more slides | `slide-add` |
+| Rewrite or redesign existing slides | `slide-edit` |
+| Tailor a deck without losing its parent | `deck-fork` |
+| Review visual and narrative quality | `deck-review` |
+| Refresh dated research and claims | `market-refresh` |
+
+## Give Codex the context that changes the answer
+
+A strong request names:
+
+- the studio root and deck;
+- slide IDs or insertion point when relevant;
+- audience and decision the deck must support;
+- source files to treat as authoritative;
+- facts, visuals, or structures that must be preserved;
+- output and review expectations.
+
+```text
+Use slide-add in the product-story deck. Add a customer proof slide after
+0040-problem. Audience: enterprise CIOs. Use sources/customer-study.pdf,
+preserve the deck's current visual grammar, update both adjacent transitions,
+and show me the rendered result at 1280×720.
+```
+
+## What the plugin makes Codex do
+
+1. Read `vstd skill conventions` and the selected workflow.
+2. Inspect the target deck and companions before changing files.
+3. Preserve paired `slides/<id>.html` and `slides/<id>.md` files.
+4. Keep claims aligned with evidence and sources.
+5. Update the talk track and transition.
+6. Record the completed change in the companion log.
+7. Build and visually inspect the result.
+
+<Callout title="Companion-first is the safety rail">The HTML is what the audience sees. The companion is why the slide exists, what supports it, and how it should be delivered. A good Codex edit preserves both.</Callout>
+
+## Use the CLI from Codex
+
+Codex can run the same commands you would use in a terminal:
+
+```sh
+vstd list
+vstd build product-story
+vstd serve product-story
+vstd fork product-story acme
+vstd diff-upstream product-story--acme
+vstd asset find --tags customer,proof
+```
+
+For a studio outside the current directory, add `--root=/absolute/path/to/studio`.
+
+## Review before delivery
+
+Ask for `deck-review` before an important presentation. It checks narrative sequence, slide/companion integrity, source fidelity, library hygiene, clipping and overflow, generated assets, and individual-slide rendering—not only a montage.

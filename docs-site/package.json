@@ -1,0 +1,18 @@
+{
+  "name": "vessica-studio-docs",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro check && astro build",
+    "start": "node server.mjs",
+    "check": "astro check"
+  },
+  "dependencies": {
+    "@astrojs/mdx": "7.0.8",
+    "@astrojs/check": "0.9.6",
+    "astro": "7.2.8",
+    "typescript": "5.9.3"
+  }
+}

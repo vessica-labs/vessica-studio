@@ -1,0 +1,81 @@
+---
+layout: ../layouts/DocsLayout.astro
+title: Architecture
+description: Understand how local Codex and the vstd CLI interact with the Git-backed Vessica Studio projection running on Railway.
+---
+import ArchitectureFlow from "../components/ArchitectureFlow.astro";
+import Callout from "../components/Callout.astro";
+
+<span class="eyebrow">Local-first, cloud-capable</span>
+
+# How local authoring becomes a Railway projection
+
+Vessica Studio deliberately separates the durable content model from the browser and deployment. Local Codex and the CLI work against ordinary files; Railway serves a validated revision of those same files and can synchronize authorized presenter edits back to Git.
+
+<ArchitectureFlow />
+
+## The durable source of truth
+
+A studio is a Git repository with `studio.yaml`, deck metadata, a shared asset library, and paired slide files:
+
+```text
+decks/product-story/slides/
+├── 0010-cover.html
+├── 0010-cover.md
+├── 0020-problem.html
+└── 0020-problem.md
+```
+
+The HTML fragment contains one root `<section class="slide">`. The Markdown companion holds evidence, intent, talk track, sources, and the change log. Themes style the content; the engine owns the player and editor.
+
+## Local Codex and plugin
+
+The plugin selects one of six workflows. Those skills instruct Codex to read the companion first, edit the file pair, build the deck, and run a visual critic. The canonical skill content lives in the engine repository and is embedded in `vstd`; integrations do not carry drifting copies of the workflow.
+
+## The `vstd` CLI
+
+The CLI is the adapter between files and product behavior:
+
+- `vstd build` validates and assembles a static deck;
+- `vstd serve` watches sources and provides the editor/player APIs;
+- asset commands maintain the shared image/video manifest;
+- export commands create PDF, PowerPoint, and portable bundles;
+- `vstd railway` configures or operates hosted deployment.
+
+Local `studio` mode is writable and assumes a trusted operator. Do not expose it to an untrusted network.
+
+## Git is the synchronization boundary
+
+Local work reaches production through normal commits and pushes. The deployed Vessica Studio content service checks out the configured branch and runs the engine over that repository.
+
+When hosted content sync is enabled:
+
+1. An allowlisted presenter authenticates.
+2. The browser saves a slide, companion, attachment, or image to the running instance.
+3. The player reports the live save separately from Git synchronization.
+4. A background worker batches content-only changes and pushes them to the configured branch.
+5. The same worker polls for remote content commits and broadcasts a live reload after activation.
+
+<Callout title="Two different deployments">The engine repository ships application behavior. The content repository ships a particular studio. An engine-only merge therefore requires an explicit rebuild of a Railway content service whose Dockerfile clones the engine.</Callout>
+
+## Railway projection and trust boundaries
+
+The hosted service runs in `public` mode:
+
+- the catalog and write APIs require a presenter session;
+- presenter identity is allowlisted or team-account based;
+- signed audience links are deck-scoped and expire;
+- audience viewers receive read-only controls;
+- video bytes can live in S3-compatible storage while Git holds metadata and posters;
+- secrets remain in Railway variables, never in deck files or build artifacts.
+
+The projection can be replaced from Git at any time. That is why content, evidence, and history remain in the repository instead of depending on the running container.
+
+## Save and deploy mental model
+
+| Action | Immediate effect | Durable effect |
+|---|---|---|
+| Local file edit | Local server rebuild/reload | Commit and push to Git |
+| Hosted editor save | Running presenter instance updates | Content-sync commit pushes to Git |
+| Engine merge | No automatic content change | Railway content image must rebuild against the new engine |
+| Audience share | Signed view of one deck | Expires; no source write authority |
