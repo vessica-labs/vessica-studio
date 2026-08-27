@@ -333,13 +333,14 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 			owned := ps.Deck.OwnerUserID == ps.User.ID
 			present := ps.Mode == "present" || ps.Mode == "edit"
 			editable := ps.Mode == "edit" && owned && s.ContentSync.Editable()
+			transferSlides := s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "fork")
 			deck := ps.Deck
 			deck.Owned = owned
 			writeJSON(w, map[string]any{
 				"mode": ps.Mode, "presenter": present, "editable": editable, "audience": false,
 				"user": ps.User, "deck": deck,
 				"capabilities": map[string]bool{"view": true, "present": present, "edit": editable,
-					"fork": false, "change_visibility": false, "external_share": owned && ps.Mode == "edit"},
+					"fork": transferSlides, "transfer_slides": transferSlides, "change_visibility": false, "external_share": owned && ps.Mode == "edit"},
 				"content_sync": s.ContentSync.Status(), "app_origin": s.appOrigin,
 			})
 			return
@@ -355,6 +356,7 @@ func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
 		"mode":         string(s.Mode),
 		"presenter":    s.isPresenter(r),
 		"editable":     s.canEdit(r),
+		"capabilities": map[string]bool{"transfer_slides": s.Mode == ModeStudio || s.isPresenter(r)},
 		"content_sync": s.ContentSync.Status(),
 	})
 }

@@ -111,7 +111,7 @@ func (s *Store) Migrate(ctx context.Context) error {
 	for _, migration := range []struct {
 		version int
 		sql     string
-	}{{version: 1, sql: schemaSQL}} {
+	}{{version: 1, sql: schemaSQL}, {version: 2, sql: catalogSchemaSQL}} {
 		var applied bool
 		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM vstd_schema_migrations WHERE version=$1)`, migration.version).Scan(&applied); err != nil {
 			return err
@@ -446,6 +446,9 @@ func (s *Store) CreateHandoff(ctx context.Context, userID, deckID, mode string) 
 		return "", err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO vstd_player_handoffs(id,user_id,deck_id,mode,token_hash,expires_at) VALUES($1,$2,$3,$4,$5,$6)`, randomID("hnd"), userID, deckID, mode, tokenHash(raw), s.now().Add(time.Minute))
+	if err == nil {
+		s.TouchDeck(ctx, userID, deckID)
+	}
 	return raw, err
 }
 

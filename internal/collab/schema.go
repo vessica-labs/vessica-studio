@@ -102,3 +102,26 @@ CREATE INDEX IF NOT EXISTS vstd_session_token ON vstd_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS vstd_player_token ON vstd_player_sessions(token_hash);
 CREATE INDEX IF NOT EXISTS vstd_deck_owner ON vstd_decks(owner_user_id);
 `
+
+const catalogSchemaSQL = `
+CREATE TABLE IF NOT EXISTS vstd_folders (
+  id text PRIMARY KEY,
+  team_id text NOT NULL REFERENCES vstd_teams(id) ON DELETE CASCADE,
+  owner_user_id text NOT NULL REFERENCES vstd_users(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  position integer NOT NULL DEFAULT 0,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS vstd_folder_owner_name ON vstd_folders(team_id,owner_user_id,lower(name));
+CREATE INDEX IF NOT EXISTS vstd_folder_owner_position ON vstd_folders(owner_user_id,position);
+CREATE TABLE IF NOT EXISTS vstd_deck_placements (
+  user_id text NOT NULL REFERENCES vstd_users(id) ON DELETE CASCADE,
+  deck_id text NOT NULL REFERENCES vstd_decks(id) ON DELETE CASCADE,
+  folder_id text REFERENCES vstd_folders(id) ON DELETE SET NULL,
+  last_opened_at timestamptz,
+  updated_at timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id,deck_id)
+);
+CREATE INDEX IF NOT EXISTS vstd_placement_folder ON vstd_deck_placements(user_id,folder_id);
+`

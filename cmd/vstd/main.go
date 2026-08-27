@@ -290,6 +290,9 @@ func cmdBuild(args []string) error {
 		targets = []string{deck}
 	}
 	for _, d := range targets {
+		if _, err := st.RefreshAccessibleLinks(d); err != nil {
+			return fmt.Errorf("%s: refresh links: %w", d, err)
+		}
 		out, err := st.Build(d)
 		if err != nil {
 			return fmt.Errorf("%s: %w", d, err)
@@ -728,6 +731,9 @@ func cmdBundle(args []string) error {
 	fs.Parse(args[1:])
 	st, err := openStudio(*root)
 	if err != nil {
+		return err
+	}
+	if _, err := st.RefreshAccessibleLinks(deck); err != nil {
 		return err
 	}
 	built, err := st.Build(deck)

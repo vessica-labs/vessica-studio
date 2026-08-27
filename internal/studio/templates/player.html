@@ -52,6 +52,9 @@ body:hover #hud{opacity:1}
 #downloadMenu.open{display:flex}
 #downloadMenu button{text-align:left;padding:9px 13px;font-size:13px}
 #downloadMenu small{display:block;color:#86a78e;font-size:10px;font-weight:400;margin-top:2px}
+#downloadMenu .downloadScope{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:10px;background:#07150d;margin-bottom:4px}
+#downloadMenu .downloadScope button{text-align:center;padding:7px 8px;color:#86a78e}
+#downloadMenu .downloadScope button.active{background:#245331;color:#fff}
 #homebtn svg,#downloadbtn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #shareDialog{position:fixed;inset:0;z-index:155;display:none;align-items:center;justify-content:center;background:rgba(5,13,8,.68);backdrop-filter:blur(3px);font-family:var(--vstd-sans)}
 #shareDialog.open{display:flex}
@@ -130,6 +133,8 @@ body.mobilehud #hud .cnt{font-size:14px;min-width:52px}
 #companionDrawer .attachments{display:flex;align-items:center;gap:7px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid #d7e1d9;background:#fff}
 #companionDrawer .attachments a{display:inline-flex;gap:5px;align-items:center;padding:6px 10px;border-radius:999px;background:#e3fddb;color:#0c2b15;text-decoration:none;font-size:12px;max-width:220px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #companionDrawer .attachbtn input{display:none}
+#companionDrawer .linkbar{display:none;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:#fff4d9;border-bottom:1px solid #e7c879;font-size:12px}
+#companionDrawer .linkbar.on{display:flex}#companionDrawer .linkbar .linkstate{flex:1;min-width:220px;color:#684c0c}
 #companionDrawer .cbody{position:relative;flex:1;min-height:0}
 #companionDrawer .preview,#companionDrawer textarea{position:absolute;inset:0;width:100%;height:100%;box-sizing:border-box;overflow:auto}
 #companionDrawer .preview{padding:18px 24px 80px;line-height:1.5;font-size:15px}
@@ -179,6 +184,7 @@ body.mobilehud #hud .cnt{font-size:14px;min-width:52px}
 #ovbar label{color:#8fb59a;font:12px var(--vstd-sans);letter-spacing:.08em}
 #ovbar input[type=range]{width:170px;accent-color:#20E3AC}
 #ovbar .zi{color:#cfe6d4;font-size:15px}
+#ovbar .sendSlides{margin-left:auto;border:1px solid #4c7657;border-radius:999px;background:#173d24;color:#eaffee;padding:8px 14px;cursor:pointer}
 #overview .thumb{position:relative;aspect-ratio:16/9;overflow:hidden;border-radius:6px;cursor:pointer;outline:2px solid transparent}
 #overview .thumb:hover{outline-color:var(--vstd-green)}
 #overview .thumb.hiddenSlide .mini{opacity:.32;filter:grayscale(.5)}
@@ -285,7 +291,7 @@ body.editmode .slide.active{cursor:default}
   <button data-act="edit" id="editbtn" data-presenter-control style="display:none">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:#20E3AC">Save now</button>
   <button data-act="more" id="hudMore" style="display:none">⋯</button>
-  <div id="downloadMenu"><button data-download="pdf">PDF<small>Fixed-layout document</small></button><button data-download="pptx">PowerPoint (.pptx)<small>Visual-exact slides that mirror the HTML</small></button><button data-download="pptx-editable">PowerPoint — editable objects<small>Best-effort editable text, shapes, and images</small></button></div>
+  <div id="downloadMenu"><div class="downloadScope" role="group" aria-label="Download scope"><button class="active" data-download-scope="deck">Entire deck</button><button data-download-scope="slide">Current slide</button></div><button data-download="pdf">PDF<small>Fixed-layout document</small></button><button data-download="pptx">PowerPoint (.pptx)<small>Visual-exact slides that mirror the HTML</small></button><button data-download="pptx-editable">PowerPoint — editable objects<small>Best-effort editable text, shapes, and images</small></button></div>
   <div id="hudmore"></div>
 </div>
 <div id="shareDialog" role="dialog" aria-modal="true" aria-labelledby="shareTitle">
@@ -328,6 +334,7 @@ body.editmode .slide.active{cursor:default}
   <div class="chead"><div class="ctitle">Slide companion</div><button class="cclose" title="Close">&#10005;</button></div>
   <div class="tabs"><button class="previewtab active">Rendered</button><button class="edittab">Edit Markdown</button></div>
   <div class="attachments"><span class="attachlist"></span><label class="attachbtn">+ Source file<input type="file" accept=".pdf,.ppt,.pptx,.png,.jpg,.jpeg,.gif,.webp,.doc,.docx,.xls,.xlsx,.csv"></label></div>
+  <div class="linkbar" role="status"><span class="linkstate"></span><button data-link-action="open">Open source</button><button data-link-action="refresh">Refresh</button><button data-link-action="detach">Detach</button></div>
   <div class="cbody"><article class="preview"></article><textarea spellcheck="true" aria-label="Companion Markdown"></textarea></div>
   <div class="cfoot"><span class="cstate">Loaded</span><button class="save">Save companion</button></div>
 </aside>
@@ -572,13 +579,15 @@ body.editmode .slide.active{cursor:default}
     const bar=document.createElement('div');bar.id='ovbar';
     bar.innerHTML='<label>ZOOM</label><span class="zi">−</span>'+
       '<input type="range" min="2" max="8" step="1" value="'+(10-ovCols)+'">'+
-      '<span class="zi">+</span>';
+      '<span class="zi">+</span><button class="sendSlides" id="ovTransfer" style="display:none">Send selected slides…</button>';
     bar.querySelector('input').addEventListener('input',e=>{
       const keep=overview.scrollTop/Math.max(1,ovgrid.scrollHeight);
       ovCols=10-parseInt(e.target.value);
       buildOv();
       overview.scrollTop=keep*ovgrid.scrollHeight;
     });
+    const transfer=bar.querySelector('#ovTransfer');transfer.addEventListener('click',sendSlidesToDeck);
+    transfer.style.display=window.__vme&&window.__vme.capabilities&&window.__vme.capabilities.transfer_slides?'':'none';
     overview.insertBefore(bar,ovgrid);
   }
   function buildOv(){
@@ -631,7 +640,7 @@ body.editmode .slide.active{cursor:default}
         });
       }
       t.addEventListener('click',ev=>{
-        if(canEdit&&(ev.metaKey||ev.ctrlKey)&&s.dataset.vstd){
+        if((canEdit||(window.__vme&&window.__vme.capabilities&&window.__vme.capabilities.transfer_slides))&&(ev.metaKey||ev.ctrlKey)&&s.dataset.vstd){
           if(ovSel.has(s.dataset.vstd))ovSel.delete(s.dataset.vstd);
           else ovSel.add(s.dataset.vstd);
           t.classList.toggle('selected');
@@ -656,6 +665,10 @@ body.editmode .slide.active{cursor:default}
 
   document.getElementById('hud').addEventListener('click',e=>{
     const b=e.target.closest('button');if(!b)return;
+    if(b.dataset.downloadScope){
+      document.querySelectorAll('[data-download-scope]').forEach(x=>x.classList.toggle('active',x===b));
+      window.__vdownloadScope=b.dataset.downloadScope;return;
+    }
     if(b.dataset.download){
       if(!window.__vme||(window.__vaudience&&b.dataset.download!=='pdf'))return;
       document.getElementById('downloadMenu').classList.remove('open');downloadDeck(b.dataset.download);return;
@@ -1352,7 +1365,7 @@ body.editmode .slide.active{cursor:default}
   }
 
   // ---- deck export: PDF, visual-exact PowerPoint, or best-effort editable PowerPoint ----
-  let __downloadBusy=false;
+  let __downloadBusy=false;window.__vdownloadScope='deck';
   async function downloadDeck(format){
     const editable=format==='pptx-editable',pptx=format==='pptx'||editable,ext=pptx?'pptx':'pdf';
     if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast(ext.toUpperCase()+' export needs the engine (vstd serve)');return;}
@@ -1360,17 +1373,30 @@ body.editmode .slide.active{cursor:default}
     __downloadBusy=true;
     toast(pptx?(editable?'Building editable PowerPoint objects…':'Rendering visual-exact PowerPoint…'):'Generating PDF…',120000);
     try{
-      const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.'+ext+(editable?'?mode=editable':''));
+      const slide=window.__vdownloadScope==='slide'&&slides[cur]&&slides[cur].dataset.vstd?slides[cur].dataset.vstd:'';
+      const params=new URLSearchParams();if(editable)params.set('mode','editable');if(slide)params.set('slide',slide);
+      const query=params.toString();const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.'+ext+(query?'?'+query:''));
       if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
       const blob=await r.blob();
       const a=document.createElement('a');
-      a.href=URL.createObjectURL(blob);a.download=window.VSTD.deck+(editable?'-editable':'')+'.'+ext;
+      a.href=URL.createObjectURL(blob);a.download=window.VSTD.deck+(slide?'-'+slide:'')+(editable?'-editable':'')+'.'+ext;
       document.body.appendChild(a);a.click();a.remove();
       setTimeout(()=>URL.revokeObjectURL(a.href),2000);
       const n=r.headers.get('X-VSTD-Pages');
       toast((pptx?(editable?'Editable PowerPoint':'Visual-exact PowerPoint'):'PDF')+' downloaded'+(n?' — '+n+' slides':''));
     }catch(e){toast(ext.toUpperCase()+' export failed: '+e.message,7000);}
     finally{__downloadBusy=false;}
+  }
+
+  async function sendSlidesToDeck(e){
+    if(e)e.stopPropagation();
+    const chosen=selOrdered(),ids=chosen.length?chosen:(slides[cur]&&slides[cur].dataset.vstd?[slides[cur].dataset.vstd]:[]);
+    if(!ids.length)return;
+    try{
+      const r=await fetch('/api/player/deck/'+window.VSTD.deck+'/transfer-intent',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({slide_ids:ids})});
+      const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||('HTTP '+r.status));
+      location.assign(j.url);
+    }catch(err){toast('Could not open slide transfer: '+err.message,7000);}
   }
 
   // engine link: SSE (reload + live-follow), identity, presenter broadcast
@@ -1417,6 +1443,8 @@ body.editmode .slide.active{cursor:default}
         window.__vme=me;
         const audience=me.audience===true||(me.audience===undefined&&((me.mode==='public'&&!me.presenter)||(me.mode!=='public'&&/[?&]follow=1/.test(location.search))));
         window.__vaudience=audience;
+        const transfer=document.getElementById('ovTransfer');
+        if(transfer)transfer.style.display=!audience&&me.capabilities&&me.capabilities.transfer_slides?'':'none';
         if(!audience&&me.presenter){
           document.getElementById('cnt').style.display='';
           document.querySelectorAll('[data-presenter-control]').forEach(b=>b.style.display='');
@@ -1428,6 +1456,7 @@ body.editmode .slide.active{cursor:default}
         }
         // All authorized viewers may download the fixed-layout PDF. PowerPoint
         // and share-link controls stay presenter-only at both the HUD and API.
+        if(!me.presenter)document.querySelectorAll('#downloadMenu [data-download^="pptx"]').forEach(b=>b.hidden=true);
         if(audience){
           const b=document.getElementById('downloadbtn');
           if(b){b.style.display='';b.title='Download PDF';b.setAttribute('aria-label','Download PDF');}
@@ -1514,9 +1543,9 @@ body.editmode .slide.active{cursor:default}
   if(!(window.VSTD&&location.protocol.indexOf('http')===0))return;
   const drawer=document.getElementById('companionDrawer');
   const preview=drawer.querySelector('.preview'),ta=drawer.querySelector('textarea');
-  const title=drawer.querySelector('.ctitle'),state=drawer.querySelector('.cstate'),attachList=drawer.querySelector('.attachlist');
-  let slideId='',hash='',markdown='',dirty=false,loading=null;
-  const editable=()=>!window.__vme||window.__vme.editable===true;
+  const title=drawer.querySelector('.ctitle'),state=drawer.querySelector('.cstate'),attachList=drawer.querySelector('.attachlist'),linkbar=drawer.querySelector('.linkbar');
+  let slideId='',hash='',markdown='',dirty=false,loading=null,slideEditable=true,linkInfo=null;
+  const editable=()=>(!window.__vme||window.__vme.editable===true)&&slideEditable;
   const currentId=()=>{const s=document.querySelector('#frame > .slide.active');return s&&s.dataset.vstd;};
   const esc=s=>(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   function inline(s){
@@ -1552,8 +1581,10 @@ body.editmode .slide.active{cursor:default}
     state.textContent='Loading…';slideId=id;
     const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id);
     if(!r.ok)throw new Error('load '+r.status);
-    const j=await r.json();markdown=j.companion||'';hash=j.companion_hash||'';dirty=false;
-    ta.value=markdown;render(markdown);attachments(j.attachments||[]);title.textContent=id+' · companion';state.textContent='Saved';
+    const j=await r.json();markdown=j.companion||'';hash=j.companion_hash||'';dirty=false;slideEditable=j.editable!==false;linkInfo=j.link||null;
+    ta.value=markdown;render(markdown);attachments(j.attachments||[]);title.textContent=id+' · '+(linkInfo?'linked snapshot':'companion');state.textContent=linkInfo?'Read only — detach first':'Saved';
+    drawer.querySelector('.edittab').disabled=!editable();drawer.querySelector('.save').disabled=!editable();drawer.querySelector('.attachbtn').style.display=editable()?'':'none';
+    linkbar.classList.toggle('on',!!linkInfo);if(linkInfo){const when=linkInfo.last_refreshed_at?new Date(linkInfo.last_refreshed_at).toLocaleString():'unknown';linkbar.querySelector('.linkstate').textContent=(linkInfo.stale?'Stale retained snapshot':'Linked snapshot')+' · refreshed '+when;}
   }
   async function ensureLoaded(){const id=currentId();if(!id)throw new Error('no current slide');if(slideId!==id||!markdown){if(loading)await loading;else{loading=load(id).finally(()=>loading=null);await loading;}}}
   async function save(){
@@ -1592,6 +1623,16 @@ body.editmode .slide.active{cursor:default}
   drawer.querySelector('.edittab').addEventListener('click',()=>setMode(true));
   drawer.querySelector('.save').addEventListener('click',()=>save().catch(e=>window.VSTDP&&window.VSTDP.toast('Companion save failed: '+e.message)));
   drawer.querySelector('.cclose').addEventListener('click',close);
+  linkbar.addEventListener('click',async e=>{
+    const b=e.target.closest('[data-link-action]');if(!b||!linkInfo)return;
+    if(b.dataset.linkAction==='open'){
+      const app=window.__vme&&window.__vme.app_origin;if(app)window.open(app+'/presentations','_blank','noopener');
+      else window.open('/d/'+encodeURIComponent(linkInfo.source_deck)+'/#/'+encodeURIComponent(linkInfo.source_slide),'_blank','noopener');
+      return;
+    }
+    if(b.dataset.linkAction==='detach'&&!confirm('Detach this slide? It will become an editable copy of the latest snapshot.'))return;
+    b.disabled=true;try{const action=b.dataset.linkAction==='detach'?'detach-link':'refresh-link',r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/'+action,{method:'POST'});if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}location.reload();}catch(err){b.disabled=false;window.VSTDP&&window.VSTDP.toast(err.message,7000);}
+  });
   drawer.querySelector('input[type=file]').addEventListener('change',async e=>{
     const f=e.target.files&&e.target.files[0];if(!f)return;
     try{await ensureLoaded();state.textContent='Attaching '+f.name+'…';const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/attachment?filename='+encodeURIComponent(f.name),{method:'POST',body:f});if(!r.ok)throw new Error(await r.text());await load(slideId);window.VSTDP&&window.VSTDP.toast('Source attached to companion');}catch(x){window.VSTDP&&window.VSTDP.toast('Attach failed: '+x.message);}finally{e.target.value='';}

@@ -266,12 +266,13 @@ func (c *ContentSync) syncOnce() error {
 	if len(paths) == 0 {
 		return fmt.Errorf("content sync found none of the allowed content paths")
 	}
-	status, err := c.git(append([]string{"status", "--porcelain", "--"}, paths...)...)
+	pathspecs := append(append([]string(nil), paths...), ":(exclude,glob)decks/*/build/**")
+	status, err := c.git(append([]string{"status", "--porcelain", "--"}, pathspecs...)...)
 	if err != nil {
 		return err
 	}
 	if strings.TrimSpace(status) != "" {
-		if _, err := c.git(append([]string{"add", "--"}, paths...)...); err != nil {
+		if _, err := c.git(append([]string{"add", "--"}, pathspecs...)...); err != nil {
 			return err
 		}
 		if _, err := c.git("-c", "user.name=Vessica Studio", "-c", "user.email=studio@vessica.dev",

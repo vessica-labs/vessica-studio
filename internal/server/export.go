@@ -248,10 +248,15 @@ func (s *Server) handlePrintHTML(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) renderDeckPDF(r *http.Request, deck string) ([]byte, int, error) {
-	html, pages, err := s.St.BuildPrintHTML(deck)
+	return s.renderDeckPDFForSlides(r, deck, nil)
+}
+
+func (s *Server) renderDeckPDFForSlides(r *http.Request, deck string, selected []string) ([]byte, int, error) {
+	html, ids, err := s.St.BuildPrintHTMLForSlides(deck, selected)
 	if err != nil {
 		return nil, 0, err
 	}
+	pages := len(ids)
 	chrome := findChrome()
 	if chrome == "" {
 		return nil, 0, fmt.Errorf("PDF export needs Chrome or Chromium on this machine — install one, or point VSTD_CHROME at a browser binary")
@@ -352,13 +357,23 @@ func (s *Server) handleExportPDF(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, fmt.Errorf("deck share access or presenter auth required"), http.StatusUnauthorized)
 		return
 	}
-	pdf, pages, err := s.renderDeckPDF(r, deck)
+	s.refreshDeckLinks(r, deck)
+	selected, err := exportSlideSelection(r, deck)
+	if err != nil {
+		jsonErr(w, err, http.StatusBadRequest)
+		return
+	}
+	pdf, pages, err := s.renderDeckPDFForSlides(r, deck, selected)
 	if err != nil {
 		jsonErr(w, err, http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/pdf")
-	w.Header().Set("Content-Disposition", `attachment; filename="`+deck+`.pdf"`)
+	filename := deck + ".pdf"
+	if len(selected) == 1 {
+		filename = deck + "-" + selected[0] + ".pdf"
+	}
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-VSTD-Pages", strconv.Itoa(pages))
 	w.Write(pdf)
@@ -393,7 +408,14 @@ func rasterizePDF(ctx context.Context, pdf []byte) ([][]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sort.Strings(paths)
+	sort.Slice(paths, func(i, j int) bool {
+		page := func(path string) int {
+			base := strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+			n, _ := strconv.Atoi(base[strings.LastIndex(base, "-")+1:])
+			return n
+		}
+		return page(paths[i]) < page(paths[j])
+	})
 	if len(paths) == 0 {
 		return nil, fmt.Errorf("rasterize PDF for PPTX produced no slides")
 	}
@@ -409,7 +431,11 @@ func rasterizePDF(ctx context.Context, pdf []byte) ([][]byte, error) {
 }
 
 func (s *Server) capturePPTXDeck(r *http.Request, deck string) (studio.PPTXDeck, error) {
-	page, _, err := s.St.BuildPrintHTML(deck)
+	return s.capturePPTXDeckForSlides(r, deck, nil)
+}
+
+func (s *Server) capturePPTXDeckForSlides(r *http.Request, deck string, selected []string) (studio.PPTXDeck, error) {
+	page, _, err := s.St.BuildPrintHTMLForSlides(deck, selected)
 	if err != nil {
 		return studio.PPTXDeck{}, err
 	}
@@ -510,26 +536,47 @@ func (s *Server) handleExportPPTX(w http.ResponseWriter, r *http.Request) {
 	}
 	if s.Collab != nil {
 		ps, ok := s.playerSessionForDeck(r, deck)
-		if !ok || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "view") {
-			jsonErr(w, fmt.Errorf("presentation access required"), http.StatusUnauthorized)
+		if !ok || (ps.Mode != "present" && ps.Mode != "edit") || !s.Collab.Can(r.Context(), ps.User.ID, ps.Deck, "present") {
+			jsonErr(w, fmt.Errorf("presenter access required"), http.StatusUnauthorized)
 			return
 		}
 	} else if !s.isPresenter(r) {
 		jsonErr(w, fmt.Errorf("presenter auth required"), http.StatusUnauthorized)
 		return
 	}
+	s.refreshDeckLinks(r, deck)
+	selected, err := exportSlideSelection(r, deck)
+	if err != nil {
+		jsonErr(w, err, http.StatusBadRequest)
+		return
+	}
+	_, exportIDs, err := s.St.BuildPrintHTMLForSlides(deck, selected)
+	if err != nil {
+		jsonErr(w, err, http.StatusBadRequest)
+		return
+	}
 	editable := r.URL.Query().Get("mode") == "editable"
 	var pptx []byte
 	var pages, total, paths int
-	var err error
+	var cacheStats powerpointCacheStats
 	if editable {
-		var model studio.PPTXDeck
-		model, err = s.capturePPTXDeck(r, deck)
+		meta, metaErr := s.St.LoadDeckMeta(deck)
+		if metaErr != nil {
+			err = metaErr
+		}
+		var slides []studio.PPTXSlide
+		if err == nil {
+			slides, cacheStats, err = s.cachedEditablePowerPointSlides(r, deck, exportIDs)
+		}
+		model := studio.PPTXDeck{Slides: slides}
+		if metaErr == nil {
+			model.Title = meta.Title
+		}
 		if err == nil {
 			pptx, err = studio.BuildPPTX(model)
 		}
-		pages = len(model.Slides)
-		for _, slide := range model.Slides {
+		pages = len(slides)
+		for _, slide := range slides {
 			total += len(slide.Elements)
 			for _, element := range slide.Elements {
 				if element.Kind == "path" || element.Kind == "line" {
@@ -538,25 +585,19 @@ func (s *Server) handleExportPPTX(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	} else {
-		var pdf []byte
-		pdf, pages, err = s.renderDeckPDF(r, deck)
+		ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
+		images, stats, cacheErr := s.cachedVisualPowerPointSlides(ctx, r, deck, exportIDs)
+		cancel()
+		cacheStats = stats
+		err = cacheErr
+		pages = len(images)
 		if err == nil {
-			var images [][]byte
-			ctx, cancel := context.WithTimeout(r.Context(), 120*time.Second)
-			images, err = rasterizePDF(ctx, pdf)
-			cancel()
-			if err == nil {
-				if len(images) != pages {
-					err = fmt.Errorf("visual-exact PPTX rendered %d images for %d slides", len(images), pages)
-				} else {
-					meta, metaErr := s.St.LoadDeckMeta(deck)
-					if metaErr != nil {
-						err = metaErr
-					} else {
-						pptx, err = studio.BuildRasterPPTX(meta.Title, images)
-						total = len(images)
-					}
-				}
+			meta, metaErr := s.St.LoadDeckMeta(deck)
+			if metaErr != nil {
+				err = metaErr
+			} else {
+				pptx, err = studio.BuildRasterPPTX(meta.Title, images)
+				total = len(images)
 			}
 		}
 	}
@@ -571,11 +612,27 @@ func (s *Server) handleExportPPTX(w http.ResponseWriter, r *http.Request) {
 		filename = deck + "-editable.pptx"
 		mode = "editable"
 	}
+	if len(selected) == 1 {
+		filename = deck + "-" + exportIDs[0] + map[bool]string{true: "-editable", false: ""}[editable] + ".pptx"
+	}
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-VSTD-Pages", strconv.Itoa(pages))
 	w.Header().Set("X-VSTD-PPTX-Mode", mode)
 	w.Header().Set("X-VSTD-Objects", strconv.Itoa(total))
 	w.Header().Set("X-VSTD-Vector-Paths", strconv.Itoa(paths))
+	w.Header().Set("X-VSTD-Cache-Hits", strconv.Itoa(cacheStats.Hits))
+	w.Header().Set("X-VSTD-Cache-Misses", strconv.Itoa(cacheStats.Misses))
 	w.Write(pptx)
+}
+
+func exportSlideSelection(r *http.Request, deck string) ([]string, error) {
+	id := strings.TrimSpace(r.URL.Query().Get("slide"))
+	if id == "" {
+		return nil, nil
+	}
+	if !studio.ValidSlideID(id) {
+		return nil, fmt.Errorf("invalid slide")
+	}
+	return []string{id}, nil
 }

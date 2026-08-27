@@ -87,6 +87,17 @@ func TestBuildPrintHTML(t *testing.T) {
 	if !strings.Contains(html, "<title>Demo Deck</title>") {
 		t.Error("deck title missing")
 	}
+
+	subset, ids, err := st.BuildPrintHTMLForSlides("demo", []string{"0020-hidden"})
+	if err != nil || len(ids) != 1 || ids[0] != "0020-hidden" || strings.Contains(subset, "<h1>Active</h1>") || !strings.Contains(subset, "<h1>Hidden</h1>") {
+		t.Fatalf("single-slide export ids=%v err=%v html=%s", ids, err, subset)
+	}
+	if _, _, err := st.BuildPrintHTMLForSlides("demo", []string{"0030-parked"}); err == nil || !strings.Contains(err.Error(), "parked") {
+		t.Fatalf("parked slide export error = %v", err)
+	}
+	if _, _, err := st.BuildPrintHTMLForSlides("demo", []string{"9999-missing"}); err == nil {
+		t.Fatal("missing slide unexpectedly exported")
+	}
 }
 
 func TestBuildPrintHTMLAllParked(t *testing.T) {

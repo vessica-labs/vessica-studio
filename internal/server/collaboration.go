@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/catalog"
 	"github.com/vessica-labs/vessica-studio/internal/collab"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
@@ -426,6 +427,18 @@ func (s *Server) sendSystemEmail(ctx context.Context, to, subject, bodyText stri
 }
 
 func (s *Server) handleAppDecks(w http.ResponseWriter, r *http.Request) {
+	if s.Collab == nil {
+		if _, ok := s.requireCatalog(w, r, false); !ok {
+			return
+		}
+		decks, err := s.localCatalogDecks()
+		if err != nil {
+			jsonErr(w, err, http.StatusInternalServerError)
+			return
+		}
+		writeJSON(w, decks)
+		return
+	}
 	sess, ok := s.requireAccount(w, r, false, false)
 	if !ok {
 		return
@@ -439,6 +452,31 @@ func (s *Server) handleAppDecks(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleCreateDeck(w http.ResponseWriter, r *http.Request) {
+	if s.Collab == nil {
+		if _, ok := s.requireCatalog(w, r, true); !ok {
+			return
+		}
+		var req struct{ Title string }
+		if err := json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req); err != nil || strings.TrimSpace(req.Title) == "" {
+			jsonErr(w, fmt.Errorf("title is required"), http.StatusBadRequest)
+			return
+		}
+		base := collab.Slug(req.Title)
+		key := base
+		for i := 2; ; i++ {
+			if _, err := os.Stat(s.St.DeckDir(key)); errors.Is(err, os.ErrNotExist) {
+				break
+			}
+			key = fmt.Sprintf("%s-%d", base, i)
+		}
+		if err := s.St.NewDeck(key, strings.TrimSpace(req.Title)); err != nil {
+			jsonErr(w, err, 500)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, catalog.Deck{ID: key, StorageKey: key, Title: strings.TrimSpace(req.Title), Owned: true, Visibility: "private"})
+		return
+	}
 	sess, ok := s.requireAccount(w, r, true, false)
 	if !ok {
 		return
@@ -495,6 +533,44 @@ func (s *Server) handleDeckVisibility(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleForkDeck(w http.ResponseWriter, r *http.Request) {
+	if s.Collab == nil {
+		if _, ok := s.requireCatalog(w, r, true); !ok {
+			return
+		}
+		source := r.PathValue("id")
+		if !studio.ValidDeckName(source) {
+			jsonErr(w, fmt.Errorf("presentation not found"), 404)
+			return
+		}
+		meta, err := s.St.LoadDeckMeta(source)
+		if err != nil {
+			jsonErr(w, err, 404)
+			return
+		}
+		var req struct{ Title, Slug string }
+		_ = json.NewDecoder(io.LimitReader(r.Body, 1<<16)).Decode(&req)
+		if strings.TrimSpace(req.Title) == "" {
+			req.Title = meta.Title + " (copy)"
+		}
+		key := strings.TrimSpace(req.Slug)
+		if key == "" {
+			base := collab.Slug(req.Title)
+			key = base
+			for i := 2; ; i++ {
+				if _, err := os.Stat(s.St.DeckDir(key)); errors.Is(err, os.ErrNotExist) {
+					break
+				}
+				key = fmt.Sprintf("%s-%d", base, i)
+			}
+		}
+		if err := s.St.ForkAs(source, key, strings.TrimSpace(req.Title)); err != nil {
+			jsonErr(w, err, 400)
+			return
+		}
+		w.WriteHeader(http.StatusCreated)
+		writeJSON(w, catalog.Deck{ID: key, StorageKey: key, Title: strings.TrimSpace(req.Title), Owned: true, Visibility: "private"})
+		return
+	}
 	sess, ok := s.requireAccount(w, r, true, false)
 	if !ok {
 		return
@@ -538,6 +614,21 @@ func (s *Server) handleForkDeck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleLaunchDeck(w http.ResponseWriter, r *http.Request) {
+	if s.Collab == nil {
+		if _, ok := s.requireCatalog(w, r, true); !ok {
+			return
+		}
+		deck := r.PathValue("id")
+		if !studio.ValidDeckName(deck) {
+			jsonErr(w, fmt.Errorf("presentation not found"), 404)
+			return
+		}
+		if store, err := s.localCatalogStore(); err == nil {
+			store.Touch(deck)
+		}
+		writeJSON(w, map[string]string{"url": "/d/" + deck + "/"})
+		return
+	}
 	sess, ok := s.requireAccount(w, r, true, false)
 	if !ok {
 		return
@@ -665,41 +756,7 @@ func strconvQuote(v string) string {
 const appCSS = `*{box-sizing:border-box}body{font-family:Inter,system-ui,sans-serif;background:#071d10;color:#e3fddb;margin:0}main{max-width:1000px;margin:0 auto;padding:48px 28px}main.auth{max-width:460px;margin:12vh auto;background:#12341d;border:1px solid #2c4a35;border-radius:18px}h1{font-family:Georgia,serif;font-weight:400;color:#fff;font-size:40px}h2{margin-top:36px}nav{display:flex;gap:18px;align-items:center;justify-content:flex-end}a{color:#21bf61}input,button,select{font:inherit;border-radius:9px;padding:10px 13px;border:1px solid #41614a}input{background:#fff;color:#111;min-width:240px}button{background:#21bf61;color:#071d10;font-weight:700;cursor:pointer}button.secondary{background:transparent;color:#e3fddb}article{background:#12341d;border:1px solid #2c4a35;border-radius:12px;padding:16px;margin:10px 0}form{display:flex;gap:10px;flex-wrap:wrap}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:16px}.muted{color:#8fb59a}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}.auth form{display:grid}.auth input{width:100%}#err{color:#ff9b75;margin-top:12px}dialog{color:#e3fddb;background:#12341d;border:1px solid #41614a;border-radius:16px;padding:24px}dialog::backdrop{background:#000a}dialog form{display:grid;min-width:340px}`
 
 func (s *Server) renderCollabPresentations(w http.ResponseWriter, r *http.Request, sess collab.Session) {
-	decks, err := s.Collab.ListDecks(r.Context(), sess.User.ID)
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	var mine, shared strings.Builder
-	for _, d := range decks {
-		forkAction := html.EscapeString("forkDeck(" + strconvQuote(d.ID) + "," + strconvQuote(d.Title) + ")")
-		card := `<article><h3>` + html.EscapeString(d.Title) + `</h3><div class="muted">` + html.EscapeString(d.StorageKey)
-		if d.Owned {
-			card += ` · ` + html.EscapeString(d.Visibility)
-		} else {
-			card += ` · shared by ` + html.EscapeString(d.OwnerName) + ` · read only`
-		}
-		card += `</div><div class="actions">`
-		if d.Owned {
-			card += `<button onclick="launch('` + d.ID + `','edit')">Edit</button><button class="secondary" onclick="launch('` + d.ID + `','view')">View</button><button class="secondary" onclick="launch('` + d.ID + `','present')">Present</button><button class="secondary" onclick="` + forkAction + `">Fork</button><button class="secondary" onclick="visibility('` + d.ID + `','` + map[bool]string{true: "private", false: "team"}[d.Visibility == "team"] + `')">` + map[bool]string{true: "Make private", false: "Share with team"}[d.Visibility == "team"] + `</button>`
-		} else {
-			card += `<button onclick="launch('` + d.ID + `','view')">View</button><button class="secondary" onclick="launch('` + d.ID + `','present')">Present</button><button class="secondary" onclick="` + forkAction + `">Fork</button>`
-		}
-		card += `</div></article>`
-		if d.Owned {
-			mine.WriteString(card)
-		} else {
-			shared.WriteString(card)
-		}
-	}
-	teamLink := ""
-	if sess.User.Role == "owner" {
-		teamLink = `<a href="/team">Team</a>`
-	}
-	w.Header().Set("Cache-Control", "no-store")
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, `<!DOCTYPE html><html><head><title>Presentations · Vessica Studio</title><style>`+appCSS+`</style></head><body><main><nav>`+teamLink+`<button id="logout">Log out</button></nav><h1>Presentations</h1><p class="muted">Signed in as `+html.EscapeString(sess.User.DisplayName)+`</p><form id="newDeck"><input name="title" placeholder="Presentation title" required><button>New presentation</button></form><h2>My presentations</h2><div class="grid">`+mine.String()+`</div><h2>Shared with the team</h2><div class="grid">`+shared.String()+`</div></main><dialog id="forkDialog"><form id="forkForm"><h2>Fork presentation</h2><input name="title" aria-label="Fork title" required><input name="slug" aria-label="Fork slug" placeholder="optional-storage-slug" pattern="[a-z0-9]+(?:-[a-z0-9]+)*"><div class="actions"><button>Fork</button><button type="button" class="secondary" id="cancelFork">Cancel</button></div></form></dialog><script>`+appScript(sess.CSRF)+`
-let forkTarget='';newDeck.onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);await api('/api/app/decks','POST',{title:f.get('title')});location.reload();};async function launch(id,mode){const j=await api('/api/app/decks/'+id+'/launch','POST',{mode});location.href=j.url;}async function visibility(id,v){await api('/api/app/decks/'+id+'/visibility','PATCH',{visibility:v});location.reload();}function forkDeck(id,title){forkTarget=id;forkForm.elements.title.value=title+' (copy)';forkForm.elements.slug.value='';forkDialog.showModal();forkForm.elements.title.focus();}forkForm.onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);await api('/api/app/decks/'+forkTarget+'/fork','POST',{title:f.get('title'),slug:f.get('slug')});location.reload();};cancelFork.onclick=()=>forkDialog.close();logout.onclick=async()=>{await api('/api/auth/logout','POST',{});location.replace('/auth/login');};</script></body></html>`)
+	s.renderCatalogPage(w, sess.User.DisplayName, sess.User.Role, sess.CSRF, true)
 }
 
 func (s *Server) handlePlayerSessionPage(w http.ResponseWriter, r *http.Request) {
@@ -750,6 +807,7 @@ func (s *Server) handlePlayerDocument(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "access denied", http.StatusForbidden)
 		return
 	}
+	s.refreshDeckLinks(r, deck)
 	out, err := s.St.Build(deck)
 	if err != nil {
 		http.Error(w, err.Error(), 500)

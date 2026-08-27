@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/catalog"
 	"github.com/vessica-labs/vessica-studio/internal/collab"
 	"github.com/vessica-labs/vessica-studio/internal/oai"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
@@ -54,19 +55,23 @@ type Server struct {
 	allowed    map[string]bool
 	flows      map[string]githubFlow
 
-	tokenMints   []time.Time            // realtime-token rate limiting
-	contactMints map[string][]time.Time // public contact-form rate limiting by client
-	printJobs    map[string]printJob    // one-time keys for in-flight PDF exports (export.go)
-	Agent        *agentWorker
-	ContentSync  *ContentSync
-	Collab       *collab.Store
-	appOrigin    string
-	playerOrigin string
+	tokenMints         []time.Time            // realtime-token rate limiting
+	contactMints       map[string][]time.Time // public contact-form rate limiting by client
+	printJobs          map[string]printJob    // one-time keys for in-flight PDF exports (export.go)
+	transferIntents    map[string]slideTransferIntent
+	exportLocks        sync.Map // deck key -> *sync.Mutex for PowerPoint cache assembly
+	Agent              *agentWorker
+	ContentSync        *ContentSync
+	Collab             *collab.Store
+	LocalCatalog       *catalog.LocalStore
+	PowerPointRenderer powerpointCacheRenderer
+	appOrigin          string
+	playerOrigin       string
 }
 
 func New(st *studio.Studio, mode Mode) *Server {
 	c := oai.New(st.Config.OpenAI.BaseURL, st.Config.OpenAI.APIKeyCmd)
-	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}, presenting: map[string]presentingState{}}
+	s := &Server{St: st, Mode: mode, OAI: c, subs: map[chan string]bool{}, presenting: map[string]presentingState{}, transferIntents: map[string]slideTransferIntent{}}
 	s.initAuth()
 	return s
 }
@@ -217,6 +222,8 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/title", s.editOnly(s.handlePutTitle))
 	mux.HandleFunc("POST /api/deck/{deck}/slides", s.editOnly(s.handleNewSlide))
 	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/move", s.editOnly(s.handleMoveSlide))
+	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/refresh-link", s.editOnly(s.handleRefreshSlideLink))
+	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/detach-link", s.editOnly(s.handleDetachSlideLink))
 	mux.HandleFunc("POST /api/agent/cap", s.editOnly(s.handleAgentCap))
 	mux.HandleFunc("POST /api/realtime/token", s.handleRealtimeToken)
 
@@ -236,6 +243,16 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/auth/password/reset", s.handleResetPassword)
 	mux.HandleFunc("GET /team", s.handleTeamPage)
 	mux.HandleFunc("GET /api/app/decks", s.handleAppDecks)
+	mux.HandleFunc("GET /api/app/catalog", s.handleCatalog)
+	mux.HandleFunc("POST /api/app/folders", s.handleCreateFolder)
+	mux.HandleFunc("PATCH /api/app/folders/{id}", s.handleRenameFolder)
+	mux.HandleFunc("DELETE /api/app/folders/{id}", s.handleDeleteFolder)
+	mux.HandleFunc("PUT /api/app/folders/order", s.handleReorderFolders)
+	mux.HandleFunc("PUT /api/app/decks/{id}/folder", s.handleMoveDeckFolder)
+	mux.HandleFunc("GET /api/app/decks/{id}/slides", s.handleAppDeckSlides)
+	mux.HandleFunc("GET /api/app/decks/{id}/thumbnail.png", s.handleAppDeckThumbnail)
+	mux.HandleFunc("POST /api/app/slide-transfers", s.handleSlideTransfer)
+	mux.HandleFunc("POST /api/app/slide-transfer-intents/exchange", s.handleSlideTransferIntentExchange)
 	mux.HandleFunc("POST /api/app/decks", s.handleCreateDeck)
 	mux.HandleFunc("PATCH /api/app/decks/{id}/visibility", s.handleDeckVisibility)
 	mux.HandleFunc("POST /api/app/decks/{id}/fork", s.handleForkDeck)
@@ -248,6 +265,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /session", s.handlePlayerSessionPage)
 	mux.HandleFunc("POST /api/player/session", s.handlePlayerSessionExchange)
 	mux.HandleFunc("GET /api/player/deck/{deck}/document", s.handlePlayerDocument)
+	mux.HandleFunc("POST /api/player/deck/{deck}/transfer-intent", s.handleCreateSlideTransferIntent)
 	mux.HandleFunc("GET /follow", s.handleFollowLanding)
 	mux.HandleFunc("GET /v/{deck}/{token}", s.handleShareLanding)
 	mux.HandleFunc("POST /api/deck/{deck}/share", s.handleMintShare)
@@ -320,37 +338,7 @@ func (s *Server) handlePresenterSwitcher(w http.ResponseWriter, r *http.Request)
 		http.Redirect(w, r, "/auth/login", http.StatusFound)
 		return
 	}
-	decks, err := s.St.ListDecks()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	var b strings.Builder
-	b.WriteString(`<!DOCTYPE html><html><head><title>Vessica Studio</title><style>
-body{font-family:'Trebuchet MS',sans-serif;background:#0C2B15;color:#E3FDDB;margin:0;padding:60px}
-h1{font-family:Georgia,serif;font-weight:400;font-size:42px;color:#FCFBFA}
-a.deck{display:block;background:#12341d;border:1px solid #2c4a35;border-radius:14px;
-padding:22px 28px;margin:14px 0;color:#E3FDDB;text-decoration:none;font-size:20px;max-width:720px}
-a.deck:hover{border-color:#21BF61}
-.sub{color:#8fb59a;font-size:14px;margin-top:4px}
-.mode{position:fixed;top:16px;right:20px;border:1px solid #2c4a35;border-radius:999px;padding:4px 14px;font-size:12px;color:#8fb59a}
-</style></head><body><div class="mode">mode: ` + string(s.Mode) + `</div><h1>Vessica Studio</h1>`)
-	for _, d := range decks {
-		meta, err := s.St.LoadDeckMeta(d)
-		title := d
-		desc := ""
-		if err == nil {
-			title = meta.Title
-			desc = meta.Description
-			if meta.ForkedFrom != "" {
-				desc = "fork of " + meta.ForkedFrom + " · " + desc
-			}
-		}
-		fmt.Fprintf(&b, `<a class="deck" href="/d/%s/">%s<div class="sub">%s · %s</div></a>`, d, title, d, desc)
-	}
-	b.WriteString(`</body></html>`)
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	io.WriteString(w, b.String())
+	s.renderCatalogPage(w, "Local studio", "owner", "", false)
 }
 
 func (s *Server) handleDecks(w http.ResponseWriter, r *http.Request) {
@@ -400,6 +388,7 @@ func (s *Server) handleDeck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "This deck requires a share link or presenter sign-in.", http.StatusForbidden)
 		return
 	}
+	s.refreshDeckLinks(r, deck)
 	out, err := s.St.Build(deck)
 	if err != nil {
 		http.Error(w, err.Error(), 500)
@@ -423,11 +412,32 @@ func (s *Server) handleGetSlide(w http.ResponseWriter, r *http.Request) {
 		attachments[i].URL = "/api/deck/" + r.PathValue("deck") + "/source/" +
 			url.PathEscape(filepath.Base(attachments[i].Path))
 	}
-	writeJSON(w, map[string]any{
+	response := map[string]any{
 		"fragment": frag, "companion": comp,
 		"companion_hash": s.St.HashCompanion(r.PathValue("deck"), r.PathValue("id")),
 		"attachments":    attachments,
-	})
+		"editable":       !s.St.IsLinkedSlide(r.PathValue("deck"), r.PathValue("id")),
+	}
+	showLinkMetadata := s.canEdit(r) || s.isPresenter(r)
+	if s.Collab != nil {
+		ps, ok := s.playerSessionForDeck(r, r.PathValue("deck"))
+		showLinkMetadata = ok && (ps.Mode == "present" || ps.Mode == "edit")
+	}
+	if showLinkMetadata {
+		if link := linkStatus(s, r, r.PathValue("deck"), r.PathValue("id")); link != nil {
+			response["link"] = link
+		}
+	}
+	writeJSON(w, response)
+}
+
+func (s *Server) rejectLinkedContentWrite(w http.ResponseWriter, r *http.Request) bool {
+	deck, id := r.PathValue("deck"), r.PathValue("id")
+	if deck != "" && id != "" && s.St.IsLinkedSlide(deck, id) {
+		jsonErr(w, fmt.Errorf("linked slides are read-only in the target presentation; detach the slide before editing"), http.StatusConflict)
+		return true
+	}
+	return false
 }
 
 // handlePutFragment writes a slide fragment. When the caller supplies
@@ -437,6 +447,9 @@ func (s *Server) handleGetSlide(w http.ResponseWriter, r *http.Request) {
 // landed after the tab loaded. Callers without the header (agents, curl,
 // cloud sessions) write unconditionally, as before.
 func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
+	if s.rejectLinkedContentWrite(w, r) {
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
 	if err != nil {
 		jsonErr(w, err, 400)
@@ -463,6 +476,9 @@ func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutCompanion(w http.ResponseWriter, r *http.Request) {
+	if s.rejectLinkedContentWrite(w, r) {
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
 	if err != nil {
 		jsonErr(w, err, 400)
@@ -478,6 +494,9 @@ func (s *Server) handlePutCompanion(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handlePutFullCompanion(w http.ResponseWriter, r *http.Request) {
+	if s.rejectLinkedContentWrite(w, r) {
+		return
+	}
 	body, err := io.ReadAll(io.LimitReader(r.Body, 2<<20))
 	if err != nil {
 		jsonErr(w, err, 400)
@@ -503,6 +522,9 @@ func (s *Server) handlePutFullCompanion(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handlePutTitle(w http.ResponseWriter, r *http.Request) {
+	if s.rejectLinkedContentWrite(w, r) {
+		return
+	}
 	body, _ := io.ReadAll(io.LimitReader(r.Body, 1<<16))
 	title := strings.TrimSpace(string(body))
 	if title == "" {
