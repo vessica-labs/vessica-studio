@@ -311,6 +311,9 @@ func (s *Server) handleAppDeckSlides(w http.ResponseWriter, r *http.Request) {
 // artifact on demand when it is missing. Rendering is bounded across decks and
 // slide HTML never crosses onto the account/app origin.
 func (s *Server) handleAppDeckThumbnail(w http.ResponseWriter, r *http.Request) {
+	// A transient render miss must not become a sticky browser-cache failure.
+	// Successful artifacts replace this with a short private cache lifetime.
+	w.Header().Set("Cache-Control", "private, no-store")
 	userID, ok := s.requireCatalog(w, r, false)
 	if !ok {
 		return
