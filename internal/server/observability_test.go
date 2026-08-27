@@ -28,6 +28,7 @@ func TestObservabilityPageHasOwnerDashboardViewsAndResponsiveDesign(t *testing.T
 	for _, want := range []string{
 		"Owner workspace", "Audience viewers", "Reliability", "OpenAI usage", "Codex tokens",
 		"API requests and Codex runs", "All tracked Railway model usage",
+		"codexRuns===1?'run':'runs'",
 		`data-tab="viewers"`, `data-tab="team"`, `data-tab="reliability"`, `data-tab="ai"`,
 		"Viewer identities come from QR chat names", "@media(max-width:760px)", "Fraunces", "bootstrap-icons",
 	} {
