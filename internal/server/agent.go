@@ -11,6 +11,7 @@
 // the Codex CLI with OPENAI_API_KEY. Optional:
 //
 //	VSTD_AGENT_CMD          agent executable (default "claude")
+//	VSTD_AGENT_SANDBOX      execution backend (set to "railway" for hosted Codex)
 //	VSTD_AGENT_MAX_PER_HOUR rate cap (default 6)
 //	VSTD_GIT_PUSH=1         commit+push each completed pass
 //	VSTD_GIT_REMOTE         https remote incl. token (bootstraps .git if absent)
@@ -43,6 +44,7 @@ type agentWorker struct {
 	maxPerHour int
 	push       bool
 	bin        string
+	sandbox    string
 	branch     string
 	conc       int
 	mu         sync.Mutex
@@ -63,7 +65,7 @@ func (w *agentWorker) Info() map[string]any {
 			used++
 		}
 	}
-	return map[string]any{"enabled": true, "maxPerHour": w.maxPerHour,
+	return map[string]any{"enabled": true, "maxPerHour": w.maxPerHour, "sandbox": w.sandbox,
 		"used": used, "queued": w.queuedN, "capped": w.capped, "inflight": len(w.inflight)}
 }
 
@@ -89,6 +91,7 @@ func (s *Server) StartAgent() {
 	if v := os.Getenv("VSTD_AGENT_CMD"); v != "" {
 		w.bin = v
 	}
+	w.sandbox = strings.TrimSpace(os.Getenv("VSTD_AGENT_SANDBOX"))
 	if v := os.Getenv("VSTD_AGENT_MAX_PER_HOUR"); v != "" {
 		fmt.Sscanf(v, "%d", &w.maxPerHour)
 	}
@@ -97,6 +100,10 @@ func (s *Server) StartAgent() {
 	}
 	if v := os.Getenv("VSTD_GIT_BRANCH"); v != "" {
 		w.branch = v
+	}
+	if err := w.validateExecutionBackend(); err != nil {
+		log.Printf("agent: worker disabled: %v", err)
+		return
 	}
 	s.Agent = w
 	go w.loop()
@@ -107,7 +114,7 @@ func (w *agentWorker) loop() {
 	if n := w.recoverInterruptedPasses(); n > 0 {
 		log.Printf("agent: recovered %d interrupted pass(es) for retry", n)
 	}
-	log.Printf("agent: worker enabled (cmd=%s, max %d/hour, concurrency %d, push=%v)", w.bin, w.maxPerHour, w.conc, w.push)
+	log.Printf("agent: worker enabled (cmd=%s, sandbox=%s, max %d/hour, concurrency %d, push=%v)", w.bin, w.sandbox, w.maxPerHour, w.conc, w.push)
 	var lastBlockLog time.Time
 	for {
 		time.Sleep(15 * time.Second)
@@ -190,6 +197,11 @@ func (s *Server) RunAgentOnce() int {
 	if v := os.Getenv("VSTD_AGENT_CMD"); v != "" {
 		w.bin = v
 	}
+	w.sandbox = strings.TrimSpace(os.Getenv("VSTD_AGENT_SANDBOX"))
+	if err := w.validateExecutionBackend(); err != nil {
+		log.Printf("agent: sweep refused: %v", err)
+		return 0
+	}
 	w.bootstrapGit()
 	n := 0
 	seen := map[string]bool{}
@@ -261,7 +273,7 @@ func parseCodexUsage(out []byte) (codexUsage, bool) {
 	return usage, true
 }
 
-func (w *agentWorker) recordCodexUsage(deck, slide, phase string, out []byte, duration time.Duration, success bool) {
+func (w *agentWorker) recordCodexUsage(deck, slide, phase string, out []byte, duration time.Duration, success bool, sandboxID string) {
 	if filepath.Base(w.bin) != "codex" {
 		return
 	}
@@ -273,11 +285,16 @@ func (w *agentWorker) recordCodexUsage(deck, slide, phase string, out []byte, du
 	if usage.SessionID != "" {
 		dedupe = "codex:" + usage.SessionID
 	}
+	metadata := map[string]any{"runner": "codex", "phase": phase, "success": success}
+	if sandboxID != "" {
+		metadata["execution"] = "railway_sandbox"
+		metadata["sandbox_id"] = sandboxID
+	}
 	w.s.recordObservability(collab.ObservabilityEvent{
 		Kind: collab.EventOpenAIUsage, DeckStorageKey: deck, SlideID: slide,
 		Source: "codex." + phase, Model: usage.Model, TotalTokens: usage.TotalTokens,
 		DurationMS: duration.Milliseconds(), DedupeKey: dedupe,
-		Metadata: map[string]any{"runner": "codex", "phase": phase, "success": success},
+		Metadata: metadata,
 	})
 }
 
@@ -463,10 +480,10 @@ without resolving its bullets is recorded as a failure.`, deck, id, deck, id, de
 
 	ctx, cancel := context.WithTimeout(context.Background(), agentPassTimeout())
 	defer cancel()
-	cmd := agentCommand(ctx, w.bin, w.s.St.Root, prompt)
 	started := time.Now()
-	out, err := cmd.CombinedOutput()
-	w.recordCodexUsage(deck, id, "agent", out, time.Since(started), err == nil)
+	execution := w.executeAgent(ctx, deck, id, "agent", prompt, nil)
+	out, err := execution.Output, execution.Err
+	w.recordCodexUsage(deck, id, "agent", out, time.Since(started), err == nil, execution.SandboxID)
 	w.enforceScope(preexisting)
 	// full output always lands in a log file for diagnosis
 	logDir := w.s.St.Root + "/_agent-logs"
@@ -607,10 +624,10 @@ Compare the current slide visually and substantively with the source. Inspect th
 Modify only decks/%s/slides/%s.html and its paired Markdown companion. Do not alter source attachments. Append a dated Log entry describing the critic adjustments. Do not add an Edit requests bullet or leave an in-progress marker. If the current result already has high fidelity, leave the fragment unchanged and only add a concise critic-verified Log entry.`, id, deck, strings.Join(sourceNames, ", "), strings.Join(images, ", "), deck, id)
 	ctx, cancel := context.WithTimeout(context.Background(), agentCriticTimeout())
 	defer cancel()
-	cmd := agentCommandWithImages(ctx, w.bin, w.s.St.Root, prompt, images)
 	started := time.Now()
-	out, runErr := cmd.CombinedOutput()
-	w.recordCodexUsage(deck, id, "source_critic", out, time.Since(started), runErr == nil)
+	execution := w.executeAgent(ctx, deck, id, "source_critic", prompt, images)
+	out, runErr := execution.Output, execution.Err
+	w.recordCodexUsage(deck, id, "source_critic", out, time.Since(started), runErr == nil, execution.SandboxID)
 	w.enforceScope(preexisting)
 	logDir := filepath.Join(w.s.St.Root, "_agent-logs")
 	os.MkdirAll(logDir, 0o755)
