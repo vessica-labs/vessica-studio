@@ -5,6 +5,17 @@ repository. If you are authoring slides in a studio created by `vstd init`, use
 the downstream guide at `codex/AGENTS.md` and load the canonical workflow with
 `vstd skill <name>`.
 
+## Choose the applicable workflow
+
+- For engine changes in this repository, follow this root guide.
+- For deck-content work requested in this repository, stop and confirm the
+  target: this is the engine repository, not a content repository.
+- In a downstream content repository, follow its `AGENTS.md` (distributed from
+  `codex/AGENTS.md`) and load the relevant `vstd skill <name>` workflow.
+- For embedded workflow changes, edit `plugin/skills/*/SKILL.md` or
+  `plugin/docs/conventions.md` first. Update packaging tests and thin downstream
+  launchers only when their public contract changes.
+
 ## Architecture
 
 Vessica Studio is local-first: a deck is a directory of HTML slide fragments
@@ -52,14 +63,24 @@ adapter for convenience.
 ## Agent workflows
 
 `plugin/skills/*/SKILL.md` and `plugin/docs/conventions.md` are the single source
-of truth for deck-authoring workflows. Claude reads them through the plugin;
-Codex launchers in `codex/prompts/` call `vstd skill` to read the same embedded
-content. Change the canonical files first and keep the packaging parity test
-green. Do not duplicate full workflow instructions in launchers or README files.
+of truth for deck-authoring workflows. Agent integrations consume them through
+the plugin or through thin launchers in `codex/prompts/` that call `vstd skill`.
+Change the canonical files first and keep the packaging parity test green. Do
+not duplicate full workflow instructions in launchers or README files.
 
 The root `AGENTS.md` governs engine contributions. `codex/AGENTS.md` is a
 distribution artifact for content repositories; do not expand it into an engine
 architecture guide.
+
+## Before editing
+
+- Run `git status --short` and preserve existing user changes.
+- Identify whether the change touches a public compatibility surface.
+- Exclude generated and runtime paths from searches and edits unless working on
+  an explicit fixture.
+- Read the nearest relevant package tests before changing behavior.
+- Confirm which public artifacts need to stay aligned: CLI help, README,
+  templates, embedded skills, conventions, and downstream launchers.
 
 ## Development workflow
 
@@ -76,7 +97,16 @@ Use test-driven development for behavior changes and regressions. Tests should
 exercise observable behavior with real files and handlers where practical.
 Avoid source-text assertions unless the text itself is the public artifact.
 
-Before reporting completion, run the full gate from the repository root:
+Match verification to the change:
+
+- Documentation-only: run `git diff --check`. Run package tests when the
+  documentation is embedded, generated, or validated by tests.
+- Focused code change: run the nearest package tests and formatting checks.
+- Public API, CLI, server, or deck-format change: run focused and relevant
+  integration tests, update public documentation, then run the full gate.
+- Broad refactor or release-risk change: run the full gate, including race tests.
+
+The full gate is:
 
 ```sh
 test -z "$(gofmt -l $(find cmd internal plugin -name '*.go' -type f))"
@@ -90,6 +120,8 @@ git diff --check
 Optional tools are feature-specific: Chrome/Chromium powers PDF export, FFmpeg
 and FFprobe power the full video pipeline, and the Railway CLI powers hosted
 deployment. Core builds and unit tests must not require their network services.
+When an optional dependency is unavailable, run the remaining applicable checks
+and report the omitted verification explicitly.
 
 ## Change discipline
 

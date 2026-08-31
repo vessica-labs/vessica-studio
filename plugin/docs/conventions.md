@@ -37,8 +37,10 @@ attachments:
     page: 3
 ```
 
-Keep the original source attached when recreating an exhibit. Agents must read
-the attachment directly; `page` identifies the relevant PDF page or PPT slide.
+Keep the original source attached when recreating an exhibit. Read the attachment
+directly; `page` identifies the relevant PDF page or PPT slide. If PDF or
+PowerPoint rendering is unavailable, preserve the attachment, update the
+companion Log, and report that visual source comparison was not completed.
 
 ## The companion contract (absolute)
 
@@ -47,8 +49,8 @@ the attachment directly; `page` identifies the relevant PDF page or PPT slide.
 2. NEVER finish an edit without updating the companion: adjust Key ideas/Evidence if
    content changed, keep Talk track consistent (it must end with the OPENING CUE of the
    next slide — it drives presentation-mode auto-advance), append a dated `## Log` line.
-3. Check the studio root and deck for a CLAUDE.md — repo-specific rules there override
-   defaults here.
+3. Check the studio root and deck for repository-specific agent instructions
+   (for example `AGENTS.md` or `CLAUDE.md`); local rules override defaults here.
 
 ## Working modes — detect before acting
 
@@ -57,9 +59,16 @@ the attachment directly; `page` identifies the relevant PDF page or PPT slide.
 - **No engine** (cloud session): edit files directly via the connected folder or git clone.
   Everything works file-first; the engine picks changes up when it runs.
 
+Only provide a localhost deck URL after confirming the engine is serving it. If
+the engine is not running, report the built artifact path or the `vstd serve`
+command instead of implying that a live preview exists.
+
 ## Engine surface
 
-CLI: `vstd new|list|fork|diff-upstream|build|serve|asset gen|asset find|chart promote-text|key check`.
+CLI deck lifecycle: `vstd new`, `vstd list`, `vstd fork`, `vstd diff-upstream`,
+`vstd build`, and `vstd serve`. Assets and tooling: `vstd asset gen`,
+`vstd asset find`, `vstd asset add-video`, `vstd chart promote-text`,
+`vstd key check`, and `vstd skill`.
 HTTP (studio mode): `GET /api/decks`, `GET /api/deck/{d}/slide/{id}`,
 `PUT .../fragment`, `PUT .../companion/{section}`, `PUT .../title`, `POST /api/deck/{d}/slides`.
 
@@ -172,8 +181,12 @@ served URL, viewport 1280×720, hash `#/<n>`), then review against the checklist
 - The slide delivers the companion's Intent; the visual earns its place
 - Content accurate to Evidence & sources
 Fix and re-screenshot (max 2 iterations); log unresolved items in the companion `## Log`.
-For high-stakes decks run the critic as a separate subagent for an independent eye.
+For high-stakes decks, use an independent review pass, with a subagent when the
+environment supports and authorizes one.
 When the companion has source attachments, the critic must compare a 1280×720
 render of the result against a rendered preview of the cited source page/slide,
 then correct fidelity problems before declaring the edit complete. Check values,
 labels, geometry, hierarchy, omissions, and source attribution—not only style.
+If Playwright, Chromium, or a running engine is unavailable, perform static
+fragment and companion checks, run the applicable build/tests, log unresolved
+items, and report that screenshot-based visual QA was not completed.
