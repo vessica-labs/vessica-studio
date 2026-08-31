@@ -1,11 +1,12 @@
 ---
 name: market-refresh
-description: Refresh time-sensitive market/data content in a Vessica Studio deck — re-research dated claims, update slides and companions, restamp as-of dates. Use when the user asks to refresh the market scan, update stats, restamp, or bring a deck's data current before a delivery.
+description: Refresh, update, or restamp time-sensitive market data, statistics, and dated claims in a Vessica Studio/vstd deck before delivery.
 ---
 
 # Refresh dated content
 
-Read `../../docs/conventions.md`.
+Read `../../docs/conventions.md`, or run `vstd skill conventions` when the skill
+is loaded outside the plugin file tree.
 
 1. **Find the perishables**: grep the deck for as-of stamps, dates, `[X]`/placeholder
    pills, and companions whose Evidence cites dated sources. Confirm scope with the user

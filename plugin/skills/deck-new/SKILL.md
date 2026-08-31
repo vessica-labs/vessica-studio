@@ -1,15 +1,17 @@
 ---
 name: deck-new
-description: Create a new presentation deck in a Vessica Studio content repo from a topic, outline, or conversation. Use when the user wants to create, build, start, or generate a new deck, presentation, or slide deck with Vessica Studio / vstd — e.g. "new deck about X", "build me a presentation on Y", "start a vessica deck".
+description: Create, build, start, or generate a new presentation deck in a Vessica Studio/vstd content repository from a topic, outline, or conversation.
 ---
 
 # Create a new deck
 
-Read `../../docs/conventions.md` first. Locate the studio root (folder with `studio.yaml` — connected folder, or ask; a git clone works too).
+Read `../../docs/conventions.md` first, or run `vstd skill conventions` when the
+skill is loaded outside the plugin file tree. Locate the studio root (folder with
+`studio.yaml` — connected folder, or ask; a git clone works too).
 
 ## 1. Frame it
 
-If not already clear from conversation, ask (AskUserQuestion): audience & setting, length
+If not already clear from conversation, ask the user: audience & setting, length
 (drives slide count), theme (list `themes/`), and whether research is needed now.
 If the content came from a long chat (research already done), skip straight to outlining.
 
@@ -46,5 +48,7 @@ For every slide, in order:
 
 ## 5. Finish
 
-Build (`vstd build <deck>` or note the engine auto-builds), tell the user the deck URL
-(`localhost:4400/d/<deck>/`), summarize slide list + any logged unresolved critic items.
+Build (`vstd build <deck>` or note the engine auto-builds). Only provide the deck
+URL after confirming the engine is running; otherwise report the built artifact
+or the `vstd serve` command. Summarize the slide list, unresolved critic items,
+and any visual QA that optional tooling prevented.
