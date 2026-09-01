@@ -29,6 +29,7 @@ const (
 	maxSandboxInputBytes  = int64(512 << 20)
 	maxSandboxChanges     = 64
 	maxSandboxChangeBytes = int64(128 << 20)
+	sandboxTeardownGrace  = 90 * time.Second
 )
 
 //go:embed railway_sandbox_runner.mjs
@@ -143,12 +144,12 @@ func (w *agentWorker) executeRailwaySandbox(ctx context.Context, deck, slide, ph
 	if err != nil {
 		return agentExecution{Err: fmt.Errorf("encode Railway sandbox request: %w", err)}
 	}
-	cmd := exec.CommandContext(ctx, "node", runnerPath)
+	cmd := exec.Command("node", runnerPath)
 	cmd.Stdin = bytes.NewReader(payload)
 	cmd.Env = sandboxDispatcherEnv()
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	runErr := cmd.Run()
+	runErr := runSandboxDispatcher(ctx, cmd, sandboxTeardownGrace)
 	var result railwaySandboxResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		detail := strings.TrimSpace(stderr.String())
@@ -191,6 +192,40 @@ func (w *agentWorker) executeRailwaySandbox(ctx context.Context, deck, slide, ph
 		return agentExecution{Output: out, Err: fmt.Errorf("apply Railway sandbox result: %w", err), SandboxID: result.SandboxID}
 	}
 	return agentExecution{Output: out, SandboxID: result.SandboxID}
+}
+
+func runSandboxDispatcher(ctx context.Context, cmd *exec.Cmd, teardownGrace time.Duration) error {
+	if err := cmd.Start(); err != nil {
+		return err
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- cmd.Wait()
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		ctxErr := ctx.Err()
+		if cmd.Process != nil {
+			_ = cmd.Process.Signal(os.Interrupt)
+		}
+		timer := time.NewTimer(teardownGrace)
+		defer timer.Stop()
+		select {
+		case err := <-done:
+			if err != nil {
+				return fmt.Errorf("%w (dispatcher cleanup: %v)", ctxErr, err)
+			}
+			return ctxErr
+		case <-timer.C:
+			if cmd.Process != nil {
+				_ = cmd.Process.Kill()
+			}
+			<-done
+			return fmt.Errorf("%w (dispatcher cleanup exceeded %s)", ctxErr, teardownGrace)
+		}
+	}
 }
 
 func deadlineOr(ctx context.Context, fallback time.Time) time.Time {
@@ -379,7 +414,11 @@ func collectRailwaySandboxInputs(root, deck, slide string, images []string, engi
 		}
 		for _, match := range libraryPathPattern.FindAllSubmatch(raw, -1) {
 			if len(match) == 2 {
-				if err := addRootFile("library/" + string(match[1])); err != nil {
+				libraryPath, err := sandboxLibraryPath(string(match[1]))
+				if err != nil {
+					return nil, nil, err
+				}
+				if err := addRootFile(libraryPath); err != nil {
 					return nil, nil, err
 				}
 			}
@@ -432,6 +471,14 @@ func collectRailwaySandboxInputs(root, deck, slide string, images []string, engi
 	}
 	sort.Slice(inputs, func(i, j int) bool { return inputs[i].RemotePath < inputs[j].RemotePath })
 	return inputs, remoteImages, nil
+}
+
+func sandboxLibraryPath(reference string) (string, error) {
+	rel := filepath.ToSlash(filepath.Clean("library/" + filepath.FromSlash(reference)))
+	if rel == "library" || !strings.HasPrefix(rel, "library/") {
+		return "", fmt.Errorf("library asset escapes library: %q", reference)
+	}
+	return rel, nil
 }
 
 func newSandboxInput(local, remote, relative string, mode uint32) (sandboxInputFile, error) {

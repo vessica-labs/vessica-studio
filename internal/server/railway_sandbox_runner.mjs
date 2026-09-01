@@ -2,6 +2,20 @@ import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 
+let sandbox;
+let destroyPromise;
+let cancellationReason = "";
+let resolveCancellation;
+const cancellation = new Promise(resolve => { resolveCancellation = resolve; });
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    if (cancellationReason) return;
+    cancellationReason = `dispatcher received ${signal}`;
+    resolveCancellation();
+    void destroySandbox();
+  });
+}
+
 const input = await new Promise((resolve, reject) => {
   let body = "";
   process.stdin.setEncoding("utf8");
@@ -23,7 +37,6 @@ const metadata = {
   changes: [],
 };
 
-let sandbox;
 try {
   const sdkPath = process.env.VSTD_RAILWAY_SDK;
   if (!sdkPath) throw new Error("VSTD_RAILWAY_SDK is not configured");
@@ -33,6 +46,7 @@ try {
     networkIsolation: "ISOLATED",
     env: { CODEX_API_KEY: input.codexKeyReference },
   });
+  throwIfCancelled();
   metadata.sandboxId = sandbox.id;
   metadata.status = sandbox.status;
   metadata.networkIsolation = sandbox.networkIsolation;
@@ -42,16 +56,16 @@ try {
   }
 
   for (const file of input.inputs) {
-    await sandbox.files.write(file.remotePath, () => fs.createReadStream(file.localPath), { mode: file.mode });
+    await cancellable(sandbox.files.write(file.remotePath, () => fs.createReadStream(file.localPath), { mode: file.mode }));
   }
-  const forbiddenEnvironment = await sandbox.exec(
+  const forbiddenEnvironment = await cancellable(sandbox.exec(
     "for key in DATABASE_URL PGHOST PGPASSWORD TELNYX_API_KEY RESEND_API_KEY AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY S3_ACCESS_KEY S3_SECRET_KEY RAILWAY_TOKEN RAILWAY_API_TOKEN; do if printenv \"$key\" >/dev/null 2>&1; then echo \"forbidden sandbox environment: $key\" >&2; exit 41; fi; done",
     { timeoutSec: 30 },
-  );
+  ));
   if (forbiddenEnvironment.exitCode !== 0) {
     throw new Error(forbiddenEnvironment.stderr || "sandbox received forbidden environment variables");
   }
-  await sandbox.files.write("/workspace/.vstd/prompt.txt", input.prompt, { mode: 0o600 });
+  await cancellable(sandbox.files.write("/workspace/.vstd/prompt.txt", input.prompt, { mode: 0o600 }));
   const remoteImages = input.remoteImages ?? [];
   const imageArgs = remoteImages.map(image => ` -i ${shellQuote(image)}`).join("");
   const runScript = `#!/usr/bin/env bash
@@ -60,11 +74,11 @@ export PATH="/workspace/bin:$PATH"
 prompt="$(cat /workspace/.vstd/prompt.txt)"
 exec codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check --ephemeral -C /workspace${imageArgs} "$prompt"
 `;
-  await sandbox.files.write("/workspace/.vstd/run-agent.sh", runScript, { mode: 0o700 });
-  const execution = await sandbox.exec("/workspace/.vstd/run-agent.sh", {
+  await cancellable(sandbox.files.write("/workspace/.vstd/run-agent.sh", runScript, { mode: 0o700 }));
+  const execution = await cancellable(sandbox.exec("/workspace/.vstd/run-agent.sh", {
     cwd: "/workspace",
     timeoutSec: input.timeoutSeconds,
-  });
+  }));
   metadata.exitCode = execution.exitCode;
   metadata.timedOut = execution.timedOut;
   metadata.truncated = execution.truncated;
@@ -76,13 +90,13 @@ exec codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check
     let totalBytes = 0;
     for (const prefix of input.outputPrefixes) {
       const remoteRoot = `/workspace/${prefix.replace(/\/$/, "")}`;
-      if (!(await sandbox.files.exists(remoteRoot))) continue;
-      for (const remotePath of await listFiles(sandbox, remoteRoot)) {
+      if (!(await cancellable(sandbox.files.exists(remoteRoot)))) continue;
+      for (const remotePath of await cancellable(listFiles(sandbox, remoteRoot))) {
         const relative = remotePath.slice("/workspace/".length);
         if (!isAllowed(relative, input.outputPrefixes)) throw new Error(`sandbox output escaped scope: ${relative}`);
         if (isGeneratedOutput(relative)) continue;
-        const stat = await sandbox.files.stat(remotePath);
-        const bytes = await sandbox.files.read(remotePath, { format: "bytes" });
+        const stat = await cancellable(sandbox.files.stat(remotePath));
+        const bytes = await cancellable(sandbox.files.read(remotePath, { format: "bytes" }));
         const digest = crypto.createHash("sha256").update(bytes).digest("hex");
         if (original.get(relative) === digest) continue;
         totalBytes += stat.size;
@@ -99,18 +113,37 @@ exec codex exec --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check
 } catch (error) {
   metadata.error = error instanceof Error ? error.message : String(error);
 } finally {
-  if (sandbox) {
-    try {
-      await sandbox.destroy();
-      metadata.destroyed = true;
-      console.error(`sandbox destroyed id=${sandbox.id}`);
-    } catch (error) {
-      metadata.destroyError = error instanceof Error ? error.message : String(error);
-    }
-  }
+  await destroySandbox();
 }
 
 process.stdout.write(JSON.stringify(metadata));
+
+function throwIfCancelled() {
+  if (cancellationReason) throw new Error(cancellationReason);
+}
+
+function cancellable(operation) {
+  return Promise.race([
+    operation,
+    cancellation.then(() => { throw new Error(cancellationReason); }),
+  ]);
+}
+
+async function destroySandbox() {
+  if (!sandbox) return;
+  if (!destroyPromise) {
+    destroyPromise = (async () => {
+      try {
+        await sandbox.destroy();
+        metadata.destroyed = true;
+        console.error(`sandbox destroyed id=${sandbox.id}`);
+      } catch (error) {
+        metadata.destroyError = error instanceof Error ? error.message : String(error);
+      }
+    })();
+  }
+  await destroyPromise;
+}
 
 async function listFiles(sandbox, directory) {
   const output = [];
