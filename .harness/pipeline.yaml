@@ -102,7 +102,11 @@ stages:
       format: json
       agent: coder
     hooks:
-      before: []
+      before:
+        - id: ensure-go-toolchain
+          argv: [sh, .harness/scripts/ensure-go.sh]
+          cwd: .
+          timeout_seconds: 180
       after: []
       on_failure: []
   - id: lint

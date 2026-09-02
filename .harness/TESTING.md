@@ -59,6 +59,11 @@ servers, and test credential stores. Core tests require no live network,
 credentials, Railway, OpenAI, S3, browser, or FFmpeg service. Optional tool
 coverage is reported explicitly when unavailable.
 
+The generic Agent Harness checkpoint does not include Go. Before the coder
+stage, `.harness/scripts/ensure-go.sh` installs the pinned official Go archive
+when necessary, verifies its published SHA-256 checksum, and exposes `go` and
+`gofmt` through `/usr/local/bin`. Existing developer installations are reused.
+
 ## Determinism and Flake Policy
 
 Tests must isolate ports, paths, environment, credentials, and mutable state.
