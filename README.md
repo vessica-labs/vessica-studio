@@ -406,6 +406,15 @@ The release output contains no companion Markdown or authoring source. Missing,
 unsafe, symlink-escaped, oversized, or mutable assets fail the build rather than
 producing a partial release.
 
+Consumers installing directly from an immutable Git revision must embed the
+same full revision so the binary can verify and report it. For example, with
+`REVISION` set to a 40-character commit SHA:
+
+```sh
+go install -ldflags "-X main.releaseBuildRevision=$REVISION" \
+  "github.com/vessica-labs/vessica-studio/cmd/vstd@$REVISION"
+```
+
 Running `vstd build` without a deck also builds all decks.
 When building from outside the studio directory, use the `--root=DIR` form so
 the deck name remains unambiguous to the current command parser.

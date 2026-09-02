@@ -371,12 +371,33 @@ func buildRevision() (string, error) {
 		}
 	}
 	if revision == "" {
-		return "", fmt.Errorf("engine build revision is unavailable")
+		if !releaseRevisionPattern.MatchString(releaseBuildRevision) {
+			return "", fmt.Errorf("engine build revision is unavailable")
+		}
+		if !moduleVersionMatchesRevision(info.Main.Version, releaseBuildRevision) {
+			return "", fmt.Errorf("embedded engine revision does not match the installed module")
+		}
+		revision = releaseBuildRevision
 	}
 	if modified {
 		return "", fmt.Errorf("release-build requires an immutable unmodified engine binary")
 	}
 	return revision, nil
+}
+
+var (
+	releaseRevisionPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
+	// releaseBuildRevision is set by immutable installers and release builds:
+	// go install -ldflags "-X main.releaseBuildRevision=<full-sha>" module/cmd/vstd@<full-sha>
+	releaseBuildRevision string
+)
+
+func moduleVersionMatchesRevision(moduleVersion, revision string) bool {
+	const pseudoRevisionLength = 12
+	if len(revision) != 40 || len(moduleVersion) < pseudoRevisionLength {
+		return false
+	}
+	return strings.HasSuffix(moduleVersion, "-"+revision[:pseudoRevisionLength])
 }
 
 // cmdAgent sweeps the redesign queue once, synchronously, using the configured
