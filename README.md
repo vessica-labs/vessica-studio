@@ -389,6 +389,23 @@ vstd build operating-model
 vstd build --all
 ```
 
+#### `vstd release-build [deck] --output DIR [--root DIR]`
+
+Build one deck for immutable hosted delivery through the public engine contract.
+The command requires a revision-identifiable, unmodified `vstd` binary and an
+empty output directory. It writes a self-contained `index.html`, only the
+referenced release assets, and `release-manifest.json` with the exact engine
+version/revision plus deterministic artifact and manifest SHA-256 checksums.
+When `deck` is omitted, the studio must contain exactly one deck.
+
+```sh
+vstd release-build product-story --output /tmp/product-story-release
+```
+
+The release output contains no companion Markdown or authoring source. Missing,
+unsafe, symlink-escaped, oversized, or mutable assets fail the build rather than
+producing a partial release.
+
 Running `vstd build` without a deck also builds all decks.
 When building from outside the studio directory, use the `--root=DIR` form so
 the deck name remains unambiguous to the current command parser.
