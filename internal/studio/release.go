@@ -49,9 +49,10 @@ type unsignedReleaseManifest struct {
 }
 
 var (
-	releaseRevisionRE = regexp.MustCompile(`^[a-f0-9]{40}$`)
-	releaseLibraryRE  = regexp.MustCompile(`(?:\./|/)library/([A-Za-z0-9][A-Za-z0-9._/-]*)`)
-	releaseVideoRE    = regexp.MustCompile(`data-vstd-video=["']([a-z0-9][a-z0-9-]*)["']`)
+	releaseRevisionRE    = regexp.MustCompile(`^[a-f0-9]{40}$`)
+	releaseLibraryRE     = regexp.MustCompile(`(?:\./|/)library/([A-Za-z0-9][A-Za-z0-9._/-]*)`)
+	releaseRootLibraryRE = regexp.MustCompile(`(^|[("'=:\s])\/library\/`)
+	releaseVideoRE       = regexp.MustCompile(`data-vstd-video=["']([a-z0-9][a-z0-9-]*)["']`)
 )
 
 const (
@@ -79,7 +80,15 @@ func (s *Studio) BuildRelease(deck, output string, engine ReleaseEngineIdentity)
 	if err != nil {
 		return nil, err
 	}
-	if destination == root || strings.HasPrefix(destination, root+string(filepath.Separator)) {
+	physicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return nil, err
+	}
+	physicalDestination, err := resolveReleasePath(destination)
+	if err != nil {
+		return nil, err
+	}
+	if physicalDestination == physicalRoot || strings.HasPrefix(physicalDestination, physicalRoot+string(filepath.Separator)) {
 		return nil, fmt.Errorf("release output must be outside the studio root")
 	}
 	if err := requireEmptyOrMissing(destination); err != nil {
@@ -173,6 +182,9 @@ func (s *Studio) BuildRelease(deck, output string, engine ReleaseEngineIdentity)
 	if err := os.Remove(destination); err != nil && !os.IsNotExist(err) {
 		return nil, err
 	}
+	if err := os.Chmod(staging, 0o755); err != nil {
+		return nil, err
+	}
 	if err := os.Rename(staging, destination); err != nil {
 		return nil, err
 	}
@@ -181,8 +193,7 @@ func (s *Studio) BuildRelease(deck, output string, engine ReleaseEngineIdentity)
 }
 
 func releaseRelativePlayer(html string) string {
-	html = strings.ReplaceAll(html, `'/library/`, `'./library/`)
-	html = strings.ReplaceAll(html, `"/library/`, `"./library/`)
+	html = releaseRootLibraryRE.ReplaceAllString(html, `${1}./library/`)
 	html = strings.ReplaceAll(html,
 		`const srcFor=id=>httpMode?'/assets/video/'+id:'assets/video/'+id+'.mp4';`,
 		`const srcFor=id=>'./assets/video/'+id+'.mp4';`)
@@ -220,6 +231,13 @@ func (s *Studio) copyReleaseVideos(staging, html string, assets map[string]struc
 		if err != nil {
 			return fmt.Errorf("release video %q bytes are unavailable", id)
 		}
+		if !strings.EqualFold(filepath.Ext(video.File), ".mp4") {
+			return fmt.Errorf("release video %q uses unsupported non-MP4 bytes", id)
+		}
+		digest := sha256.Sum256(contents)
+		if int64(len(contents)) != video.Bytes || hex.EncodeToString(digest[:]) != video.Hash {
+			return fmt.Errorf("release video %q does not match its library manifest", id)
+		}
 		path := "assets/video/" + id + ".mp4"
 		if err := writeReleaseFile(staging, path, contents); err != nil {
 			return err
@@ -242,6 +260,35 @@ func (s *Studio) copyReleaseVideos(staging, html string, assets map[string]struc
 		assets[posterPath] = struct{}{}
 	}
 	return nil
+}
+
+func resolveReleasePath(path string) (string, error) {
+	remaining := []string{}
+	candidate := path
+	for {
+		resolved, err := filepath.EvalSymlinks(candidate)
+		if err == nil {
+			parts := append([]string{resolved}, reverseStrings(remaining)...)
+			return filepath.Clean(filepath.Join(parts...)), nil
+		}
+		if !os.IsNotExist(err) {
+			return "", err
+		}
+		parent := filepath.Dir(candidate)
+		if parent == candidate {
+			return "", err
+		}
+		remaining = append(remaining, filepath.Base(candidate))
+		candidate = parent
+	}
+}
+
+func reverseStrings(values []string) []string {
+	reversed := make([]string, len(values))
+	for index := range values {
+		reversed[len(values)-1-index] = values[index]
+	}
+	return reversed
 }
 
 func requireEmptyOrMissing(path string) error {
