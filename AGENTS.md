@@ -15,6 +15,8 @@ the downstream guide at `codex/AGENTS.md` and load the canonical workflow with
 - For embedded workflow changes, edit `plugin/skills/*/SKILL.md` or
   `plugin/docs/conventions.md` first. Update packaging tests and thin downstream
   launchers only when their public contract changes.
+- For Agent Harness work, read the source Linear ticket, then the relevant
+  `.harness/*.md` source-of-truth documents and accepted ADRs before coding.
 
 ## Architecture
 
@@ -42,6 +44,15 @@ Dependency direction should run from the CLI/server adapters toward these
 domain packages. Do not move shared domain types into an external-service
 adapter for convenience.
 
+Agent Harness source-of-truth documents:
+
+- Architecture: `.harness/ARCHITECTURE.md`
+- Product and UI design: `.harness/DESIGN.md`
+- Security: `.harness/SECURITY.md`
+- Testing: `.harness/TESTING.md`
+- Deployment and release: `.harness/DEPLOY.md`
+- Accepted decisions: `.harness/adrs/INDEX.md`
+
 ## Invariants
 
 - Preserve the file contract: `studio.yaml`, `deck.yaml`, and paired
@@ -52,21 +63,29 @@ adapter for convenience.
   Themes contribute presentation styling, not alternate player implementations.
 - `studio` mode may edit content. `present` and `public` are read-only content
   modes. Treat any change to authorization or route exposure as security work.
-- Never put credentials in built decks, manifests, logs, fixtures, or commits.
-  Preserve environment-first secret resolution and redact values in diagnostics.
+- Local-only commands and plugin workflows must continue to work without a
+  Vessica Studio Cloud account or network connection.
+- Cloud client code belongs in this public repository, but multi-tenant identity,
+  billing, hosted execution, publication policy, and SaaS business rules belong
+  only in the private `vessica-studio-cloud` service.
+- Never put credentials in built decks, manifests, logs, fixtures, Git config,
+  or commits. Preserve environment-first secret resolution and redact values in
+  diagnostics. Native cloud credentials must use the OS credential store when
+  available.
 - `decks/*/build/`, `dist/`, local video bytes, request archives, and local
   Vessica/audience state are generated or runtime data. Do not hand-edit or
   commit generated output unless a fixture explicitly requires it.
-- Public CLI commands, HTTP routes, YAML/JSON fields, and the deck format are
-  compatibility surfaces. Add tests and documentation for intentional changes.
+- Public CLI commands, HTTP routes, YAML/JSON fields, cloud protocol messages,
+  and the deck format are compatibility surfaces. Add tests and documentation
+  for intentional changes.
 
 ## Agent workflows
 
 `plugin/skills/*/SKILL.md` and `plugin/docs/conventions.md` are the single source
 of truth for deck-authoring workflows. Agent integrations consume them through
 the plugin or through thin launchers in `codex/prompts/` that call `vstd skill`.
-Change the canonical files first and keep the packaging parity test green. Do
-not duplicate full workflow instructions in launchers or README files.
+Change the canonical files first and keep the packaging parity test green. Do not
+duplicate full workflow instructions in launchers or README files.
 
 The root `AGENTS.md` governs engine contributions. `codex/AGENTS.md` is a
 distribution artifact for content repositories; do not expand it into an engine
@@ -102,8 +121,9 @@ Match verification to the change:
 - Documentation-only: run `git diff --check`. Run package tests when the
   documentation is embedded, generated, or validated by tests.
 - Focused code change: run the nearest package tests and formatting checks.
-- Public API, CLI, server, or deck-format change: run focused and relevant
-  integration tests, update public documentation, then run the full gate.
+- Public API, CLI, server, cloud protocol, or deck-format change: run focused
+  and relevant integration tests, update public documentation, then run the
+  full gate.
 - Broad refactor or release-risk change: run the full gate, including race tests.
 
 The full gate is:
@@ -132,3 +152,24 @@ and report the omitted verification explicitly.
   changes.
 - Security reviews may identify changes without authorizing them. Do not turn a
   report-only recommendation into code or deployment configuration.
+- Harness coder tickets run their focused checks and one ticket gate; lint and
+  QA own deduplicated repository-wide and acceptance gates.
+
+## Definition of done
+
+- Observable behavior and public compatibility changes have focused tests.
+- Applicable package checks and the full gate pass at the stage assigned by the
+  checked-in Harness pipeline.
+- CLI help, README, embedded plugin workflows, and compatibility documentation
+  remain aligned.
+- Credentials, generated output, and runtime Harness state are absent from the
+  commit.
+- User-facing cloud behavior preserves local-first operation and the public/private
+  repository boundary.
+
+## Escalation conditions
+
+Stop for human direction before destructive compatibility changes, credential or
+provider-permission changes, weakening local-only operation or security boundaries,
+publishing a release, deploying a hosted environment, or merging a Harness-created
+pull request without explicit authority.
