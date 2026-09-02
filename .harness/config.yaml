@@ -1,0 +1,19 @@
+version: 1
+tracker:
+  provider: linear
+  workspace: "cddc5524-1c41-41c5-81a4-46ea5a8dc0d1"
+  project: "642a44b4-9279-4129-8cc3-7300a2e5f7c7"
+  child_issue_type: null
+notion:
+  parent_page_id: "3cf97157177680deb3bcce3bc865477f"
+git:
+  remote: "origin"
+  base_branch: "main"
+cloud:
+  profile: "vessica-studio"
+automation:
+  enabled: true
+  trigger:
+    provider: linear
+    type: agent
+    agent: "Vessica"
