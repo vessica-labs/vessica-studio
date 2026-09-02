@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -29,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.3.0"
+const version = "0.4.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -51,6 +52,8 @@ func main() {
 		err = cmdDiffUpstream(args)
 	case "build":
 		err = cmdBuild(args)
+	case "release-build":
+		err = cmdReleaseBuild(args)
 	case "agent":
 		err = cmdAgent(args)
 	case "serve":
@@ -94,6 +97,8 @@ Usage:
   vstd fork <deck> <client>           fork a deck for a client (deck--client)
   vstd diff-upstream <fork>           slides changed upstream since fork
   vstd build <deck>|--all             assemble build/index.html
+  vstd release-build [deck] --output DIR
+                                      emit immutable hosted-release artifacts + manifest
   vstd agent                          run one headless redesign-queue sweep
   vstd serve [deck] [flags]           serve studio (watch, live reload, edit API)
   vstd asset gen --prompt P [flags]   generate a library image (gpt-image-2)
@@ -300,6 +305,99 @@ func cmdBuild(args []string) error {
 		fmt.Println("built", out)
 	}
 	return nil
+}
+
+func cmdReleaseBuild(args []string) error {
+	fs := flag.NewFlagSet("release-build", flag.ContinueOnError)
+	root := rootFlag(fs)
+	output := fs.String("output", "", "empty destination for release artifacts")
+	var deck string
+	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
+		deck = args[0]
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+	} else if err := fs.Parse(args); err != nil {
+		return err
+	}
+	if *output == "" {
+		return fmt.Errorf("usage: vstd release-build [deck] --output DIR [--root DIR]")
+	}
+	st, err := openStudio(*root)
+	if err != nil {
+		return err
+	}
+	if deck == "" {
+		decks, err := st.ListDecks()
+		if err != nil {
+			return err
+		}
+		if len(decks) != 1 {
+			return fmt.Errorf("release-build requires a deck when the studio contains %d decks", len(decks))
+		}
+		deck = decks[0]
+	}
+	revision, err := buildRevision()
+	if err != nil {
+		return err
+	}
+	manifest, err := st.BuildRelease(deck, *output, studio.ReleaseEngineIdentity{
+		Name:     "vstd",
+		Version:  version,
+		Revision: revision,
+	})
+	if err != nil {
+		return err
+	}
+	fmt.Printf("released %s to %s (%d artifacts, %s)\n", deck, *output, len(manifest.Artifacts), manifest.ManifestChecksum)
+	return nil
+}
+
+func buildRevision() (string, error) {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return "", fmt.Errorf("engine build identity is unavailable")
+	}
+	var revision string
+	modified := false
+	for _, setting := range info.Settings {
+		switch setting.Key {
+		case "vcs.revision":
+			if regexp.MustCompile(`^[a-f0-9]{40}$`).MatchString(setting.Value) {
+				revision = setting.Value
+			}
+		case "vcs.modified":
+			modified = setting.Value == "true"
+		}
+	}
+	if revision == "" {
+		if !releaseRevisionPattern.MatchString(releaseBuildRevision) {
+			return "", fmt.Errorf("engine build revision is unavailable")
+		}
+		if !moduleVersionMatchesRevision(info.Main.Version, releaseBuildRevision) {
+			return "", fmt.Errorf("embedded engine revision does not match the installed module")
+		}
+		revision = releaseBuildRevision
+	}
+	if modified {
+		return "", fmt.Errorf("release-build requires an immutable unmodified engine binary")
+	}
+	return revision, nil
+}
+
+var (
+	releaseRevisionPattern = regexp.MustCompile(`^[a-f0-9]{40}$`)
+	// releaseBuildRevision is set by immutable installers and release builds:
+	// go install -ldflags "-X main.releaseBuildRevision=<full-sha>" module/cmd/vstd@<full-sha>
+	releaseBuildRevision string
+)
+
+func moduleVersionMatchesRevision(moduleVersion, revision string) bool {
+	const pseudoRevisionLength = 12
+	if len(revision) != 40 || len(moduleVersion) < pseudoRevisionLength {
+		return false
+	}
+	return strings.HasSuffix(moduleVersion, "-"+revision[:pseudoRevisionLength])
 }
 
 // cmdAgent sweeps the redesign queue once, synchronously, using the configured
