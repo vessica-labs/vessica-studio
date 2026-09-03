@@ -54,9 +54,37 @@ companion Log, and report that visual source comparison was not completed.
 
 ## Working modes — detect before acting
 
+Start every authoring workflow with `vstd cloud workspace status`. Use that
+command's result as the connection contract; never read or interpret cloud
+association files directly.
+
+- **Local-only workspace:** continue editing the paired HTML/Markdown files.
+  Login and network access are optional and must never block authoring, build,
+  serve, export, or skill discovery.
+- **Connected workspace:** continue editing the same paired files locally. Use
+  workspace, version, sync, conflict, and publish terminology: inspect with
+  `vstd cloud workspace status`, incorporate a newer version with
+  `vstd cloud workspace pull`, create an attributable version with
+  `vstd cloud workspace sync`, and publish a selected revision with
+  `vstd cloud publish create`.
+- **Offline or failed status:** keep local work intact and report it as offline
+  and unsynced. Never claim sync or publish succeeded. Local commands and direct
+  file editing remain available.
+- **Conflict:** do not replace local or cloud content. Re-run
+  `vstd cloud workspace status`; pull only when the local projection is clean.
+  Otherwise inspect the remote head in a separate clone, compare and reconcile
+  the paired files explicitly, then use
+  `vstd cloud workspace sync --resolve-head REVISION_ID` to acknowledge the
+  exact recorded conflict head. Never
+  ask for Git credentials or teach branch, push, pull, or rebase commands as the
+  cloud workflow.
+- **Interrupted pull:** stop other writers and use the local-only
+  `vstd cloud workspace recover --root DIR` before editing. Preserve the recovery
+  journal; do not bypass the pending-recovery error or delete recovery data.
+
 - **Engine running?** `curl -s localhost:4400/api/decks` (port from studio.yaml). If yes,
   prefer the edit API; the browser live-reloads on every file change either way.
-- **No engine** (cloud session): edit files directly via the connected folder or git clone.
+- **No engine:** edit files directly in the studio folder.
   Everything works file-first; the engine picks changes up when it runs.
 
 Only provide a localhost deck URL after confirming the engine is serving it. If

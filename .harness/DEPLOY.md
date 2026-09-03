@@ -2,7 +2,7 @@
 
 - Status: `Tag-driven public release process`
 - Owner: `Matthew Kropp`
-- Last verified: `2026-09-02`
+- Last verified: `2026-09-03`
 - Scope: `Public vstd binaries/module/plugin artifacts; no private SaaS deployment`
 
 ## Environments
@@ -28,11 +28,17 @@ Core builds require no production secret. Optional OpenAI, S3, Git, Railway, and
 cloud-client credentials are resolved at runtime from approved environment or OS
 credential stores and never baked into artifacts.
 
+The Cloud endpoint defaults to `https://cloud.vessica.studio` and may be
+overridden at runtime with `VSTD_CLOUD_ENDPOINT`. Cloud use requires a supported
+OS credential store; this does not affect installation or local-only commands.
+
 ## Deployment Preconditions
 
 - Clean, reviewed source on the intended release commit.
 - Full repository gate and packaging/parity tests pass.
 - Public CLI help, README, plugin workflows, and compatibility notes agree.
+- The public client protocol and fixtures are aligned with the private service's
+  approved auth, capability, revision, and publication contracts.
 - No credentials, generated deck builds, runtime state, or local media bytes are
   included.
 - Explicit owner approval exists for tagging or publishing.

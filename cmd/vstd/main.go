@@ -72,6 +72,8 @@ func main() {
 		err = cmdKey(args)
 	case "skill":
 		err = cmdSkill(args)
+	case "cloud":
+		err = cmdCloud(args)
 	case "version":
 		fmt.Println("vstd", version)
 	case "help", "-h", "--help":
@@ -116,6 +118,10 @@ Usage:
                                       instructions for any agent (Claude, Codex)
   vstd railway up                     one-command Railway setup + deploy
   vstd railway status|<args>          linked project info / CLI passthrough
+  vstd cloud login|logout|account     pair and inspect a Cloud account
+  vstd cloud workspace <command>      list, clone, connect, status, pull, or sync
+  vstd cloud publish create|status    publish or inspect a synchronized revision
+  vstd cloud diagnostics              show sanitized protocol information
   vstd version
 
 Serve flags:
@@ -142,6 +148,7 @@ Environment:
   VSTD_GIT_REPO / _BRANCH / _TOKEN
                         content repository and scoped write credential
   VSTD_AGENT=1          enable the optional headless redesign worker
+  VSTD_CLOUD_ENDPOINT  Vessica Studio Cloud API endpoint
   VSTD_CHROMIUM         Chrome/Chromium binary for visual export/migration
   PORT                  overrides port (Railway sets this)
   VSTD_S3_ENDPOINT / _BUCKET / _ACCESS_KEY / _SECRET_KEY / _REGION

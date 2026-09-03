@@ -6,8 +6,10 @@ description: Review, QA, critique, polish, or check a Vessica Studio/vstd deck f
 # Review a whole deck
 
 Read `../../docs/conventions.md`, or run `vstd skill conventions` when the skill
-is loaded outside the plugin file tree. This is the deck-level critic — run
-before deliveries.
+is loaded outside the plugin file tree. Run `vstd cloud workspace status` to
+detect connection state without inspecting association files; review and local
+fixes remain available when offline or unconnected. This is the deck-level
+critic — run before deliveries.
 
 1. **Visual sweep**: build, then screenshot EVERY slide (Playwright, 1280×720, `#/<n>`).
    Review each against the critic checklist. Unless the user requested a report-only

@@ -7,7 +7,9 @@ description: Add, insert, or create one or more slides or sections in an existin
 
 Read `../../docs/conventions.md`, or run `vstd skill conventions` when the skill
 is loaded outside the plugin file tree. Locate the studio root and target deck
-(`vstd list` or `decks/` listing; confirm if ambiguous).
+(`vstd list` or `decks/` listing; confirm if ambiguous). Run
+`vstd cloud workspace status` to detect connection state; add slides directly
+to paired local files even when offline or unconnected.
 
 1. **Context**: read `deck.yaml`, the slide filename list (the arc), and the companions of
    the 2–3 slides around the insertion point — match voice, level, and layout pacing.

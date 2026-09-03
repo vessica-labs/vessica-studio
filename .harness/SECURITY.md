@@ -2,7 +2,7 @@
 
 - Status: `Current public engine security contract`
 - Owner: `Matthew Kropp`
-- Last verified: `2026-09-02`
+- Last verified: `2026-09-03`
 - Scope: `Local files, HTTP modes, native cloud credentials, provider adapters, and built presentations`
 
 ## Security Scope
@@ -36,6 +36,9 @@ native-client credentials.
 - Cloud authorization decisions are enforced server-side; the client treats
   workspace and revision identifiers as untrusted selectors.
 - Logout removes local credentials without modifying presentation files.
+- Cloud workspace association data is non-secret, mode `0600` local state under
+  `.vstd/cloud-workspace.json`; it is excluded from synchronized snapshots and
+  builds and is validated before use.
 
 ## Secrets and Configuration
 
@@ -44,12 +47,32 @@ store for cloud credentials where supported. Tests use deterministic fake stores
 Diagnostics, errors, fixtures, builds, manifests, Git configuration, and shell
 commands must not contain secret values.
 
+The production credential adapter uses the OS keyring service
+`vessica-studio-cloud`, namespaces each credential by normalized endpoint, and
+stores only renewable session material. Short-lived
+access tokens remain in memory. There is no plaintext, environment-variable,
+studio-file, or Git fallback when secure credential storage is unavailable.
+
 ## Secure Input and Output Handling
 
 Validate and confine filesystem paths; reject traversal and unsafe symlinks.
 Avoid shell interpolation for external commands. Validate remote URLs, protocol
 versions, response sizes, and content types. Encode browser output for its
 context and keep executable presentation content isolated from privileged state.
+
+Cloud snapshots contain only the deterministic studio-owned projection. Remote
+files are checked for allowed paths, traversal, duplicates, case collisions,
+symlinks, file modes, counts, and size limits before application. Workspace
+sync uses an explicit base and deterministic operation key; stale bases and
+concurrent local edits fail without advancing the local association.
+
+The studio domain owns `ContentFile`; cloudworkspace maps it to wire DTOs.
+Connect records the remote snapshot digest, never assumes local content is
+synchronized, and refuses to overwrite an existing association. Pull uses a
+write-ahead recovery journal under `.vstd/`; all studio opens fail closed while
+it exists. Recovery is explicit and local-only. Symlink ancestors, non-regular
+files, unpaired slides, credential commands and custom provider endpoints are
+rejected before any incoming content is applied.
 
 ## Dependencies and Supply Chain
 

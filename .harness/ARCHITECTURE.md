@@ -2,7 +2,7 @@
 
 - Status: `Production-capable public engine and plugin`
 - Owner: `Matthew Kropp`
-- Last verified: `2026-09-02`
+- Last verified: `2026-09-03`
 - Scope: `Public vstd CLI, engine, embedded Codex plugin, local server, and cloud client`
 
 ## System Context
@@ -24,6 +24,10 @@ but the public engine remains usable without that service.
 | Player | Engine-owned presentation runtime | `internal/studio/templates/player.html` | Built presentation HTML |
 | Plugin | Canonical authoring skills and conventions | `plugin` | Packaged Codex plugin |
 | Downstream launchers | Thin workflow launchers for initialized studios | `codex` | `vstd skill` delegation |
+| Cloud protocol | Versioned HTTP operations, capability negotiation, bounded responses, and typed failures | `internal/cloud` | Go client consumed by cloud domains |
+| Cloud authentication | Device login, in-memory access tokens, refresh lifecycle, and OS credential storage | `internal/cloudauth` | Session manager and credential-store abstraction |
+| Cloud workspace | Association state, canonical content projection, clone/connect/status/pull/sync orchestration | `internal/cloudworkspace`, `internal/studio/cloud_content.go` | `.vstd/cloud-workspace.json` and workspace operations |
+| Cloud publication | Synchronized revision selection and publication orchestration | `internal/cloudpublish` | Publication create/status operations |
 
 ## Dependency Rules
 
@@ -33,9 +37,12 @@ but the public engine remains usable without that service.
   depend on OpenAI.
 - The player is owned only by the engine. Themes provide styles, not alternate
   player implementations.
-- Cloud client code may depend on a versioned remote protocol abstraction. It
-  must not embed SaaS billing, tenant policy, hosted execution, or publication
-  implementation.
+- `internal/cloudauth`, `internal/cloudworkspace`, and `internal/cloudpublish`
+  depend on `internal/cloud`; workspace synchronization also depends on the
+  studio-owned content projection. `internal/cloud` does not depend on those
+  consumers, the CLI, the studio filesystem, Git, or `internal/server`.
+- Cloud client code must not embed SaaS billing, tenant policy, hosted
+  execution, or publication implementation.
 - Plugin workflow bodies live under `plugin/`; `codex/prompts` stays thin.
 
 ## Critical Flows
@@ -79,8 +86,9 @@ but the public engine remains usable without that service.
   avoid increasing those files where practical.
 - Chrome/Chromium, FFmpeg/FFprobe, Railway, OpenAI, and S3 are optional or
   feature-specific dependencies; the core test/build path stays offline-capable.
-- Cloud protocol and credential-store support are the subject of VES-13 and
-  must preserve backward-compatible local workflows.
+- The implemented Cloud protocol is exercised against deterministic fake
+  services. Interoperability with the private service still depends on aligning
+  its approved public schemas and minimum-version policy before release.
 
 ## Architecture Decision Records
 

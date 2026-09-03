@@ -93,6 +93,24 @@ func TestPackagedWorkflowsMatchCodexLaunchers(t *testing.T) {
 			t.Errorf("conventions missing CLI command %q", want)
 		}
 	}
+	for _, want := range []string{
+		"vstd cloud workspace status", "vstd cloud workspace pull", "vstd cloud workspace sync",
+		"vstd cloud publish", "offline", "unsynced", "conflict",
+	} {
+		if !strings.Contains(conventions, want) {
+			t.Errorf("conventions missing cloud workspace contract %q", want)
+		}
+	}
+	for _, name := range []string{"deck-new", "deck-review", "slide-add", "slide-edit"} {
+		body, err := Skill(name)
+		if err != nil {
+			t.Errorf("Skill(%q) error = %v", name, err)
+			continue
+		}
+		if !strings.Contains(body, "vstd cloud workspace status") {
+			t.Errorf("Skill(%q) does not detect cloud workspace state through vstd", name)
+		}
+	}
 
 	codexGuide, err := os.ReadFile(filepath.Join(repoRoot, "codex", "AGENTS.md"))
 	if err != nil {
