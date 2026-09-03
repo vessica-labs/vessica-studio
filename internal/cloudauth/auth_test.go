@@ -64,7 +64,7 @@ func TestCredentialMemoryStore(t *testing.T) {
 
 func TestCredentialKeyringStore(t *testing.T) {
 	keyring.MockInit()
-	s := NewKeyringStore()
+	s := NewKeyringStore("https://cloud.example")
 	if err := s.Save(context.Background(), secret); err != nil {
 		t.Fatal(err)
 	}
@@ -74,6 +74,17 @@ func TestCredentialKeyringStore(t *testing.T) {
 	}
 	if err := s.Delete(context.Background()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestCredentialKeyringEndpointIsolation(t *testing.T) {
+	keyring.MockInit()
+	a, b := NewKeyringStore("https://a.example"), NewKeyringStore("https://b.example")
+	if err := a.Save(context.Background(), secret); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Load(context.Background()); !errors.Is(err, ErrNotLoggedIn) {
+		t.Fatalf("cross-endpoint credential access: %v", err)
 	}
 }
 

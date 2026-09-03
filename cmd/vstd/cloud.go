@@ -16,12 +16,13 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/cloudauth"
 	"github.com/vessica-labs/vessica-studio/internal/cloudpublish"
 	"github.com/vessica-labs/vessica-studio/internal/cloudworkspace"
+	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
 const defaultCloudEndpoint = "https://cloud.vessica.studio"
 
 var (
-	cloudCredentialStore = func() cloudauth.Store { return cloudauth.NewKeyringStore() }
+	cloudCredentialStore = func(endpoint string) cloudauth.Store { return cloudauth.NewKeyringStore(endpoint) }
 	cloudHTTPClient      = func() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
 )
 
@@ -31,15 +32,32 @@ func runCloud(args []string, out io.Writer) error {
 	if len(args) == 0 {
 		return errors.New("usage: vstd cloud login|logout|account|workspace|publish|diagnostics")
 	}
+	if len(args) >= 2 && args[0] == "workspace" && args[1] == "recover" {
+		fs := flag.NewFlagSet("cloud workspace recover", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		root := fs.String("root", ".", "studio root")
+		if err := fs.Parse(args[2:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return errors.New("usage: vstd cloud workspace recover [--root DIR]")
+		}
+		if err := studio.RecoverCloudContent(*root); err != nil {
+			return err
+		}
+		fmt.Fprintln(out, "Restored the pre-pull local content; cloud association is unchanged.")
+		return nil
+	}
 	endpoint := strings.TrimSpace(os.Getenv("VSTD_CLOUD_ENDPOINT"))
 	if endpoint == "" {
 		endpoint = defaultCloudEndpoint
 	}
-	store := cloudCredentialStore()
 	raw, err := cloud.NewClient(cloud.WithEndpoint(endpoint), cloud.WithHTTPClient(cloudHTTPClient()), cloud.WithClientVersion(version))
 	if err != nil {
 		return err
 	}
+	endpoint = raw.Endpoint()
+	store := cloudCredentialStore(endpoint)
 	auth := cloudauth.New(raw, store)
 	client, err := cloud.NewClient(cloud.WithEndpoint(endpoint), cloud.WithHTTPClient(cloudHTTPClient()), cloud.WithClientVersion(version), cloud.WithTokenSource(auth))
 	if err != nil {
@@ -124,6 +142,7 @@ func runCloudWorkspace(ctx context.Context, client *cloud.Client, endpoint strin
 		fs.SetOutput(io.Discard)
 		root := fs.String("root", ".", "studio root")
 		message := fs.String("message", "", "revision message")
+		acknowledgedHead := fs.String("resolve-head", "", "acknowledge reconciled conflict head")
 		parseArgs := args[1:]
 		workspaceID := ""
 		if args[0] == "connect" && len(parseArgs) > 0 && !strings.HasPrefix(parseArgs[0], "-") {
@@ -159,6 +178,9 @@ func runCloudWorkspace(ctx context.Context, client *cloud.Client, endpoint strin
 				state += ", offline"
 			}
 			fmt.Fprintf(out, "workspace: %s\nbase revision: %s\ncloud revision: %s\nstate: %s\n", s.WorkspaceID, s.BaseRevisionID, s.CloudHeadRevisionID, state)
+			if s.ConflictHeadRevisionID != "" {
+				fmt.Fprintf(out, "recorded conflict head: %s\nAfter reconciliation: vstd cloud workspace sync --resolve-head %s\n", s.ConflictHeadRevisionID, s.ConflictHeadRevisionID)
+			}
 			return nil
 		case "pull":
 			err := manager.Pull(ctx, *root)
@@ -167,7 +189,7 @@ func runCloudWorkspace(ctx context.Context, client *cloud.Client, endpoint strin
 			}
 			return err
 		case "sync":
-			r, err := manager.Sync(ctx, *root, *message)
+			r, err := manager.SyncResolved(ctx, *root, *message, *acknowledgedHead)
 			if err == nil {
 				fmt.Fprintf(out, "Synchronized revision %s.\n", r.ID)
 			}
@@ -194,7 +216,7 @@ func runCloudPublish(ctx context.Context, service *cloud.Client, args []string, 
 	if err := fs.Parse(parseArgs); err != nil {
 		return err
 	}
-	a, err := cloudworkspace.LoadAssociation(*root)
+	a, err := (cloudworkspace.Manager{Endpoint: service.Endpoint()}).Association(*root)
 	if err != nil {
 		return err
 	}

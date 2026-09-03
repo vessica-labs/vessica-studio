@@ -97,3 +97,39 @@ func writeJSON(w http.ResponseWriter, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write([]byte(body))
 }
+
+func TestEndpointRejectsCredentialsAndRoutingSuffixes(t *testing.T) {
+	for _, endpoint := range []string{"https://user:secret@example.com", "https://example.com?key=secret", "https://example.com#fragment"} {
+		if _, err := NewClient(WithEndpoint(endpoint), WithClientVersion("1.0.0")); err == nil {
+			t.Fatalf("accepted unsafe endpoint %s", endpoint)
+		}
+	}
+}
+
+func TestRemoteErrorCodeCannotEchoSecret(t *testing.T) {
+	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(401)
+		writeJSON(w, `{"code":"sentinel-secret"}`)
+	}))
+	_, err := c.Account(context.Background())
+	if err == nil || strings.Contains(err.Error(), "sentinel-secret") {
+		t.Fatalf("unsafe error: %v", err)
+	}
+}
+
+func TestWorkspaceReadRequiresNegotiation(t *testing.T) {
+	var reads atomic.Int32
+	c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/capabilities" {
+			writeJSON(w, `{"protocol":"2","capabilities":["workspace.read"]}`)
+			return
+		}
+		reads.Add(1)
+		writeJSON(w, `{}`)
+	}))
+	_, err := c.Revision(context.Background(), "ws", "r1")
+	if err == nil || reads.Load() != 0 {
+		t.Fatalf("read from incompatible service: %v", err)
+	}
+}

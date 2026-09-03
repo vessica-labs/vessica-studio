@@ -39,10 +39,19 @@ func localStudio(t *testing.T) string {
 	return r
 }
 
+func linkedCloud(t *testing.T, root string) *fakeCloud {
+	t.Helper()
+	snapshot, err := studio.CloudContent(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return &fakeCloud{ws: cloud.Workspace{ID: "ws1", HeadRevisionID: "r1"}, rev: cloud.Revision{ID: "r1", Files: wireFiles(snapshot.Files)}}
+}
+
 func TestConnectStatusSync(t *testing.T) {
 	ctx := context.Background()
 	root := localStudio(t)
-	api := &fakeCloud{ws: cloud.Workspace{ID: "ws1", HeadRevisionID: "r1"}}
+	api := linkedCloud(t, root)
 	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
 	if err := m.Connect(ctx, root, "ws1"); err != nil {
 		t.Fatal(err)
@@ -72,7 +81,7 @@ func TestConnectStatusSync(t *testing.T) {
 func TestConflictPreservesLocal(t *testing.T) {
 	ctx := context.Background()
 	root := localStudio(t)
-	api := &fakeCloud{ws: cloud.Workspace{ID: "ws1", HeadRevisionID: "r1"}}
+	api := linkedCloud(t, root)
 	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
 	if err := m.Connect(ctx, root, "ws1"); err != nil {
 		t.Fatal(err)
@@ -96,7 +105,7 @@ func TestConflictPreservesLocal(t *testing.T) {
 
 func TestOfflineStatus(t *testing.T) {
 	root := localStudio(t)
-	api := &fakeCloud{ws: cloud.Workspace{ID: "ws1", HeadRevisionID: "r1"}}
+	api := linkedCloud(t, root)
 	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
 	if err := m.Connect(context.Background(), root, "ws1"); err != nil {
 		t.Fatal(err)
@@ -141,7 +150,7 @@ func TestClonePull(t *testing.T) {
 
 func TestPullRejectsConcurrentLocalEdit(t *testing.T) {
 	root := localStudio(t)
-	api := &fakeCloud{ws: cloud.Workspace{ID: "ws1", HeadRevisionID: "r1"}}
+	api := linkedCloud(t, root)
 	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
 	if err := m.Connect(context.Background(), root, "ws1"); err != nil {
 		t.Fatal(err)
@@ -151,5 +160,68 @@ func TestPullRejectsConcurrentLocalEdit(t *testing.T) {
 	api.rev = cloud.Revision{ID: "r2", Files: []cloud.File{{Path: "studio.yaml", Content: []byte("remote\n")}}}
 	if err := m.Pull(context.Background(), root); !errors.Is(err, ErrLocalChanges) {
 		t.Fatalf("got %v", err)
+	}
+}
+
+func TestConnectDoesNotClaimDifferentContentIsSynchronized(t *testing.T) {
+	root := localStudio(t)
+	api := &fakeCloud{ws: cloud.Workspace{ID: "ws1", HeadRevisionID: "r1"}, rev: cloud.Revision{ID: "r1", Files: []cloud.File{{Path: "studio.yaml", Content: []byte("port: 8000\n")}}}}
+	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
+	if err := m.Connect(context.Background(), root, "ws1"); err != nil {
+		t.Fatal(err)
+	}
+	status, err := m.Status(context.Background(), root)
+	if err != nil || !status.Unsynced {
+		t.Fatalf("different content marked synchronized: %+v %v", status, err)
+	}
+	if err := m.Pull(context.Background(), root); !errors.Is(err, ErrLocalChanges) {
+		t.Fatalf("pull should preserve local changes: %v", err)
+	}
+}
+
+func TestAssociationCannotSwitchEndpoints(t *testing.T) {
+	root := localStudio(t)
+	api := linkedCloud(t, root)
+	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
+	if err := m.Connect(context.Background(), root, "ws1"); err != nil {
+		t.Fatal(err)
+	}
+	m.Endpoint = "https://different.example"
+	if _, err := m.Sync(context.Background(), root, ""); err == nil {
+		t.Fatal("sent content to a different endpoint")
+	}
+	if len(api.synced.Files) != 0 {
+		t.Fatal("remote mutation attempted")
+	}
+}
+
+func TestSyncExplicitlyResolvesRecordedConflict(t *testing.T) {
+	root := localStudio(t)
+	api := linkedCloud(t, root)
+	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
+	ctx := context.Background()
+	if err := m.Connect(ctx, root, "ws1"); err != nil {
+		t.Fatal(err)
+	}
+	api.syncErr = &cloud.ConflictError{CloudHeadRevisionID: "r3"}
+	if _, err := m.Sync(ctx, root, ""); err == nil {
+		t.Fatal("expected conflict")
+	}
+	api.syncErr = nil
+	if _, err := m.SyncResolved(ctx, root, "reconciled", "wrong"); err == nil {
+		t.Fatal("accepted wrong head")
+	}
+	if _, err := m.SyncResolved(ctx, root, "reconciled", "r3"); err != nil {
+		t.Fatal(err)
+	}
+	if api.synced.BaseRevisionID != "r3" {
+		t.Fatal("did not use acknowledged head")
+	}
+	a, err := LoadAssociation(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.ConflictHeadRevisionID != "" || a.BaseRevisionID != "r2" {
+		t.Fatalf("bad association: %+v", a)
 	}
 }

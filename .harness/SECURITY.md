@@ -48,7 +48,8 @@ Diagnostics, errors, fixtures, builds, manifests, Git configuration, and shell
 commands must not contain secret values.
 
 The production credential adapter uses the OS keyring service
-`vessica-studio-cloud` and stores only renewable session material. Short-lived
+`vessica-studio-cloud`, namespaces each credential by normalized endpoint, and
+stores only renewable session material. Short-lived
 access tokens remain in memory. There is no plaintext, environment-variable,
 studio-file, or Git fallback when secure credential storage is unavailable.
 
@@ -64,6 +65,14 @@ files are checked for allowed paths, traversal, duplicates, case collisions,
 symlinks, file modes, counts, and size limits before application. Workspace
 sync uses an explicit base and deterministic operation key; stale bases and
 concurrent local edits fail without advancing the local association.
+
+The studio domain owns `ContentFile`; cloudworkspace maps it to wire DTOs.
+Connect records the remote snapshot digest, never assumes local content is
+synchronized, and refuses to overwrite an existing association. Pull uses a
+write-ahead recovery journal under `.vstd/`; all studio opens fail closed while
+it exists. Recovery is explicit and local-only. Symlink ancestors, non-regular
+files, unpaired slides, credential commands and custom provider endpoints are
+rejected before any incoming content is applied.
 
 ## Dependencies and Supply Chain
 

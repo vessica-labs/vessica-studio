@@ -71,6 +71,9 @@ func Open(root string) (*Studio, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := cloudRecoveryPending(abs); err != nil {
+		return nil, err
+	}
 	s := &Studio{Root: abs}
 	s.Config.ThemeDefault = "default"
 	s.Config.Port = 4400

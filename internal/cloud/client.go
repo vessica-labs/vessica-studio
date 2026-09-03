@@ -14,7 +14,7 @@ import (
 	"time"
 )
 
-const defaultResponseLimit int64 = 4 << 20
+const defaultResponseLimit int64 = 192 << 20 // 128 MiB content plus base64 and JSON framing.
 
 type TokenSource interface {
 	Token(context.Context) (string, error)
@@ -53,18 +53,22 @@ func NewClient(opts ...Option) (*Client, error) {
 func WithEndpoint(raw string) Option {
 	return func(c *Client) error {
 		u, err := url.Parse(raw)
-		if err != nil || u.Host == "" {
+		if err != nil || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || u.ForceQuery {
 			return fmt.Errorf("invalid cloud endpoint")
 		}
 		host := u.Hostname()
 		if u.Scheme != "https" && !(u.Scheme == "http" && (host == "localhost" || net.ParseIP(host).IsLoopback())) {
 			return fmt.Errorf("cloud endpoint must use HTTPS")
 		}
+		u.Host = strings.ToLower(u.Host)
 		u.Path = strings.TrimRight(u.Path, "/")
 		c.endpoint = u
 		return nil
 	}
 }
+
+// Endpoint returns the validated, credential-free endpoint identity.
+func (c *Client) Endpoint() string { return c.endpoint.String() }
 func WithHTTPClient(h *http.Client) Option {
 	return func(c *Client) error {
 		if h == nil {
@@ -136,6 +140,9 @@ func (c *Client) negotiate(ctx context.Context, capability string) error {
 	if caps.Protocol != ProtocolVersion || versionLess(c.clientVersion, caps.MinimumClientVersion) {
 		return &IncompatibleError{Protocol: caps.Protocol, MinimumClientVersion: caps.MinimumClientVersion}
 	}
+	if capability == "" {
+		return nil
+	}
 	for _, got := range caps.Capabilities {
 		if got == capability {
 			return nil
@@ -145,6 +152,9 @@ func (c *Client) negotiate(ctx context.Context, capability string) error {
 }
 func (c *Client) StartDeviceAuthorization(ctx context.Context) (DeviceAuthorization, error) {
 	var out DeviceAuthorization
+	if err := c.negotiate(ctx, ""); err != nil {
+		return out, err
+	}
 	err := c.do(ctx, http.MethodPost, "/v1/auth/device", DeviceAuthorizationRequest{ClientVersion: c.clientVersion}, &out, false)
 	return out, err
 }
@@ -168,6 +178,9 @@ func (c *Client) Account(ctx context.Context) (Account, error) {
 }
 func (c *Client) Workspaces(ctx context.Context, cursor string) (WorkspaceList, error) {
 	var out WorkspaceList
+	if err := c.negotiate(ctx, CapabilityWorkspaceRead); err != nil {
+		return out, err
+	}
 	path := "/v1/workspaces"
 	if cursor != "" {
 		path += "?cursor=" + url.QueryEscape(cursor)
@@ -177,11 +190,17 @@ func (c *Client) Workspaces(ctx context.Context, cursor string) (WorkspaceList, 
 }
 func (c *Client) Workspace(ctx context.Context, id string) (Workspace, error) {
 	var out Workspace
+	if err := c.negotiate(ctx, CapabilityWorkspaceRead); err != nil {
+		return out, err
+	}
 	err := c.do(ctx, http.MethodGet, "/v1/workspaces/"+url.PathEscape(id), nil, &out, true)
 	return out, err
 }
 func (c *Client) Revision(ctx context.Context, workspace, id string) (Revision, error) {
 	var out Revision
+	if err := c.negotiate(ctx, CapabilityWorkspaceRead); err != nil {
+		return out, err
+	}
 	err := c.do(ctx, http.MethodGet, "/v1/workspaces/"+url.PathEscape(workspace)+"/revisions/"+url.PathEscape(id), nil, &out, true)
 	return out, err
 }
@@ -271,6 +290,12 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any,
 func (c *Client) remoteError(resp *http.Response, data []byte) error {
 	var wire wireError
 	_ = json.Unmarshal(data, &wire)
+	// Never echo arbitrary error fields from a remote body: it may reflect credentials.
+	switch wire.Code {
+	case "authorization_pending", "slow_down", "access_denied", "expired_token", "invalid_grant", "incompatible_protocol", "stale_base":
+	default:
+		wire.Code = "request_failed"
+	}
 	if resp.StatusCode == http.StatusConflict {
 		return &ConflictError{Code: wire.Code, CloudHeadRevisionID: wire.CloudHeadRevisionID}
 	}

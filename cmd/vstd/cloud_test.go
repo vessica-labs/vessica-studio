@@ -43,7 +43,7 @@ func TestCloudWorkspaceSyncPublishAndAccount(t *testing.T) {
 		jsonResponse(w, cloud.Workspace{ID: "ws-1", Name: "Demo", HeadRevisionID: head})
 	})
 	mux.HandleFunc("/v1/capabilities", func(w http.ResponseWriter, _ *http.Request) {
-		jsonResponse(w, cloud.Capabilities{Protocol: cloud.ProtocolVersion, Capabilities: []string{cloud.CapabilityWorkspaceSync, cloud.CapabilityPublicationRead, cloud.CapabilityPublicationWrite}})
+		jsonResponse(w, cloud.Capabilities{Protocol: cloud.ProtocolVersion, Capabilities: []string{cloud.CapabilityWorkspaceRead, cloud.CapabilityWorkspaceSync, cloud.CapabilityPublicationRead, cloud.CapabilityPublicationWrite}})
 	})
 	mux.HandleFunc("/v1/workspaces/ws-1/revisions", func(w http.ResponseWriter, _ *http.Request) {
 		head = "rev-2"
@@ -57,7 +57,7 @@ func TestCloudWorkspaceSyncPublishAndAccount(t *testing.T) {
 	t.Setenv("VSTD_CLOUD_ENDPOINT", server.URL)
 	store := cloudauth.NewMemoryStore()
 	oldStore, oldHTTP := cloudCredentialStore, cloudHTTPClient
-	cloudCredentialStore = func() cloudauth.Store { return store }
+	cloudCredentialStore = func(string) cloudauth.Store { return store }
 	cloudHTTPClient = func() *http.Client { return server.Client() }
 	defer func() { cloudCredentialStore, cloudHTTPClient = oldStore, oldHTTP }()
 
@@ -65,6 +65,17 @@ func TestCloudWorkspaceSyncPublishAndAccount(t *testing.T) {
 	if err := studio.Init(root); err != nil {
 		t.Fatal(err)
 	}
+	snapshot, err := studio.CloudContent(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mux.HandleFunc("/v1/workspaces/ws-1/revisions/rev-1", func(w http.ResponseWriter, _ *http.Request) {
+		files := make([]cloud.File, len(snapshot.Files))
+		for i, f := range snapshot.Files {
+			files[i] = cloud.File{Path: f.Path, Content: f.Content, Mode: f.Mode}
+		}
+		jsonResponse(w, cloud.Revision{ID: "rev-1", Files: files})
+	})
 	var out bytes.Buffer
 	for _, args := range [][]string{{"login"}, {"account"}, {"workspace", "connect", "ws-1", "--root", root}, {"workspace", "sync", "--root", root}, {"publish", "create", "--root", root}} {
 		if err := runCloud(args, &out); err != nil {

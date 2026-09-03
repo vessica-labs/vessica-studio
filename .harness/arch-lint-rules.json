@@ -2,6 +2,13 @@
   "version": 1,
   "rules": [
     {
+      "id": "studio-does-not-import-cloud-transport",
+      "type": "forbid_text",
+      "globs": ["internal/studio/*.go"],
+      "pattern": "github.com/vessica-labs/vessica-studio/internal/cloud",
+      "message": "Studio owns content types; cloud adapters depend inward, never the reverse."
+    },
+    {
       "id": "architecture-document-present",
       "type": "require_path",
       "path": ".harness/ARCHITECTURE.md",

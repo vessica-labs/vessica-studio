@@ -133,10 +133,10 @@ type IncompatibleError struct {
 
 func (e *IncompatibleError) Error() string {
 	if e.MinimumClientVersion != "" {
-		return "cloud protocol is incompatible; upgrade vstd to at least " + e.MinimumClientVersion
+		return "cloud protocol is incompatible; upgrade vstd to a supported version"
 	}
 	if e.MissingCapability != "" {
-		return "cloud endpoint does not support required capability " + e.MissingCapability
+		return "cloud endpoint does not support the required capability"
 	}
 	return "cloud protocol is incompatible"
 }

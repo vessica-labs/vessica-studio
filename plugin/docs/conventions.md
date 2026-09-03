@@ -66,15 +66,21 @@ association files directly.
   `vstd cloud workspace status`, incorporate a newer version with
   `vstd cloud workspace pull`, create an attributable version with
   `vstd cloud workspace sync`, and publish a selected revision with
-  `vstd cloud publish`.
+  `vstd cloud publish create`.
 - **Offline or failed status:** keep local work intact and report it as offline
   and unsynced. Never claim sync or publish succeeded. Local commands and direct
   file editing remain available.
 - **Conflict:** do not replace local or cloud content. Re-run
-  `vstd cloud workspace status`, use `vstd cloud workspace pull`, compare and
-  reconcile the paired files explicitly, then sync the resolved version. Never
+  `vstd cloud workspace status`; pull only when the local projection is clean.
+  Otherwise inspect the remote head in a separate clone, compare and reconcile
+  the paired files explicitly, then use
+  `vstd cloud workspace sync --resolve-head REVISION_ID` to acknowledge the
+  exact recorded conflict head. Never
   ask for Git credentials or teach branch, push, pull, or rebase commands as the
   cloud workflow.
+- **Interrupted pull:** stop other writers and use the local-only
+  `vstd cloud workspace recover --root DIR` before editing. Preserve the recovery
+  journal; do not bypass the pending-recovery error or delete recovery data.
 
 - **Engine running?** `curl -s localhost:4400/api/decks` (port from studio.yaml). If yes,
   prefer the edit API; the browser live-reloads on every file change either way.

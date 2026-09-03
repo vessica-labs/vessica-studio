@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -74,6 +75,10 @@ func (m *Manager) Login(ctx context.Context, prompt Prompt) (string, error) {
 	if err != nil {
 		return "", safeError("start cloud login", err)
 	}
+	u, urlErr := url.Parse(auth.VerificationURI)
+	if urlErr != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || auth.DeviceCode == "" || auth.UserCode == "" || strings.ContainsAny(auth.UserCode, "\r\n\x1b") || auth.ExpiresIn <= 0 || auth.ExpiresIn > 3600 || auth.Interval < 0 || auth.Interval > 300 {
+		return "", errors.New("cloud returned an invalid device authorization")
+	}
 	if prompt != nil {
 		if err := prompt(LoginPrompt{UserCode: auth.UserCode, VerificationURI: auth.VerificationURI}); err != nil {
 			return "", safeError("show cloud login", err)
@@ -96,6 +101,9 @@ func (m *Manager) Login(ctx context.Context, prompt Prompt) (string, error) {
 		if !errors.As(pollErr, &remote) || (remote.Code != "authorization_pending" && remote.Code != "slow_down") {
 			return "", safeError("complete cloud login", pollErr, auth.DeviceCode)
 		}
+		if remote.Code == "slow_down" {
+			interval += 5 * time.Second
+		}
 		select {
 		case <-ctx.Done():
 			return "", ctx.Err()
@@ -105,28 +113,31 @@ func (m *Manager) Login(ctx context.Context, prompt Prompt) (string, error) {
 }
 
 func (m *Manager) accept(token cloud.Token) (string, error) {
-	if token.AccessToken == "" || token.RefreshToken == "" {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.acceptLocked(token)
+}
+
+func (m *Manager) acceptLocked(token cloud.Token) (string, error) {
+	if token.AccessToken == "" || token.RefreshToken == "" || token.ExpiresIn <= 0 {
 		return "", errors.New("cloud returned an incomplete session")
 	}
 	if err := m.store.Save(context.Background(), token.RefreshToken); err != nil {
 		return "", safeError("save cloud session", err, token.AccessToken, token.RefreshToken)
 	}
-	m.mu.Lock()
 	m.access = token.AccessToken
 	m.expires = m.now().Add(time.Duration(token.ExpiresIn) * time.Second)
-	m.mu.Unlock()
 	return token.AccessToken, nil
 }
 
 // Token implements cloud.TokenSource. Access tokens remain memory-only.
 func (m *Manager) Token(ctx context.Context) (string, error) {
 	m.mu.Lock()
+	defer m.mu.Unlock()
 	if m.access != "" && m.now().Before(m.expires) {
 		v := m.access
-		m.mu.Unlock()
 		return v, nil
 	}
-	m.mu.Unlock()
 	refresh, err := m.store.Load(ctx)
 	if err != nil {
 		return "", safeError("load cloud session", err)
@@ -138,7 +149,7 @@ func (m *Manager) Token(ctx context.Context) (string, error) {
 	if token.RefreshToken == "" {
 		token.RefreshToken = refresh
 	}
-	return m.accept(token)
+	return m.acceptLocked(token)
 }
 
 func (m *Manager) Account(ctx context.Context) (cloud.Account, error) {
@@ -150,6 +161,8 @@ func (m *Manager) Account(ctx context.Context) (cloud.Account, error) {
 }
 
 func (m *Manager) Logout(ctx context.Context) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	refresh, loadErr := m.store.Load(ctx)
 	var revokeErr error
 	if loadErr == nil {
@@ -158,10 +171,8 @@ func (m *Manager) Logout(ctx context.Context) error {
 		revokeErr = loadErr
 	}
 	deleteErr := m.store.Delete(ctx)
-	m.mu.Lock()
 	m.access = ""
 	m.expires = time.Time{}
-	m.mu.Unlock()
 	if deleteErr != nil {
 		return &LogoutError{}
 	}

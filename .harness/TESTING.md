@@ -89,3 +89,9 @@ Record exact commands, pass/fail results, relevant fixtures, omitted optional
 checks, compatibility impact, and residual risks. Cloud-client acceptance
 evidence must include login/logout, clone/connect, offline edit, sync, conflict,
 publish, credential revocation/redaction, and local-only regressions.
+
+PR-30 regression coverage also exercises endpoint-scoped credentials, endpoint
+mismatch rejection, arbitrary remote error-code redaction, read-capability
+negotiation, remote-digest connect semantics, explicit conflict-head resolution,
+paired-slide validation, symlinked destinations, unreadable existing trees,
+credential-command rejection, and recovery after a simulated interrupted pull.

@@ -141,6 +141,10 @@ vstd serve product-story
 
 ## Optional Vessica Studio Cloud workflow
 
+These additive commands require a compatible hosted native-client API. The
+private service integration is tracked in VES-74; fake-cloud tests do not imply
+the public hosted service is available yet.
+
 Local authoring, builds, serving, export, and skill discovery do not require a
 Cloud account or network connection. To use a Cloud workspace, first sign in
 with the native device flow:
@@ -190,6 +194,25 @@ vstd cloud publish create
 vstd cloud publish create --revision REVISION_ID
 vstd cloud publish status PUBLICATION_ID
 ```
+
+After a sync conflict, inspect the remote head (for example, clone it to a separate
+directory) and reconcile the paired files locally. Acknowledge the exact recorded
+conflict head with `vstd cloud workspace sync --resolve-head REVISION_ID`; the
+server still rejects the operation if that head has changed again. Reconnecting
+an already connected studio is refused so it cannot silently reset the base.
+
+Pull keeps a durable, private local recovery journal before replacing files. If
+interrupted, studio operations fail closed. Stop other writers, then run
+`vstd cloud workspace recover --root DIR` to restore the pre-pull projection.
+Do not delete the recovery journal manually. Unrelated Git and local state are
+preserved. Directory durability depends on the host filesystem (Windows lacks
+directory fsync); recovery is not a substitute for backups.
+
+Cloud sessions are isolated by normalized endpoint. Keep `VSTD_CLOUD_ENDPOINT`
+consistent with the workspace association; a mismatch fails before content work.
+Snapshots reject credential commands and custom credential-bearing provider
+endpoints in `studio.yaml`; configure those providers locally via environment
+variables instead. These restrictions affect cloud exchange only, not local use.
 
 Publishing without `--revision` is refused when local changes or a conflict are
 pending. The command reports the publication ID, selected revision, service
