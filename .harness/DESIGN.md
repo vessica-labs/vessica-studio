@@ -2,7 +2,7 @@
 
 - Status: `Current public CLI, local web UI, player, and plugin guidance`
 - Owner: `Matthew Kropp`
-- Last verified: `2026-09-02`
+- Last verified: `2026-09-03`
 - Scope: `Public/local user experience, including optional cloud-client commands`
 
 ## Product Design Principles
@@ -41,6 +41,15 @@ belong to the private cloud product.
   offline state, protocol incompatibility, and credential expiry.
 - Authentication uses a browser/device flow; secrets are never echoed.
 - Local files remain usable after any network or cloud failure.
+
+The shipped Cloud journey is `cloud login`, `cloud account`, `cloud workspace
+list`, then either `workspace clone` or `workspace connect`. Connected authors
+use `workspace status`, `pull`, and `sync`; publication uses `publish create`
+and `publish status`. Clone requires a new target directory. Pull refuses to
+replace unsynced content, sync rejects a stale base without overwriting either
+side, and publish requires an explicit revision whenever local state is
+unsynced or conflicted. Diagnostics expose only sanitized endpoint and protocol
+compatibility fields.
 
 ## Visual System
 

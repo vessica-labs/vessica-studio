@@ -60,8 +60,9 @@ and deployable with Git—without locking the deck inside a proprietary editor.
 - **Presentation and audience modes.** Present locally, publish a read-only
   audience surface, mint expiring deck links, and optionally enable chat, voice,
   SMS, email, and live audience pulse.
-- **Local-first, cloud-capable.** Author without a hosted service, or deploy a
-  team catalog and isolated player to Railway with Git-backed content sync.
+- **Local-first, cloud-capable.** Author without a hosted service, connect or
+  clone a Cloud workspace, synchronize revisions, and publish a selected
+  revision without managing Git credentials or branches.
 - **Single-team collaboration.** Invite teammates by email, keep per-user
   private catalogs, share selected decks read-only, and fork shared work before
   editing it.
@@ -137,6 +138,64 @@ cd my-studio
 vstd new product-story --title "Our Product Story"
 vstd serve product-story
 ```
+
+## Optional Vessica Studio Cloud workflow
+
+Local authoring, builds, serving, export, and skill discovery do not require a
+Cloud account or network connection. To use a Cloud workspace, first sign in
+with the native device flow:
+
+```sh
+vstd cloud login
+vstd cloud account
+vstd cloud workspace list
+```
+
+`login` prints a verification URL and user code. Renewable session material is
+stored in the operating system credential store; access tokens are kept only in
+memory. If secure credential storage is unavailable, login fails instead of
+writing a plaintext fallback.
+
+Clone a workspace into a directory that does not yet exist, or connect a valid
+existing studio:
+
+```sh
+vstd cloud workspace clone WORKSPACE_ID --target my-studio
+vstd cloud workspace connect WORKSPACE_ID --root my-studio
+```
+
+The connection is recorded as non-secret local state in
+`.vstd/cloud-workspace.json`. It does not change the `studio.yaml`, `deck.yaml`,
+or paired slide-file contract and is excluded from synchronized content and
+build output.
+
+From a connected studio, inspect and synchronize revisions with:
+
+```sh
+vstd cloud workspace status
+vstd cloud workspace pull
+vstd cloud workspace sync --message "Update product story"
+```
+
+`status` reports the recorded base revision, Cloud head, and whether the local
+files are synchronized, unsynced, conflicted, or offline. `pull` refuses to
+replace unsynced local content. `sync` compares against the recorded base; if
+the Cloud head advanced, it reports a conflict and preserves both the local
+files and remote head for manual reconciliation.
+
+Publish the current synchronized revision, or select a revision explicitly:
+
+```sh
+vstd cloud publish create
+vstd cloud publish create --revision REVISION_ID
+vstd cloud publish status PUBLICATION_ID
+```
+
+Publishing without `--revision` is refused when local changes or a conflict are
+pending. The command reports the publication ID, selected revision, service
+status, and URL. Run `vstd cloud diagnostics` for sanitized endpoint and
+protocol compatibility details, and `vstd cloud logout` to revoke the session
+when reachable and remove the local credential.
 
 Open [http://localhost:4400/d/product-story/](http://localhost:4400/d/product-story/).
 The starter deck contains one cover slide. Edit its paired files under

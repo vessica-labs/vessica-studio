@@ -2,7 +2,7 @@
 
 - Status: `Current repository verification contract`
 - Owner: `Matthew Kropp`
-- Last verified: `2026-09-02`
+- Last verified: `2026-09-03`
 - Scope: `Go engine, HTTP server, CLI, plugin packaging, media adapters, and optional cloud client`
 
 ## Testing Objectives
@@ -28,6 +28,11 @@ and local-first behavior when optional services are absent.
 | Focused server | `go test ./internal/server` | Pass |
 | Focused library | `go test ./internal/library` | Pass |
 | Plugin parity | `go test ./plugin` | Pass |
+| Cloud protocol | `go test ./internal/cloud` | Pass |
+| Cloud authentication | `go test ./internal/cloudauth` | Pass |
+| Cloud content and workspace | `go test ./internal/studio ./internal/cloudworkspace` | Pass |
+| Cloud publication | `go test ./internal/cloudpublish` | Pass |
+| Cloud CLI | `go test ./cmd/vstd` | Pass |
 | Format | `test -z "$(gofmt -l $(find cmd internal plugin -name '*.go' -type f))"` | No output |
 | Full tests | `go test ./...` | Pass |
 | Race tests | `go test -race ./...` | Pass |
