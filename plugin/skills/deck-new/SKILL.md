@@ -7,7 +7,8 @@ description: Create, build, start, or generate a new presentation deck in a Vess
 
 Read `../../docs/conventions.md` first, or run `vstd skill conventions` when the
 skill is loaded outside the plugin file tree. Locate the studio root (folder with
-`studio.yaml` — connected folder, or ask; a git clone works too).
+`studio.yaml`, or ask). Run `vstd cloud workspace status` to detect whether it
+is connected; local-only work proceeds without login or network access.
 
 ## 1. Frame it
 

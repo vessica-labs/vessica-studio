@@ -8,6 +8,9 @@ description: Fork, duplicate, clone, or tailor a Vessica Studio/vstd deck for a 
 Read `../../docs/conventions.md`, or run `vstd skill conventions` when the skill
 is loaded outside the plugin file tree.
 
+Run `vstd cloud workspace status` to detect connection state. Forking remains a
+local paired-file workflow when the workspace is offline or unconnected.
+
 1. **Fork**: `vstd fork <deck> <client>` (creates `decks/<deck>--<client>` with parent
    hashes for later diffing). No CLI: copy the deck directory (minus `build/`), then add
    `forked_from`, `fork_date`, and per-slide sha256 `parent_hashes` to `deck.yaml`, and

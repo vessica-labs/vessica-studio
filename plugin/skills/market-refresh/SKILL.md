@@ -8,6 +8,9 @@ description: Refresh, update, or restamp time-sensitive market data, statistics,
 Read `../../docs/conventions.md`, or run `vstd skill conventions` when the skill
 is loaded outside the plugin file tree.
 
+Run `vstd cloud workspace status` to detect connection state. Refresh the same
+paired local files, and keep offline or unconnected work explicitly unsynced.
+
 1. **Find the perishables**: grep the deck for as-of stamps, dates, `[X]`/placeholder
    pills, and companions whose Evidence cites dated sources. Confirm scope with the user
    (which slides, how deep).
