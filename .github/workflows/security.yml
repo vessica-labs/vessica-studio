@@ -13,6 +13,9 @@ jobs:
   verify:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      # Avoid Ubuntu's snap Chromium launcher; use the runner's installed Chrome.
+      VSTD_CHROMIUM: /usr/bin/google-chrome
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
@@ -20,6 +23,7 @@ jobs:
           go-version: '1.26.8'
       - run: test -z "$(gofmt -l $(find cmd internal plugin -name '*.go' -type f))"
       - run: go mod verify
+      - run: "$VSTD_CHROMIUM --version"
       - run: go test ./...
       - run: go test -race ./...
       - run: go vet ./...
