@@ -1,0 +1,48 @@
+name: Engine security and compatibility
+
+on:
+  pull_request:
+  push:
+    branches: [main, 'codex/v0.4.1-security-patch']
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Avoid Ubuntu's snap Chromium launcher; use the runner's installed Chrome.
+      VSTD_CHROMIUM: /usr/bin/google-chrome
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.8'
+      - run: test -z "$(gofmt -l $(find cmd internal plugin -name '*.go' -type f))"
+      - run: go mod verify
+      - run: "$VSTD_CHROMIUM --version"
+      - run: go test ./...
+      - run: go test -race ./...
+      - run: go vet ./...
+      - run: go build -trimpath ./cmd/vstd
+      - run: go run golang.org/x/vuln/cmd/govulncheck@v1.7.0 ./...
+      - run: git diff --exit-code && git diff --check
+      - name: Build immutable release binaries
+        run: |
+          mkdir -p "$RUNNER_TEMP/vstd-release"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
+            os="${target%/*}"
+            arch="${target#*/}"
+            CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=true \
+              -o "$RUNNER_TEMP/vstd-release/vstd_${os}_${arch}" ./cmd/vstd
+          done
+          cd "$RUNNER_TEMP/vstd-release"
+          sha256sum vstd_* > SHA256SUMS
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: vstd-${{ github.sha }}
+          path: ${{ runner.temp }}/vstd-release/
+          if-no-files-found: error
