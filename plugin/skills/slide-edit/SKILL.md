@@ -9,6 +9,10 @@ Read `../../docs/conventions.md`, or run `vstd skill conventions` when the skill
 is loaded outside the plugin file tree. This skill exists to enforce one thing:
 **edits are context-aware**.
 
+Run `vstd cloud workspace status` to detect connection state. In every state,
+edit the same paired local files; offline or unconnected status never requires
+login and must not be presented as a successful sync.
+
 1. **Companion and link first — non-negotiable.** Check for
    `NNNN-slug.link.yaml`; refresh or detach a linked slide instead of editing its
    fragment, companion, or attachments. Then read `NNNN-slug.md` before touching the

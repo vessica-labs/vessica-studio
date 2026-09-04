@@ -1,0 +1,11 @@
+runs/*
+!runs/.gitkeep
+worktrees/*
+!worktrees/.gitkeep
+adrs/*
+!adrs/.gitkeep
+!adrs/INDEX.md
+!adrs/accepted/
+!adrs/accepted/*.md
+.locks/*
+!.locks/.gitkeep
