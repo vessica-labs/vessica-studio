@@ -97,3 +97,9 @@ func TestCloudProtocolRedaction(t *testing.T) {
 		t.Fatalf("cloudErrorText leaked a credential: %q", got)
 	}
 }
+
+func TestCloudDefaultUsesStudioWorkspace(t *testing.T) {
+	if defaultCloudEndpoint != "https://studio.vessica.ai" {
+		t.Fatalf("unexpected default endpoint: %s", defaultCloudEndpoint)
+	}
+}

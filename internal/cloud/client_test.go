@@ -133,3 +133,32 @@ func TestWorkspaceReadRequiresNegotiation(t *testing.T) {
 		t.Fatalf("read from incompatible service: %v", err)
 	}
 }
+
+func TestCreateWorkspaceNegotiatesCapability(t *testing.T) {
+	for _, supported := range []bool{false, true} {
+		mutations := 0
+		c := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path == "/v1/capabilities" {
+				if supported {
+					writeJSON(w, `{"protocol":"1","capabilities":["workspace.create"]}`)
+				} else {
+					writeJSON(w, `{"protocol":"1","capabilities":["workspace.sync"]}`)
+				}
+				return
+			}
+			if r.Method != "POST" || r.URL.Path != "/v1/workspaces" {
+				t.Errorf("unexpected request")
+			}
+			mutations++
+			writeJSON(w, `{"id":"r1","workspace_id":"p1"}`)
+		}))
+		result, err := c.CreateWorkspace(context.Background(), CreateWorkspaceRequest{Title: "New deck", OperationID: "op1"})
+		if supported {
+			if err != nil || result.WorkspaceID != "p1" || mutations != 1 {
+				t.Fatalf("create: %v", err)
+			}
+		} else if err == nil || mutations != 0 {
+			t.Fatal("unsupported server mutated")
+		}
+	}
+}

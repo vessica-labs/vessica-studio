@@ -61,7 +61,14 @@ association files directly.
 - **Local-only workspace:** continue editing the paired HTML/Markdown files.
   Login and network access are optional and must never block authoring, build,
   serve, export, or skill discovery.
-- **Connected workspace:** continue editing the same paired files locally. Use
+- **Connected workspace:** when the user asks for changes to their Cloud presentation,
+  run `vstd cloud workspace pull` before editing if status reports a clean local
+  projection. After editing, building and reviewing the paired files, run
+  `vstd cloud workspace sync --message "Describe the change"` and report the
+  returned revision. This is part of completing the requested Cloud edit unless
+  the user specified local-only, offline, review-only, or no-sync work. Preserve
+  pre-existing unsynced changes; never pull over them or upload unrelated work.
+  Sync creates a revision; publishing requires the user to request publishing. Use
   workspace, version, sync, conflict, and publish terminology: inspect with
   `vstd cloud workspace status`, incorporate a newer version with
   `vstd cloud workspace pull`, create an attributable version with

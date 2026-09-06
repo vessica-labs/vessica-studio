@@ -1455,6 +1455,7 @@ body.editmode .slide.active{cursor:default}
       });
       fetch('/api/me').then(r=>r.json()).then(me=>{
         window.__vme=me;
+        if(me.start_editing===true&&me.editable===true&&!editMode)toggleEdit();
         const audience=me.audience===true||(me.audience===undefined&&((me.mode==='public'&&!me.presenter)||(me.mode!=='public'&&/[?&]follow=1/.test(location.search))));
         window.__vaudience=audience;
         const transfer=document.getElementById('ovTransfer');

@@ -11,6 +11,7 @@ import (
 const ProtocolVersion = "1"
 
 const (
+	CapabilityWorkspaceCreate  = "workspace.create"
 	CapabilityWorkspaceRead    = "workspace.read"
 	CapabilityWorkspaceSync    = "workspace.sync"
 	CapabilityPublicationRead  = "publication.read"
@@ -72,6 +73,11 @@ type Revision struct {
 	Author      Account   `json:"author,omitempty"`
 	CreatedAt   time.Time `json:"created_at,omitempty"`
 	Files       []File    `json:"files,omitempty"`
+}
+type CreateWorkspaceRequest struct {
+	Title       string `json:"title"`
+	Files       []File `json:"files"`
+	OperationID string `json:"operation_id"`
 }
 type SyncRequest struct {
 	BaseRevisionID string `json:"base_revision_id"`
