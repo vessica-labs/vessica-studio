@@ -28,7 +28,7 @@ Core builds require no production secret. Optional OpenAI, S3, Git, Railway, and
 cloud-client credentials are resolved at runtime from approved environment or OS
 credential stores and never baked into artifacts.
 
-The Cloud endpoint defaults to `https://cloud.vessica.studio` and may be
+The Cloud endpoint defaults to `https://studio.vessica.ai` and may be
 overridden at runtime with `VSTD_CLOUD_ENDPOINT`. Cloud use requires a supported
 OS credential store; this does not affect installation or local-only commands.
 

@@ -145,3 +145,29 @@ func TestRedactSecrets(t *testing.T) {
 		t.Fatalf("not redacted: %s", got)
 	}
 }
+
+func TestLoginCompleteLink(t *testing.T) {
+	for _, tc := range []struct {
+		url   string
+		valid bool
+	}{
+		{"https://login.example/device?user_code=ABCD", true},
+		{"https://phishing.example/device?user_code=ABCD", false},
+		{"http://login.example/device?user_code=ABCD", false},
+		{"https://user:secret@login.example/device?user_code=ABCD", false},
+	} {
+		t.Run(tc.url, func(t *testing.T) {
+			api := &fakeAPI{start: cloud.DeviceAuthorization{DeviceCode: "device-secret", UserCode: "ABCD", VerificationURI: "https://login.example/device", VerificationURIComplete: tc.url, ExpiresIn: 60}, tokens: []cloud.Token{{AccessToken: "access-secret", RefreshToken: "refresh-secret", ExpiresIn: 60}}}
+			m := New(api, NewMemoryStore())
+			var shown LoginPrompt
+			_, err := m.Login(context.Background(), func(p LoginPrompt) error { shown = p; return nil })
+			if tc.valid {
+				if err != nil || shown.VerificationURIComplete != tc.url {
+					t.Fatalf("complete link not shown: %v", err)
+				}
+			} else if err == nil {
+				t.Fatal("unsafe complete link accepted")
+			}
+		})
+	}
+}

@@ -1140,3 +1140,38 @@ OpenAI, GitHub, Railway, Telnyx, Resend, or S3 credentials.
 ## License
 
 [Apache License 2.0](LICENSE) © Vessica Labs
+
+### Hosted browser editor transport
+
+Hosted services can run the existing player/HUD through
+[`vstd editor-session`](docs/editor-session.md) in an isolated disposable content
+sandbox. This additive gateway-authenticated transport provides canonical
+snapshots; the host remains responsible for tenant authorization and committing
+saved revisions. It does not change local `vstd serve` or read-only delivery.
+
+Native Cloud commands default to `https://studio.vessica.ai`. Set
+`VSTD_CLOUD_ENDPOINT` to use another service (including an existing connection
+created against a different endpoint). `vstd cloud login` prints the service's
+prefilled device approval link when available; approve the displayed code in
+your browser. Renewable credentials stay in the OS credential store.
+
+For connected Cloud presentations, the plugin pulls only a clean local workspace
+before editing and syncs validated edits afterward, unless you requested local-only
+or no-sync work. Publishing remains a separate request.
+
+#### Create a Cloud presentation from local files
+
+With vstd 0.5.0 and a Cloud service advertising `workspace.create`, build and
+review a studio containing exactly one deck, then run:
+
+```sh
+vstd cloud login
+vstd cloud workspace create --title "My presentation" --root ./my-presentation
+```
+
+The selected workspace from device approval owns the new presentation. The
+command uploads canonical files, creates the first revision, and connects the
+local directory for future `pull` and `sync` commands. It does not publish.
+An uncertain response leaves a non-secret `.vstd/cloud-create.json` retry journal;
+retry the same title and files, preserving the journal, to avoid duplicates.
+Local-only authoring continues to work without an account.

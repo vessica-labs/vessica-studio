@@ -33,7 +33,7 @@ type API interface {
 	Account(context.Context) (cloud.Account, error)
 }
 
-type LoginPrompt struct{ UserCode, VerificationURI string }
+type LoginPrompt struct{ UserCode, VerificationURI, VerificationURIComplete string }
 type Prompt func(LoginPrompt) error
 type Option func(*Manager)
 
@@ -79,8 +79,14 @@ func (m *Manager) Login(ctx context.Context, prompt Prompt) (string, error) {
 	if urlErr != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || auth.DeviceCode == "" || auth.UserCode == "" || strings.ContainsAny(auth.UserCode, "\r\n\x1b") || auth.ExpiresIn <= 0 || auth.ExpiresIn > 3600 || auth.Interval < 0 || auth.Interval > 300 {
 		return "", errors.New("cloud returned an invalid device authorization")
 	}
+	if auth.VerificationURIComplete != "" {
+		complete, err := url.Parse(auth.VerificationURIComplete)
+		if err != nil || complete.Scheme != u.Scheme || complete.Host != u.Host || complete.User != nil || complete.Path != u.Path || complete.Fragment != "" || len(auth.VerificationURIComplete) > 2048 {
+			return "", errors.New("cloud returned an invalid device verification link")
+		}
+	}
 	if prompt != nil {
-		if err := prompt(LoginPrompt{UserCode: auth.UserCode, VerificationURI: auth.VerificationURI}); err != nil {
+		if err := prompt(LoginPrompt{UserCode: auth.UserCode, VerificationURI: auth.VerificationURI, VerificationURIComplete: auth.VerificationURIComplete}); err != nil {
 			return "", safeError("show cloud login", err)
 		}
 	}

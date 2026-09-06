@@ -53,3 +53,14 @@ Build (`vstd build <deck>` or note the engine auto-builds). Only provide the dec
 URL after confirming the engine is running; otherwise report the built artifact
 or the `vstd serve` command. Summarize the slide list, unresolved critic items,
 and any visual QA that optional tooling prevented.
+
+
+If the user requested a new presentation in their connected Cloud workspace,
+keep this deck in its own local studio directory. After the build and review,
+run `vstd cloud workspace create --title "T" --root DIR` (vstd 0.5.0 or newer).
+This creates its first Cloud revision and connects the directory for subsequent
+pull/sync commands. Use the existing browser device approval flow if sign-in is
+needed; never ask for a pasted credential. Report the returned presentation and
+revision identifiers. On an uncertain response, retry the same command with the
+same files and title; preserve `.vstd/cloud-create.json` for replay safety. Do not
+upload a local-only deck or publish a presentation without the user's request.

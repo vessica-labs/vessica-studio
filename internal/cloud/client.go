@@ -329,3 +329,15 @@ func versionLess(current, minimum string) bool {
 	}
 	return false
 }
+
+func (c *Client) CreateWorkspace(ctx context.Context, in CreateWorkspaceRequest) (Revision, error) {
+	var out Revision
+	if err := c.negotiate(ctx, CapabilityWorkspaceCreate); err != nil {
+		return out, err
+	}
+	if in.OperationID == "" && c.operationID != nil {
+		in.OperationID = c.operationID()
+	}
+	err := c.do(ctx, http.MethodPost, "/v1/workspaces", in, &out, true)
+	return out, err
+}

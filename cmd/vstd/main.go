@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.4.1"
+const version = "0.5.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -56,6 +56,8 @@ func main() {
 		err = cmdReleaseBuild(args)
 	case "agent":
 		err = cmdAgent(args)
+	case "editor-session":
+		err = cmdEditorSession(args)
 	case "serve":
 		err = cmdServe(args)
 	case "asset":
@@ -102,6 +104,7 @@ Usage:
   vstd release-build [deck] --output DIR
                                       emit immutable hosted-release artifacts + manifest
   vstd agent                          run one headless redesign-queue sweep
+  vstd editor-session [flags]       isolated gateway-authenticated editor transport
   vstd serve [deck] [flags]           serve studio (watch, live reload, edit API)
   vstd asset gen --prompt P [flags]   generate a library image (gpt-image-2)
   vstd asset list|find [--tags a,b --family F]   browse/reuse the library
@@ -119,7 +122,7 @@ Usage:
   vstd railway up                     one-command Railway setup + deploy
   vstd railway status|<args>          linked project info / CLI passthrough
   vstd cloud login|logout|account     pair and inspect a Cloud account
-  vstd cloud workspace <command>      list, clone, connect, status, pull, or sync
+  vstd cloud workspace <command>      list, create, clone, connect, status, pull, or sync
   vstd cloud publish create|status    publish or inspect a synchronized revision
   vstd cloud diagnostics              show sanitized protocol information
   vstd version
@@ -149,6 +152,7 @@ Environment:
                         content repository and scoped write credential
   VSTD_AGENT=1          enable the optional headless redesign worker
   VSTD_CLOUD_ENDPOINT  Vessica Studio Cloud API endpoint
+  VSTD_EDITOR_TOKEN     gateway-only credential for editor-session (never browser-visible)
   VSTD_CHROMIUM         Chrome/Chromium binary for visual export/migration
   PORT                  overrides port (Railway sets this)
   VSTD_S3_ENDPOINT / _BUCKET / _ACCESS_KEY / _SECRET_KEY / _REGION

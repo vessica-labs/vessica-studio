@@ -19,7 +19,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
-const defaultCloudEndpoint = "https://cloud.vessica.studio"
+const defaultCloudEndpoint = "https://studio.vessica.ai"
 
 var (
 	cloudCredentialStore = func(endpoint string) cloudauth.Store { return cloudauth.NewKeyringStore(endpoint) }
@@ -67,7 +67,11 @@ func runCloud(args []string, out io.Writer) error {
 	switch args[0] {
 	case "login":
 		_, err = auth.Login(ctx, func(p cloudauth.LoginPrompt) error {
-			fmt.Fprintf(out, "Open %s and enter code %s\n", p.VerificationURI, p.UserCode)
+			if p.VerificationURIComplete != "" {
+				fmt.Fprintf(out, "Open %s to approve this device (code %s).\n", p.VerificationURIComplete, p.UserCode)
+			} else {
+				fmt.Fprintf(out, "Open %s and enter code %s\n", p.VerificationURI, p.UserCode)
+			}
 			return nil
 		})
 		if err == nil {
@@ -106,9 +110,25 @@ func runCloud(args []string, out io.Writer) error {
 
 func runCloudWorkspace(ctx context.Context, client *cloud.Client, endpoint string, args []string, out io.Writer) error {
 	if len(args) == 0 {
-		return errors.New("usage: vstd cloud workspace list|clone|connect|status|pull|sync")
+		return errors.New("usage: vstd cloud workspace list|create|clone|connect|status|pull|sync")
 	}
 	switch args[0] {
+	case "create":
+		fs := flag.NewFlagSet("cloud workspace create", flag.ContinueOnError)
+		fs.SetOutput(io.Discard)
+		root := fs.String("root", ".", "local studio containing exactly one deck")
+		title := fs.String("title", "", "presentation title")
+		if err := fs.Parse(args[1:]); err != nil {
+			return err
+		}
+		if fs.NArg() != 0 {
+			return errors.New("usage: vstd cloud workspace create --title TITLE [--root DIR]")
+		}
+		revision, err := (cloudworkspace.Manager{Cloud: client, Endpoint: endpoint}).Create(ctx, *root, *title)
+		if err == nil {
+			fmt.Fprintf(out, "Created and connected presentation %s at revision %s.\n", revision.WorkspaceID, revision.ID)
+		}
+		return err
 	case "list":
 		page, err := client.Workspaces(ctx, "")
 		if err != nil {
