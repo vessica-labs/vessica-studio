@@ -1,7 +1,7 @@
 ---
 layout: ../layouts/DocsLayout.astro
 title: Web editor
-description: Learn the Vessica Studio presentation catalog, canvas editor, companions, assets, sharing, slide reuse, and export workflow.
+description: Learn the Vessica Studio presentation catalog, fast previews, canvas editor, autosave, companions, sharing, slide reuse, and export workflow.
 ---
 import Callout from "../components/Callout.astro";
 
@@ -9,16 +9,16 @@ import Callout from "../components/Callout.astro";
 
 # Work in the web editor
 
-The hosted catalog is the launch point for organizing, editing, presenting, sharing, and reusing decks. The player adds an object editor, companion drawer, asset controls, sticky instructions, and exports without hiding the underlying files.
+The hosted catalog is the launch point for creating, editing, presenting, sharing, and reusing decks. Open **Presentations** from the top navigation, then choose the deck action you need. The player adds an object editor, companion details, asset controls, sticky instructions, and exports without hiding the underlying files.
 
-![Vessica Studio presentation catalog with folders and deck cards](/screenshots/presentation-catalog.png)
-<span class="caption">The authenticated catalog separates owned and shared decks, supports folders and search, and exposes the action that is safe for each deck.</span>
+![Vessica Studio presentation catalog with deck cards and immediate previews](/screenshots/presentation-catalog.png)
+<span class="caption">The catalog separates owned and shared decks and exposes the action that is safe for each deck. Previously loaded previews appear immediately while Studio checks for a newer revision in the background.</span>
 
 ## Organize and launch presentations
 
 - **All / Mine / Shared / Recent** filters keep personal and team work distinct.
-- **Folders** are a personal, one-level organization layer.
 - **Search and sort** find a deck by title, key, or owner.
+- **New presentation** starts from an included or workspace style template.
 - **Edit** opens the full writable player for a deck you own.
 - **Present** opens the presenter surface.
 - **View** opens a shared deck without granting edit authority.
@@ -29,7 +29,7 @@ The hosted catalog is the launch point for organizing, editing, presenting, shar
 
 ## Edit slide objects
 
-Open a deck with **Edit**, then choose **Edit** in the player HUD or press `E`.
+Open a deck with **Edit**, then choose **Edit** in the presentation HUD or press `E`. The Slides panel, canvas, and editing ribbon are all part of the engine-owned player, so the hosted editor and a local `vstd serve` session use the same editing surface.
 
 ![Vessica Studio slide canvas in edit mode with the formatting ribbon](/screenshots/web-editor.png)
 <span class="caption">Edit mode keeps the presentation visible while exposing selection, typography, alignment, fill, position, layering, crop, and deletion controls.</span>
@@ -41,9 +41,10 @@ Common actions:
 3. Drag a selected object or use arrow keys for precise nudging.
 4. Marquee-select or modifier-click to work with multiple objects.
 5. Paste an image from the clipboard or drag a video onto the canvas.
-6. Exit edit mode to save changed slide fragments.
+6. Use **Text** or **Shape** in the ribbon to add a new object.
+7. Continue working while Studio saves frequently; leaving the presentation triggers a final save attempt.
 
-<Callout title="Source files stay authoritative">The browser edits the current slide fragment. Git-backed content sync can batch hosted saves back to the content repository. Generated <code>build/</code> output is disposable.</Callout>
+<Callout title="Source files stay authoritative">The browser edits the current slide fragment. A successful save updates the editor without asking you to reload your own change. Git-backed content sync can batch hosted saves back to the content repository. Generated <code>build/</code> output is disposable.</Callout>
 
 ## Use the slide companion
 
@@ -56,7 +57,7 @@ Every slide's Markdown companion carries the reasoning around the visual:
 - edit requests and completed-change log;
 - attached PDFs, PowerPoint files, documents, spreadsheets, or images.
 
-Open **Companion** from the HUD. Preview the Markdown, switch to edit mode, attach a source, and save. Codex and Vessica read this same record when they work on the slide.
+Open **Details** from the editing ribbon. Preview the Markdown companion, switch to edit mode, attach a source, and save. Codex and Vessica read this same record when they work on the slide.
 
 ## Leave an instruction instead of forcing a redesign
 
@@ -67,7 +68,15 @@ Press `S` or choose **Sticky** to attach a focused instruction to the current sl
 - **Present** enters fullscreen presenter mode.
 - **Share** mints an expiring, deck-scoped audience link and QR code.
 - Audience viewers are read-only and can follow the presenter live or browse independently.
+- **Agenda** lists the visible slides and jumps directly to the selected page.
+- **Grid** uses the full workspace and hides the Slides panel until you return to the canvas.
 - **Download** exports the current slide or full deck as PDF, visual-exact PowerPoint, or editable PowerPoint. Audience sessions receive PDF only.
+
+## Preview behavior
+
+Catalog previews use a stale-while-revalidate path. A preview already loaded in the current browser session appears immediately. Studio then requests a short-lived URL for the latest revision and swaps it in only after the refreshed preview has loaded. The preview is never treated as the source of truth; opening the deck still resolves the authorized current revision.
+
+The first preview after a browser or service restart can still require a render. Durable cross-session thumbnail generation is a separate hosted-service concern from the player itself.
 
 ## Keyboard shortcuts
 

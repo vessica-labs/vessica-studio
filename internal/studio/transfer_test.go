@@ -139,6 +139,36 @@ func TestMoveSourceSlideRewritesLinkedReferences(t *testing.T) {
 	}
 }
 
+func TestMoveSlidePersistsFilmstripReorderInBothDirections(t *testing.T) {
+	st := transferStudio(t)
+	writeFile(t, st.SlidePath("source", "0030-three", ".html"), `<section class="slide"><h1>Three</h1></section>`)
+	writeFile(t, st.SlidePath("source", "0030-three", ".md"), "## Intent\nThree\n")
+
+	moved, err := st.MoveSlide("source", "0010-one", "0030-three")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err := st.SlideIDs("source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ids, ",") != "0020-two,0030-three,"+moved {
+		t.Fatalf("downward reorder=%v", ids)
+	}
+
+	moved, err = st.MoveSlide("source", moved, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ids, err = st.SlideIDs("source")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(ids, ",") != moved+",0020-two,0030-three" {
+		t.Fatalf("upward reorder=%v", ids)
+	}
+}
+
 func TestBatchTransferFailureLeavesTargetUnchanged(t *testing.T) {
 	st := transferStudio(t)
 	link := "version: 1\nsource_deck: target\nsource_slide: 0010-cover\nsource_fragment_hash: x\nlast_refreshed_at: 2026-08-26T00:00:00Z\n"

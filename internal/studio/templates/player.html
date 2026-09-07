@@ -93,6 +93,7 @@ body.mobilehud #hud .cnt{font-size:14px;min-width:52px}
   border:1px solid var(--vstd-rail-line);border-radius:10px;padding:10px 18px;font-family:var(--vstd-ui);font-size:13px;
   display:none;max-width:360px;box-shadow:0 10px 25px rgba(0,0,0,.3)}
 body.editmode #toast{top:60px}
+body.editmode #vstatus{top:60px}
 /* ---------- Vessica presentation mode ---------- */
 #vstatus{position:fixed;top:14px;left:14px;z-index:120;display:none;align-items:center;gap:9px;
   background:var(--vstd-rail);border:1px solid var(--vstd-rail-line);border-radius:999px;padding:7px 16px;
@@ -252,6 +253,9 @@ body.editmode #editRibbon{display:flex}
 #editRibbon .rgrow,#objectBar .rgrow{flex:1 1 auto}
 #editRibbon .rsep,#objectBar .rsep{width:1px;height:20px;background:var(--vstd-line);margin:0 4px;flex:0 0 auto}
 #editRibbon .rwrap{position:relative;display:inline-flex}
+#shapeMenu{position:absolute;top:38px;left:0;z-index:205;display:none;min-width:142px;padding:6px;background:var(--vstd-paper);border:1px solid var(--vstd-line);border-radius:9px;box-shadow:0 12px 30px rgba(26,26,26,.2)}
+#shapeMenu.open{display:grid;gap:2px}
+#shapeMenu button{width:100%;justify-content:flex-start}
 #editRibbon button,#objectBar button,#objectBar .cwrap,#filmstrip button{display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 9px;
   border-radius:7px;border:1px solid transparent;background:transparent;color:inherit;font:500 12px var(--vstd-ui);white-space:nowrap;cursor:pointer;box-sizing:border-box;
   transition:background var(--vstd-ease) .16s,border-color var(--vstd-ease) .16s,color var(--vstd-ease) .16s}
@@ -281,6 +285,7 @@ body.editmode #editRibbon{display:flex}
   background:var(--vstd-rail);color:var(--vstd-rail-ink);font:500 12px var(--vstd-ui);box-shadow:0 6px 18px rgba(0,0,0,.25);white-space:nowrap;pointer-events:none}
 #vtip.open{display:inline-flex}
 #vtip::before{content:'';position:absolute;left:12px;top:-4px;width:8px;height:8px;background:var(--vstd-rail);transform:rotate(45deg)}
+#vtip.above::before{top:auto;bottom:-4px}
 #vtip .kbd{border-color:var(--vstd-rail-line);background:rgba(255,255,255,.06);color:var(--vstd-rail-muted)}
 /* the stage becomes a cream desk; the slide sits on it like a sheet */
 body.editmode #stage{top:48px;left:200px;background:var(--vstd-cream)}
@@ -290,6 +295,7 @@ body.editmode #frame{box-shadow:0 2px 6px rgba(26,26,26,.08),0 18px 48px rgba(26
 #filmstrip{position:fixed;left:0;top:48px;bottom:0;width:200px;z-index:139;display:none;flex-direction:column;
   background:var(--vstd-paper);border-right:1px solid var(--vstd-line);font-family:var(--vstd-ui);box-sizing:border-box}
 body.editmode #filmstrip{display:flex}
+body.gridmode #filmstrip{display:none!important}
 body.editmode.nofilm #filmstrip{width:36px}
 #filmstrip .fhead{display:flex;align-items:center;gap:6px;height:36px;padding:0 4px 0 12px;border-bottom:1px solid var(--vstd-line);
   font:600 11px/1 var(--vstd-ui);letter-spacing:.13em;text-transform:uppercase;color:var(--vstd-muted);flex:0 0 auto}
@@ -455,6 +461,8 @@ body.editmode .slide.active{cursor:default}
   <div class="stepper"><button type="button" class="ico" data-act="prev" data-tip="Previous slide" data-key="&#8592;" aria-label="Previous slide"><svg class="i"><use href="#vi-chevl"/></svg></button><span class="rcnt" id="rcnt">1 / 1</span><button type="button" class="ico" data-act="next" data-tip="Next slide" data-key="&#8594;" aria-label="Next slide"><svg class="i"><use href="#vi-chevr"/></svg></button></div>
   <span class="rsep"></span>
   <button type="button" class="ico" data-act="newslide" data-mirror="newslidebtn" data-tip="New slide after this one" aria-label="New slide"><svg class="i"><use href="#vi-plus"/></svg></button>
+  <button type="button" class="ico" data-act="addtext" data-tip="Add text box" aria-label="Add text box"><svg class="i"><use href="#vi-type"/></svg></button>
+  <span class="rwrap" id="shapeWrap"><button type="button" class="ico" data-act="shapes" data-tip="Add shape" aria-label="Add shape" aria-haspopup="menu" aria-expanded="false"><svg class="i"><use href="#vi-shape"/></svg></button><span id="shapeMenu" role="menu"><button type="button" data-shape="rect" role="menuitem">Rectangle</button><button type="button" data-shape="circle" role="menuitem">Circle</button><button type="button" data-shape="line" role="menuitem">Line</button></span></span>
   <button type="button" class="ico" data-act="grid" data-tip="Grid" data-key="G" aria-label="Grid"><svg class="i"><use href="#vi-grid"/></svg></button>
   <button type="button" class="ico" data-act="menu" data-tip="Agenda" data-key="M" aria-label="Agenda"><svg class="i"><use href="#vi-list"/></svg></button>
   <button type="button" class="ico" data-act="notes" data-tip="Speaker notes" data-key="N" aria-label="Speaker notes"><svg class="i"><use href="#vi-notes"/></svg></button>
@@ -465,6 +473,7 @@ body.editmode .slide.active{cursor:default}
   <button type="button" class="ico" data-act="vessica" data-tip="Vessica" data-key="V" aria-label="Vessica"><svg class="i"><use href="#vi-vessica"/></svg></button>
   <div class="rgrow"></div>
   <button type="button" id="saveStatus" class="saved" data-act="save" data-tip="Save now" data-key="&#8984;S"><span class="dot"></span><span class="txt">Saved</span><span class="kbd">&#8984;S</span></button>
+  <button type="button" id="detailsbtn" style="display:none" data-act="details" data-tip="Presentation details">Details</button>
   <button type="button" class="ico" data-act="share" data-mirror="sharebtn" data-tip="Share" aria-label="Share"><svg class="i"><use href="#vi-share"/></svg></button>
   <span class="rwrap" id="rdlwrap"><button type="button" class="ico" data-act="download" data-mirror="downloadbtn" data-tip="Download" aria-label="Download"><svg class="i"><use href="#vi-download"/></svg></button></span>
   <span class="rsep"></span>
@@ -652,7 +661,7 @@ body.editmode .slide.active{cursor:default}
     if(!canEditDeck())return;
     if(!sec.dataset.vstd||!window.VSTD)return;
     return saveSlide(sec).then(res=>{
-      if(res.status==='conflict')toast('⚠ Not saved — slide '+res.id+' changed on disk after this page loaded. Reload to pick it up, then re-apply.',8500);
+      if(res.status==='conflict')toast('Could not save slide '+res.id+' because it was updated elsewhere. Reopen the presentation to review the latest version.',8500);
       return res;
     });
   }
@@ -688,14 +697,18 @@ body.editmode .slide.active{cursor:default}
   // agenda-row links (disabled while editing)
   document.querySelectorAll('[data-goto]').forEach(a=>a.addEventListener('click',()=>{if(editMode)return;menu.classList.remove('open');goto(a.dataset.goto);}));
 
-  // menu build from section markers
+  // Agenda always contains every usable page. Authored menu/section labels win;
+  // otherwise fall back to the first visible heading and finally the page number.
   slides.forEach((s,i)=>{
-    if(s.dataset.menu){
-      const a=document.createElement('a');
-      a.innerHTML='<span class="n">'+String(i+1).padStart(2,'0')+'</span><span>'+s.dataset.menu+'</span>';
-      a.addEventListener('click',()=>{menu.classList.remove('open');show(i);});
-      menulist.appendChild(a);
-    }
+    if(s.hasAttribute('data-parked'))return;
+    const h=s.querySelector('.s-title,h1,h2,h3');
+    const heading=h&&h.textContent&&h.textContent.trim();
+    const label=s.dataset.menu||s.dataset.sec||heading||('Slide '+dispNum(i));
+    const a=document.createElement('a');
+    a.innerHTML='<span class="n">'+String(dispNum(i)).padStart(2,'0')+'</span><span></span>';
+    a.lastChild.textContent=label;
+    a.addEventListener('click',()=>{menu.classList.remove('open');show(i);});
+    menulist.appendChild(a);
   });
 
   // overview grid (rebuilt each open so edits show up)
@@ -713,15 +726,20 @@ body.editmode .slide.active{cursor:default}
     else ovAuto=0;
   });
   function selOrdered(){return slides.filter(x=>ovSel.has(x.dataset.vstd)).map(x=>x.dataset.vstd);}
+  let selfMutations=0;
+  async function selfFetch(input,init){
+    selfMutations++;
+    window.__selfSave=Date.now();
+    try{return await fetch(input,init);}
+    finally{selfMutations--;window.__selfSave=Date.now();}
+  }
   async function moveSeq(ids,after){
     let a=after;
     for(const id of ids){
-      window.__selfSave=Date.now(); // suppress watcher-triggered reload during the operation
-      const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/move',
+      const r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/move',
         {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({after:a})});
       if(!r.ok)throw new Error(await r.text());
       a=(await r.json()).id;
-      window.__selfSave=Date.now();
     }
   }
   async function setParked(ids,park){
@@ -847,9 +865,13 @@ body.editmode .slide.active{cursor:default}
     }
     if(window.__vprogApply)window.__vprogApply();
   }
+  const syncGridMode=()=>document.body.classList.toggle('gridmode',overview.classList.contains('open'));
+  new MutationObserver(syncGridMode).observe(overview,{attributes:true,attributeFilter:['class']});
+  syncGridMode();
 
   // One action router for the bottom HUD, the edit ribbon and the filmstrip.
   function hudAction(b){
+    if(b.dataset.shape){addShape(b.dataset.shape);closeShapeMenu();return;}
     if(b.dataset.downloadScope){
       document.querySelectorAll('[data-download-scope]').forEach(x=>x.classList.toggle('active',x===b));
       window.__vdownloadScope=b.dataset.downloadScope;return;
@@ -877,6 +899,9 @@ body.editmode .slide.active{cursor:default}
     else if(a==='share')openShare();
     else if(a==='present')enterPresent();
     else if(a==='newslide')newSlide();
+    else if(a==='addtext')addTextBox();
+    else if(a==='shapes')toggleShapeMenu(b);
+    else if(a==='details'&&window.parent!==window)window.parent.postMessage({type:'vstd:details'},'*');
     else if(a==='kb'){const k=document.getElementById('kbbtn');if(k)k.click();}
     else if(a==='film')toggleFilm();
   }
@@ -884,11 +909,23 @@ body.editmode .slide.active{cursor:default}
   ['editRibbon','filmstrip'].forEach(id=>{const el=document.getElementById(id);if(el)el.addEventListener('click',e=>{const b=e.target.closest('button');if(b)hudAction(b);});});
   addEventListener('pointerdown',e=>{
     if(!e.target.closest('#downloadMenu,#downloadbtn,[data-act="download"]'))document.getElementById('downloadMenu').classList.remove('open');
+    if(!e.target.closest('#shapeWrap'))closeShapeMenu();
   },true);
+  function closeShapeMenu(){
+    const m=document.getElementById('shapeMenu'),b=document.querySelector('[data-act="shapes"]');
+    if(m)m.classList.remove('open');if(b)b.setAttribute('aria-expanded','false');
+  }
+  function toggleShapeMenu(b){
+    const m=document.getElementById('shapeMenu');if(!m)return;
+    const open=!m.classList.contains('open');closeShapeMenu();
+    if(open){m.classList.add('open');b.setAttribute('aria-expanded','true');}
+  }
   // Ribbon controls mirror the HUD's visibility rules (presenter gate, capabilities, editable).
   function syncRibbon(){
     document.querySelectorAll('#editRibbon [data-mirror]').forEach(b=>{const src=document.getElementById(b.dataset.mirror);b.style.display=(src&&src.style.display!=='none')?'':'none';});
     const fn=document.getElementById('filmNew');if(fn)fn.style.display=canEditDeck()?'':'none';
+    const details=document.getElementById('detailsbtn');if(details)details.style.display=window.parent!==window?'':'none';
+    if(window.parent!==window)window.parent.postMessage({type:'vstd:editor-ready',details:true},'*');
   }
   document.addEventListener('vstd:identity',syncRibbon);
   function dockDownloadMenu(on){
@@ -899,17 +936,39 @@ body.editmode .slide.active{cursor:default}
   }
   // ---- save status in the ribbon: Saved · Unsaved ⌘S · Saving… · Conflict ----
   const dirtyIds=new Set();
+  let autosaveTimer=0,autosaveInFlight=null;
   function setSaveStatus(state){
     const el=document.getElementById('saveStatus');if(!el)return;
     el.className=state;
-    el.querySelector('.txt').textContent={saved:'Saved',unsaved:'Unsaved',saving:'Saving…',conflict:'Conflict · reload'}[state]||'Saved';
-    el.dataset.tip=state==='conflict'?'A slide changed on disk — reload, then re-apply your edit':'Save now';
+    el.querySelector('.txt').textContent={saved:'Saved',unsaved:'Unsaved',saving:'Saving…',conflict:'Save conflict'}[state]||'Saved';
+    el.dataset.tip=state==='conflict'?'This slide was updated elsewhere; reopen it to review the latest version':'Save now';
+  }
+  function scheduleAutosave(delay){
+    if(!editMode||!canEditDeck())return;
+    clearTimeout(autosaveTimer);autosaveTimer=setTimeout(()=>{void autosaveNow();},delay==null?2000:delay);
+  }
+  async function autosaveNow(){
+    if(!editMode||!canEditDeck())return;
+    if(autosaveInFlight)return autosaveInFlight;
+    autosaveInFlight=(async()=>{
+      setSaveStatus('saving');
+      try{
+        const out=await saveDirty();
+        if(out.conflicts.length){setSaveStatus('conflict');reportSave(out,'',true);}
+        else if(out.errors.length){setSaveStatus('unsaved');reportSave(out,'',true);}
+        else{dirtyIds.clear();setSaveStatus('saved');dirtyCheck();}
+        return out;
+      }catch(_){setSaveStatus('unsaved');return null;}
+      finally{autosaveInFlight=null;}
+    })();
+    return autosaveInFlight;
   }
   function dirtyCheck(){
     if(!editMode)return;
     const check=new Set([slides[cur]]);slides.forEach(s=>{if(dirtyIds.has(s.dataset.vstd))check.add(s);});
     check.forEach(s=>{if(!s||!s.dataset.vstd)return;if(slideDirty(s))dirtyIds.add(s.dataset.vstd);else dirtyIds.delete(s.dataset.vstd);});
     setSaveStatus(dirtyIds.size?'unsaved':'saved');
+    if(dirtyIds.size)scheduleAutosave();
   }
   let obsT=0;
   const frameObs=new MutationObserver(list=>{
@@ -918,6 +977,7 @@ body.editmode .slide.active{cursor:default}
     if(!relevant)return;
     clearTimeout(obsT);obsT=setTimeout(()=>{dirtyCheck();refreshThumb(cur);},250);
   });
+  setInterval(()=>{if(editMode){dirtyCheck();if(dirtyIds.size)scheduleAutosave(0);}},15000);
   // ---- filmstrip: slide thumbnails while editing (click to jump, drag to reorder) ----
   const filmList=document.getElementById('filmList');
   const FILM_TS=(200-24-2)/1280; // thumbnail scale: panel width minus padding and border
@@ -951,9 +1011,9 @@ body.editmode .slide.active{cursor:default}
     t.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();show(i);}});
     if(canEditDeck()&&s.dataset.vstd){
       t.draggable=true;
-      t.addEventListener('dragstart',e=>{dragSrc=s.dataset.vstd;ovSel.clear();t.classList.add('dragging');try{e.dataTransfer.effectAllowed='move';}catch(_){}});
+      t.addEventListener('dragstart',e=>{dragSrc=s.dataset.vstd;ovSel.clear();t.classList.add('dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragSrc);}catch(_){}});
       t.addEventListener('dragend',()=>{t.classList.remove('dragging');filmList.querySelectorAll('.dropbefore,.dropafter').forEach(x=>x.classList.remove('dropbefore','dropafter'));});
-      t.addEventListener('dragover',e=>{e.preventDefault();const r=t.getBoundingClientRect();const before=e.clientY<r.top+r.height/2;t.classList.toggle('dropbefore',before);t.classList.toggle('dropafter',!before);});
+      t.addEventListener('dragover',e=>{e.preventDefault();try{e.dataTransfer.dropEffect='move';}catch(_){}const r=t.getBoundingClientRect();const before=e.clientY<r.top+r.height/2;t.classList.toggle('dropbefore',before);t.classList.toggle('dropafter',!before);});
       t.addEventListener('dragleave',()=>t.classList.remove('dropbefore','dropafter'));
       t.addEventListener('drop',e=>{
         e.preventDefault();t.classList.remove('dropbefore','dropafter');
@@ -1008,9 +1068,11 @@ body.editmode .slide.active{cursor:default}
     vtip.classList.add('open');
     const r=el.getBoundingClientRect();vtip.style.left='0';vtip.style.top='0';
     let x=r.left+2;const w=vtip.offsetWidth;if(x+w>innerWidth-8)x=Math.max(8,innerWidth-8-w);
-    vtip.style.left=x+'px';vtip.style.top=(r.bottom+8)+'px';
+    const above=r.bottom+8+vtip.offsetHeight>innerHeight-8;
+    vtip.classList.toggle('above',above);
+    vtip.style.left=x+'px';vtip.style.top=(above?Math.max(8,r.top-vtip.offsetHeight-8):r.bottom+8)+'px';
   }
-  function hideTip(){clearTimeout(tipT);if(vtip)vtip.classList.remove('open');}
+  function hideTip(){clearTimeout(tipT);if(vtip)vtip.classList.remove('open','above');}
   ['editRibbon','objectBar','filmstrip'].forEach(id=>{
     const root=document.getElementById(id);if(!root)return;
     root.addEventListener('pointerover',e=>{const el=e.target.closest('[data-tip]');if(!el||!root.contains(el))return;clearTimeout(tipT);tipT=setTimeout(()=>showTip(el),400);});
@@ -1190,7 +1252,7 @@ body.editmode .slide.active{cursor:default}
   const undoStacks={};
   function undoPersist(sec){
     if(typeof persistSlide==='function')return persistSlide(sec);
-    return saveSlide(sec).then(res=>{if(res&&res.status==='conflict')toast('\u26a0 Not saved \u2014 slide changed on disk after this page loaded. Reload to pick it up.',8500);return res;});
+    return saveSlide(sec).then(res=>{if(res&&res.status==='conflict')toast('Could not save because this slide was updated elsewhere. Reopen the presentation to review the latest version.',8500);return res;});
   }
   const redoStacks={};
   function pushUndo(){
@@ -1198,6 +1260,26 @@ body.editmode .slide.active{cursor:default}
     (undoStacks[id]=undoStacks[id]||[]).push(sec.innerHTML);
     if(undoStacks[id].length>40)undoStacks[id].shift();
     delete redoStacks[id]; // a new action invalidates the redo history
+  }
+  function insertObject(el){
+    if(!editMode||!canEditDeck())return;
+    const sec=slides[cur];if(!sec)return;
+    pushUndo();sec.appendChild(el);selectEl(el);refreshThumb(cur);dirtyCheck();scheduleAutosave();
+  }
+  function addTextBox(){
+    const el=document.createElement('div');
+    el.dataset.edit='text';el.setAttribute('aria-label','Text box');el.textContent='Type something';
+    el.style.cssText='position:absolute;left:160px;top:150px;width:360px;min-height:48px;padding:8px 10px;color:#1A1A1A;font:32px/1.2 var(--vstd-ui);z-index:10';
+    insertObject(el);startTextEdit(el);
+  }
+  function addShape(kind){
+    const el=document.createElement('div');
+    el.dataset.edit='shape';el.dataset.vstdShape=kind;el.setAttribute('aria-label',kind==='rect'?'Rectangle':kind==='circle'?'Circle':'Line');
+    const base='position:absolute;left:190px;top:180px;z-index:9;background:#E98C3A;';
+    if(kind==='circle')el.style.cssText=base+'width:160px;height:160px;border-radius:50%';
+    else if(kind==='line')el.style.cssText=base+'width:260px;height:4px';
+    else el.style.cssText=base+'width:240px;height:140px;border-radius:8px';
+    insertObject(el);
   }
   function doUndo(){
     const sec=slides[cur];const id=sec.dataset.vstd||('idx'+cur);
@@ -1627,17 +1709,15 @@ body.editmode .slide.active{cursor:default}
   // Save one slide, guarded: sends the fragment hash this page was built from
   // (X-VSTD-Base-Hash); the engine 409s if the file changed since — a stale
   // tab can no longer silently clobber a redesign that landed after it loaded.
-  async function saveSlide(sec){
+  async function saveSlide(sec,options){
     const id=sec.dataset.vstd;
     if(!id||!window.VSTD)return {status:'skip'};
     const html=cleanSlideHTML(sec);
     const hashes=window.VSTD.hashes||(window.VSTD.hashes={});
     const hdrs={'Content-Type':'text/html'};
     if(hashes[id])hdrs['X-VSTD-Base-Hash']=hashes[id];
-    window.__selfSave=Date.now();
-    const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
-      {method:'PUT',headers:hdrs,body:html});
-    window.__selfSave=Date.now();
+    const r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
+      {method:'PUT',headers:hdrs,body:html,keepalive:!!(options&&options.keepalive)});
     if(r.status===409)return {status:'conflict',id};
     if(!r.ok)return {status:'error',id,code:r.status};
     const j=await r.json().catch(()=>({}));
@@ -1646,24 +1726,33 @@ body.editmode .slide.active{cursor:default}
     return {status:'ok',id};
   }
   window.__vsaveSlide=saveSlide;
-  async function saveDirty(){
+  async function saveDirty(options){
     const out={saved:0,conflicts:[],errors:[]};
-    for(const s of document.querySelectorAll('#frame > .slide')){
-      if(!s.dataset.vstd||!slideDirty(s))continue;
-      const res=await saveSlide(s);
+    const dirty=[...document.querySelectorAll('#frame > .slide')].filter(s=>s.dataset.vstd&&slideDirty(s));
+    const results=await Promise.all(dirty.map(s=>saveSlide(s,options)));
+    for(const res of results){
       if(res.status==='ok')out.saved++;
       else if(res.status==='conflict')out.conflicts.push(res.id);
       else if(res.status==='error')out.errors.push(res.id);
     }
     return out;
   }
-  function reportSave(out,ctx){
+  function reportSave(out,ctx,silent){
     if(out.conflicts.length)
-      toast('⚠ Not saved: slide(s) '+out.conflicts.join(', ')+' changed on disk (redesign pass or another tab) after this page loaded. Reload to see the newer version, then re-apply your edit.',9500);
+      toast('Could not save slide(s) '+out.conflicts.join(', ')+' because they were updated elsewhere. Reopen the presentation to review the latest version.',9500);
     else if(out.errors.length)toast('Save failed for '+out.errors.join(', '));
-    else if(out.saved){toast('Saved '+out.saved+' changed slide(s)'+(ctx||''));reportHostedSync();}
+    else if(out.saved){if(!silent)toast('Saved '+out.saved+' changed slide(s)'+(ctx||''));reportHostedSync();}
     return out;
   }
+  function flushAutosave(){
+    if(!editMode||!canEditDeck())return;
+    clearTimeout(autosaveTimer);
+    if(autosaveInFlight)return;
+    void saveDirty({keepalive:true});
+  }
+  addEventListener('pagehide',flushAutosave);
+  addEventListener('beforeunload',flushAutosave);
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='hidden')flushAutosave();});
   async function reportHostedSync(){
     if(!(window.__vme&&window.__vme.mode==='public'&&window.__vme.editable))return;
     toast('Saved live · syncing to GitHub');
@@ -1688,13 +1777,11 @@ body.editmode .slide.active{cursor:default}
     const tmpId=String(Math.min(mx+10,99999)).padStart(4,'0')+'-new-'+(Date.now()%100000);
     const curId=slides[cur]&&slides[cur].dataset.vstd;
     try{
-      window.__selfSave=Date.now();
-      let r=await fetch('/api/deck/'+window.VSTD.deck+'/slides',{method:'POST',
+      let r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slides',{method:'POST',
         headers:{'Content-Type':'application/json'},body:JSON.stringify({id:tmpId,title:'New slide'})});
       if(!r.ok)throw new Error((await r.json().catch(()=>({}))).error||('HTTP '+r.status));
       if(curId){
-        window.__selfSave=Date.now();
-        r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+tmpId+'/move',{method:'POST',
+        r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+tmpId+'/move',{method:'POST',
           headers:{'Content-Type':'application/json'},body:JSON.stringify({after:curId})});
         if(!r.ok)throw new Error('created, but placing it failed: HTTP '+r.status);
       }
@@ -1709,6 +1796,8 @@ body.editmode .slide.active{cursor:default}
 
   async function saveHtml(){
     stopTextEdit();clearSel();
+    clearTimeout(autosaveTimer);
+    if(autosaveInFlight)await autosaveInFlight;
     if(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0){
       try{
         setSaveStatus('saving');
@@ -1807,12 +1896,16 @@ body.editmode .slide.active{cursor:default}
     try{
       const es=window.VSTDEventStream('/api/events?deck='+encodeURIComponent(window.VSTD.deck));
       es.addEventListener('reload',()=>{
-        if(Date.now()-(window.__selfSave||0)<2500){/* our own write; DOM is already current */}
-        else if(editMode){toast('Deck changed on disk — finish editing, then reload');}
+        if(selfMutations||Date.now()-(window.__selfSave||0)<10000){/* our own write; DOM is already current */}
+        else if(editMode){
+          dirtyCheck();
+          if(dirtyIds.size)scheduleAutosave(0);
+          else{try{sessionStorage.setItem('vstd_resume_edit','1');}catch(_){}location.reload();}
+        }
         else if(window.__dictating){/* our own writes; DOM is already current */}
-        else if(window.__vlive&&window.__vlive()){toast('Deck changed on disk — reload deferred while Vessica is live');}
+        else if(window.__vlive&&window.__vlive()){toast('Vessica’s updates will appear when the session ends');}
         else if(interactionSurfaceOpen()){
-          deferredReload=true;toast('Deck changed on disk — reload deferred while Sticky or Companion is open');
+          deferredReload=true;toast('Presentation updated elsewhere — keeping your draft open');
         }
         else if(!window.__following){
           // survive the reload in Grid view: stash grid state in the hash so
@@ -1985,7 +2078,7 @@ body.editmode .slide.active{cursor:default}
     const headers={'Content-Type':'text/markdown'};if(hash)headers['X-VSTD-Companion-Hash']=hash;
     const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/companion',{method:'PUT',headers,body:markdown});
     window.__selfSave=Date.now();
-    if(r.status===409){state.textContent='Conflict — reload required';throw new Error('companion changed on disk; reload it before saving');}
+    if(r.status===409){state.textContent='Updated elsewhere';throw new Error('The companion was updated elsewhere. Reopen the presentation to review it before saving.');}
     if(!r.ok)throw new Error('save '+r.status);
     const j=await r.json();hash=j.hash||hash;dirty=false;render(markdown);state.textContent='Saved live';
     if(window.__vreportHostedSync)window.__vreportHostedSync();
@@ -2507,7 +2600,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     try{
       if(!window.__vsaveSlide)return 'save unavailable';
       const res=await window.__vsaveSlide(sec);
-      if(res.status==='conflict')return 'NOT saved: the slide changed on disk after this page loaded — the speaker should reload the deck before more edits';
+      if(res.status==='conflict')return 'NOT saved: the slide was updated elsewhere; reopen the presentation before making more edits';
       return res.status==='ok'?'saved':'save failed';
     }catch(e){return 'save failed: '+e.message;}
   }
@@ -3301,7 +3394,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
 
   function persistSec(sec){
     if(window.__vsaveSlide)return window.__vsaveSlide(sec).then(res=>{
-      if(res&&res.status==='conflict'&&P())P().toast('Not saved — slide changed on disk after this page loaded; reload the deck');
+      if(res&&res.status==='conflict'&&P())P().toast('Not saved — this slide was updated elsewhere. Reopen the presentation to review the latest version.');
       return res;
     });
     if(P()&&P().persistSlide)return P().persistSlide(sec);
