@@ -26,12 +26,25 @@ func TestCloudContentProjectsOnlyCanonicalFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range s.Files {
-		if f.Path == "decks/demo/build/index.html" || f.Path == ".gitignore" {
+		if f.Path == "decks/demo/build/index.html" {
 			t.Fatalf("projected excluded path %q", f.Path)
 		}
 	}
 	if s.Digest == "" || len(s.Files) == 0 {
 		t.Fatal("missing deterministic projection")
+	}
+}
+
+func TestCloudContentAcceptsScaffoldGitignore(t *testing.T) {
+	files := []ContentFile{{Path: "studio.yaml", Content: []byte("port: 4400\n")}, {Path: ".gitignore", Content: []byte("decks/*/build/\n")}}
+	if err := ValidateCloudContent(files); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{".env", ".git/config", "decks/demo/.gitignore"} {
+		bad := append(append([]ContentFile{}, files...), ContentFile{Path: name, Content: []byte("x")})
+		if err := ValidateCloudContent(bad); err == nil {
+			t.Fatalf("accepted %s", name)
+		}
 	}
 }
 

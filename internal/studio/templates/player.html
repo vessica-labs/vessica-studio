@@ -758,13 +758,13 @@ body.editmode .slide.active{cursor:default}
     const entries=await outbox('list');for(const entry of entries){if(pendingOutbox.has(entry.id))continue;pendingOutbox.set(entry.id,true);try{const response=await sendSavedEdit(entry);if(!response.ok)break;}finally{pendingOutbox.delete(entry.id);}}
   }
   setInterval(()=>{writeQueue=writeQueue.catch(()=>{}).then(retrySavedEdits).catch(()=>{});},5000);
-  async function selfFetch(input,init){
+  async function selfFetch(input,init,operation){
     selfMutations++;
     window.__selfSave=Date.now();
     try{
       const req=new Request(input instanceof Request?input:new URL(input,location.href),init);const data=new Uint8Array(await req.arrayBuffer());
       let binary='';for(let i=0;i<data.length;i+=8192)binary+=String.fromCharCode(...data.subarray(i,i+8192));
-      const entry={id:crypto.randomUUID(),url:new URL(req.url).pathname+new URL(req.url).search,method:req.method,headers:Object.fromEntries(req.headers),body:btoa(binary),createdAt:lastEditTime=Math.max(Date.now(),lastEditTime+1)};
+      const entry={id:operation?.id||crypto.randomUUID(),url:new URL(req.url).pathname+new URL(req.url).search,method:req.method,headers:Object.fromEntries(req.headers),body:btoa(binary),createdAt:operation?.createdAt||(lastEditTime=Math.max(Date.now(),lastEditTime+1))};
       await outbox('put',entry);pendingOutbox.set(entry.id,true);pendingSync=true;
       const send=writeQueue.catch(()=>{}).then(async()=>{
         for(const older of await outbox('list')){
@@ -791,6 +791,7 @@ body.editmode .slide.active{cursor:default}
     for(const id of ids){
       const sec=slides.find(x=>x.dataset.vstd===id);
       if(!sec)continue;
+      if(sec.hasAttribute('data-parked')===park)continue;
       if(park)sec.setAttribute('data-parked','1');else sec.removeAttribute('data-parked');
       await persistSlide(sec);
     }
@@ -818,7 +819,7 @@ body.editmode .slide.active{cursor:default}
       }
       ovSel.clear();
       if(!stay)location.hash='#/grid';
-      setTimeout(()=>location.reload(),350);
+      await refreshPresentation();
     }catch(err){toast('Move failed: '+err.message);}
   }
   let ovCols=4;
@@ -1750,11 +1751,16 @@ body.editmode .slide.active{cursor:default}
   const __baseline={};
   slides.forEach(s=>{if(s.dataset.vstd)__baseline[s.dataset.vstd]=cleanSlideHTML(s);});
   const draftKey='vstd-slide-drafts:'+location.pathname;
+  function retainedDraft(drafts,id,base,html){
+    const prior=drafts[id];
+    if(prior?.id&&prior.base===base&&prior.html===html)return prior;
+    return {id:crypto.randomUUID(),createdAt:Date.now(),base,html};
+  }
   function preserveDeviceDrafts(){
     if(!editMode||!canEditDeck())return;
     try{
       const drafts=JSON.parse(localStorage.getItem(draftKey)||'{}');
-      slides.forEach(sec=>{const id=sec.dataset.vstd;if(id&&slideDirty(sec))drafts[id]={base:__baseline[id],html:cleanSlideHTML(sec)};});
+      slides.forEach(sec=>{const id=sec.dataset.vstd;if(id&&slideDirty(sec))drafts[id]=retainedDraft(drafts,id,__baseline[id],cleanSlideHTML(sec));});
       localStorage.setItem(draftKey,JSON.stringify(drafts));
     }catch{/* IndexedDB outbox still reports whether a save can be persisted. */}
   }
@@ -1766,9 +1772,15 @@ body.editmode .slide.active{cursor:default}
     try{
       const drafts=JSON.parse(localStorage.getItem(draftKey)||'{}');
       for(const [id,draft] of Object.entries(drafts)){
-        if(slides.some(s=>s.dataset.vstd===id&&slideDirty(s)))continue;
-        const r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)});
-        if(r.ok){const latest=JSON.parse(localStorage.getItem(draftKey)||'{}');if(latest[id]?.html===draft.html){delete latest[id];localStorage.setItem(draftKey,JSON.stringify(latest));}}
+        const sec=slides.find(s=>s.dataset.vstd===id);
+        // Another tab may not have received this slide yet. It must not turn
+        // that tab's active draft into a new stream of writes.
+        if(!sec||slideDirty(sec))continue;
+        const operation=retainedDraft(drafts,id,draft.base,draft.html);
+        if(!draft.id){drafts[id]=operation;localStorage.setItem(draftKey,JSON.stringify(drafts));}
+        const alreadySaved=cleanSlideHTML(sec)===draft.html;
+        const r=alreadySaved?null:await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({base:draft.base,html:draft.html})},operation);
+        if(alreadySaved||r?.ok){const latest=JSON.parse(localStorage.getItem(draftKey)||'{}');if(latest[id]?.id===operation.id){delete latest[id];localStorage.setItem(draftKey,JSON.stringify(latest));}}
       }
     }catch{/* Retry without discarding the original device draft. */}
   }
@@ -1782,10 +1794,12 @@ body.editmode .slide.active{cursor:default}
     const id=sec.dataset.vstd;
     if(!id||!window.VSTD)return {status:'skip'};
     const html=cleanSlideHTML(sec);
+    let operation;
+    try{const drafts=JSON.parse(localStorage.getItem(draftKey)||'{}');operation=retainedDraft(drafts,id,__baseline[id]||html,html);drafts[id]=operation;localStorage.setItem(draftKey,JSON.stringify(drafts));}catch{}
     const hashes=window.VSTD.hashes||(window.VSTD.hashes={});
     const hdrs={'Content-Type':'application/json'};
     const r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
-      {method:'PUT',headers:hdrs,body:JSON.stringify({base:__baseline[id]||html,html})});
+      {method:'PUT',headers:hdrs,body:JSON.stringify({base:__baseline[id]||html,html})},operation);
     if(r.status===409)return {status:'conflict',id};
     if(!r.ok)return {status:'error',id,code:r.status};
     const j=await r.json().catch(()=>({}));

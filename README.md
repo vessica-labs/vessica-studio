@@ -207,6 +207,10 @@ of background integration. A device outbox retries interrupted requests with
 the same operation ID. Compatible HTML properties, Markdown sections, and deck
 ordering changes merge automatically. Overlapping agent changes yield to direct
 human edits; original submitted checkpoints are retained rather than discarded.
+Device-draft recovery shares the original operation ID with the outbox, including
+across tabs and reloads. Slide reordering updates the canvas without reloading the
+page. The synchronized file contract includes the scaffold's root `.gitignore`;
+credentials, `.git/`, and `.vstd/` remain excluded.
 
 Run `vstd worktree begin --root STUDIO` before agent editing, work in the returned
 directory, then run `vstd worktree finish --root WORKTREE`. These commands sync

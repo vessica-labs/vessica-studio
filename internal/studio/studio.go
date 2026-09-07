@@ -305,10 +305,8 @@ func (s *Studio) SetTitle(deck, id, title string) error {
 	return s.AppendLog(deck, id, fmt.Sprintf("title set to %q via edit API", title))
 }
 
-// MoveSlide renames a slide so it sorts directly after the slide `after`
-// ("" = to the front). Sparse numbering gives room; when two neighbors are
-// adjacent it falls back to renumbering the whole deck at 10-step spacing.
-// Returns the slide's new id.
+// MoveSlide changes slide_order so the slide follows `after` ("" = front).
+// Filenames and the returned slide identity remain stable.
 func (s *Studio) MoveSlide(deck, id, after string) (string, error) {
 	if !ValidDeckName(deck) || !ValidSlideID(id) || (after != "" && !ValidSlideID(after)) {
 		return "", fmt.Errorf("invalid deck/slide id")

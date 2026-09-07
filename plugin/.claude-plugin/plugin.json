@@ -1,6 +1,6 @@
 {
   "name": "vessica-studio",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "Agent-driven presentation building on the Vessica Studio engine (vstd): create, edit, fork, and review HTML decks with companion research files, a generated-image library, and a layout→visual→critic quality loop.",
   "author": { "name": "Vessica Labs" },
   "license": "Apache-2.0",

@@ -87,7 +87,7 @@ func excludedCloudDir(rel string) bool {
 	return rel == ".git" || rel == ".vstd" || rel == "requests" || strings.Contains(rel, "/build") || rel == "library/video" || rel == "library/videos"
 }
 func allowedCloudPath(p string) bool {
-	if p == "studio.yaml" || p == "library/manifest.json" {
+	if p == "studio.yaml" || p == "library/manifest.json" || p == ".gitignore" {
 		return true
 	}
 	parts := strings.Split(p, "/")
@@ -134,7 +134,7 @@ func ValidateCloudContent(files []ContentFile) error {
 		}
 		seen[fold] = true
 		for _, part := range strings.Split(p, "/") {
-			if strings.HasPrefix(part, ".") || strings.TrimRight(part, " .") != part {
+			if (strings.HasPrefix(part, ".") && p != ".gitignore") || strings.TrimRight(part, " .") != part {
 				return fmt.Errorf("unsafe cloud path %q", p)
 			}
 		}
