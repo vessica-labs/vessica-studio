@@ -1971,6 +1971,7 @@ body.editmode .slide.active{cursor:default}
   };
   let deferredReload=false;
   let refreshingPresentation=false;
+  let presentationETag='';
   async function refreshPresentation(){
     if(refreshingPresentation||selfMutations||autosaveInFlight||!window.VSTD||window.__dictating)return;
     if(slides.some(slideDirty)){scheduleAutosave(0);return;}
@@ -1978,10 +1979,11 @@ body.editmode .slide.active{cursor:default}
     refreshingPresentation=true;
     try{
       if((await outbox('list')).length)return;
-      const response=await fetch(location.pathname,{cache:'no-store'});if(!response.ok)return;
+      const response=await fetch(location.pathname,{cache:'no-store',headers:presentationETag?{'If-None-Match':presentationETag}:{}});if(response.status===304||!response.ok)return;
       const doc=new DOMParser().parseFromString(await response.text(),'text/html');
       const next=[...doc.querySelectorAll('#frame > .slide')];if(!next.length)return;
       if(selfMutations||autosaveInFlight||slides.some(slideDirty)||frame.contains(document.activeElement))return;
+      presentationETag=response.headers.get('etag')||'';
       if(next.length===slides.length&&next.every((s,i)=>s.dataset.vstd===slides[i].dataset.vstd&&cleanSlideHTML(s)===cleanSlideHTML(slides[i])))return;
       const active=slides[cur]?.dataset.vstd;
       setSelection([]);

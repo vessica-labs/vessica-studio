@@ -212,6 +212,16 @@ across tabs and reloads. Slide reordering updates the canvas without reloading t
 page. The synchronized file contract includes the scaffold's root `.gitignore`;
 credentials, `.git/`, and `.vstd/` remain excluded.
 
+Cloud visual editing can use `vstd editor-transform`: a bounded JSON input with
+`deck`, canonical `files` (path/base64 content), `method`, `path`, `headers`, and
+base64 `body` produces the HTTP-shaped result and resulting canonical `files`.
+It renders the same embedded HUD and applies the same structured slide and
+companion operations as local Studio. It never starts a listener, executes slide
+scripts, resolves credentials, invokes export tools, or calls providers.
+Unsupported execution routes fail closed; exports and agent work stay isolated.
+The caller owns authorization, durable operation IDs, acknowledgement, and
+reconciliation. Temporary files are scoped to one transform and removed afterward.
+
 Run `vstd worktree begin --root STUDIO` before agent editing, work in the returned
 directory, then run `vstd worktree finish --root WORKTREE`. These commands sync
 connected presentations before/after reconciliation. Add `--local-only` to both

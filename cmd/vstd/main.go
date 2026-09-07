@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.6.1"
+const version = "0.7.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -62,6 +62,8 @@ func main() {
 		err = cmdAgent(args)
 	case "editor-session":
 		err = cmdEditorSession(args)
+	case "editor-transform":
+		err = cmdEditorTransform(args)
 	case "serve":
 		err = cmdServe(args)
 	case "asset":
@@ -109,6 +111,7 @@ Usage:
                                       emit immutable hosted-release artifacts + manifest
   vstd agent                          run one headless redesign-queue sweep
   vstd editor-session [flags]       isolated gateway-authenticated editor transport
+  vstd editor-transform             bounded snapshot/render/visual-edit JSON transform
   vstd serve [deck] [flags]           serve studio (watch, live reload, edit API)
   vstd asset gen --prompt P [flags]   generate a library image (gpt-image-2)
   vstd asset list|find [--tags a,b --family F]   browse/reuse the library
