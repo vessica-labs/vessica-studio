@@ -67,9 +67,16 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`chip.setAttribute('role','status')`,                     // follow state is an indicator, not an audience control
 		`document.dispatchEvent(new CustomEvent('vstd:identity'`, // late-created controls sync after auth resolves
 		`"follow_url":"https://talk.example/follow"`,             // stable laptop entry is available to the QR overlay
-		`id="editRibbon"`,                                        // fixed, shared object-editing ribbon
+		`id="editRibbon"`,                                        // fixed, shared editing ribbon (primary controls while editing)
 		`role="toolbar"`,                                         // accessible PowerPoint-style control surface
-		`id="videoRibbonTools"`,                                  // media options share the same ribbon
+		`id="objectBar"`,                                         // object-specific controls float in under the ribbon on selection
+		`body.editmode.hassel #objectBar`,                        // the object bar only shows while something is selected
+		`id="filmstrip"`,                                         // slide thumbnails dock left while editing
+		`id="saveStatus"`,                                        // save state is an indicator in the ribbon, not a button label
+		`id="vtip"`,                                              // tooltips carry each control's keyboard shortcut
+		`data-key="G"`,                                           // shortcut hints are data, rendered by the tooltip
+		`function hudAction`,                                     // HUD, ribbon, and filmstrip share one action router
+		`id="videoRibbonTools"`,                                  // media options share the same object bar
 		`id="imageRibbonTools"`,                                  // pictures and CSS background images expose crop controls
 		`data-img="crop"`,                                        // crop mode keeps the frame fixed while the image pans
 		`backgroundPosition`,                                     // CSS background pictures can be repositioned in their frame
@@ -77,32 +84,36 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`id="marquee"`,                                           // dragging blank canvas creates a multi-object selection box
 		`selectionBounds`,                                        // multi-selection uses one combined bounding outline
 		`deleteSelection`,                                        // Delete and the ribbon remove every selected object together
+		`duplicateSelection`,                                     // ⌘D duplicates the selection in place
+		`function doRedo`,                                        // ⌘⇧Z redoes the last undone change
 		`shapeKind`,                                              // CSS fills, gradients, borders, and circles are selectable shapes
-		`body.editmode #stage{top:62px}`,                         // ribbon reserves canvas space instead of covering it
-		`data-act="sticky"`,                                      // sticky notes
-		`data-act="companion"`,                                   // companion drawer
-		`data-act="vessica"`,                                     // vessica toggle
-		`data-parked`,                                            // hide/park handling in the runtime
-		`--vstd-green`,                                           // engine-owned chrome tokens
-		`<h1>Hi</h1>`,                                            // slides injected
-		`"deck":"demo"`,                                          // runtime meta injected
-		`.slide{background:#fff}`,                                // theme.css injected
-		`c.removeAttribute('data-vstd')`,                         // engine-only slide id is not persisted
-		`name:'open_companion'`,                                  // Vessica can open the narrative editor
-		`addEventListener('paste'`,                               // clipboard images can be placed on slides
-		`keyTargetIsTextEntry`,                                   // typing surfaces suppress deck hotkeys
-		`pad.addEventListener('keydown'`,                         // Sticky keystrokes cannot bubble to the player
-		`interactionSurfaceOpen()`,                               // background reloads cannot dismiss Sticky or Companion
-		`vstd:interactionend`,                                    // deferred reload resumes only after editing ends
-		`[data-chart-group]>.chart-art`,                          // chart geometry yields selection to its movable group
-		`const HIGHLIGHT_TITLE`,                                  // Vessica has one explicit title-exclusion boundary
-		`chartHighlightTargets()`,                                // accessible chart descriptions and labels become targets
-		`img[alt]`,                                               // legacy image charts can contribute alternate text
-		`Never highlight the slide title`,                        // the realtime agent receives the same hard boundary
-		`highlightables:()=>highlightables()`,                    // browser-level regression tests can inspect target phrases
-		`function applyCurrentMonthYear`,                         // declarative cover dates resolve at runtime
-		`[data-current-month-year]`,                              // slide-authored dynamic month/year field
-		`chipTimer=setTimeout(()=>syncFollowChip(false),3200)`,   // follow intro collapses automatically
+		`body.editmode #stage{top:48px;left:200px`,               // ribbon and filmstrip reserve canvas space instead of covering it
+		`body.editmode #hud,body.editmode #progress{display:none}`, // the bottom HUD yields to the ribbon while editing
+		`--vstd-rail:`,                                         // chrome tokens mirror the Studio Cloud shell
+		`data-act="sticky"`,                                    // sticky notes
+		`data-act="companion"`,                                 // companion drawer
+		`data-act="vessica"`,                                   // vessica toggle
+		`data-parked`,                                          // hide/park handling in the runtime
+		`--vstd-green`,                                         // engine-owned chrome tokens
+		`<h1>Hi</h1>`,                                          // slides injected
+		`"deck":"demo"`,                                        // runtime meta injected
+		`.slide{background:#fff}`,                              // theme.css injected
+		`c.removeAttribute('data-vstd')`,                       // engine-only slide id is not persisted
+		`name:'open_companion'`,                                // Vessica can open the narrative editor
+		`addEventListener('paste'`,                             // clipboard images can be placed on slides
+		`keyTargetIsTextEntry`,                                 // typing surfaces suppress deck hotkeys
+		`pad.addEventListener('keydown'`,                       // Sticky keystrokes cannot bubble to the player
+		`interactionSurfaceOpen()`,                             // background reloads cannot dismiss Sticky or Companion
+		`vstd:interactionend`,                                  // deferred reload resumes only after editing ends
+		`[data-chart-group]>.chart-art`,                        // chart geometry yields selection to its movable group
+		`const HIGHLIGHT_TITLE`,                                // Vessica has one explicit title-exclusion boundary
+		`chartHighlightTargets()`,                              // accessible chart descriptions and labels become targets
+		`img[alt]`,                                             // legacy image charts can contribute alternate text
+		`Never highlight the slide title`,                      // the realtime agent receives the same hard boundary
+		`highlightables:()=>highlightables()`,                  // browser-level regression tests can inspect target phrases
+		`function applyCurrentMonthYear`,                       // declarative cover dates resolve at runtime
+		`[data-current-month-year]`,                            // slide-authored dynamic month/year field
+		`chipTimer=setTimeout(()=>syncFollowChip(false),3200)`, // follow intro collapses automatically
 		`chip.textContent=announce?'● Following live':'● LIVE'`, // compact persistent live state
 		`className='vsound'`,     // video sound control is a durable toggle
 		`.vsound{position:fixed`, // control remains usable when the slide is scaled on mobile

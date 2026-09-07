@@ -809,12 +809,34 @@ when reporting a bug or confirming which engine build a hosted studio runs.
 
 ## Studio and player features
 
-### Direct editing and the top ribbon
+### Direct editing, the ribbon, and the slide panel
 
-In studio mode, select a supported text, shape, image, or chart element on the
-slide. Common formatting and object controls appear in the top ribbon so they do
-not obscure the canvas or run off-screen. Keyboard shortcuts are suppressed
-while typing in sticky notes, companion fields, dialogs, or editable elements.
+Press **E** (or choose **Edit** in the player HUD) to enter edit mode. The
+bottom HUD gives way to a ribbon across the top of the window: home, deck
+title, slide stepper, new slide, grid, agenda, notes, sticky, companion,
+knowledge base, Vessica, a save indicator, download, share, **Present**, and
+**Done**. Every ribbon control shows its name and keyboard shortcut in a
+tooltip on hover or focus. A slide panel on the left lists thumbnails of every
+slide: click one to jump to it, drag one to reorder, and use **New slide** at
+the bottom to insert after the current slide. The panel collapses from its
+header button and remembers that choice.
+
+Select a supported text, shape, image, or chart element on the slide and an
+object bar slides in under the ribbon with the controls that apply to that
+object: edit text, bold, italic, underline, text size, text/fill/line color,
+picture crop and zoom, video playback options, reset, and delete. It disappears
+again when nothing is selected, so the canvas stays clear.
+
+Edit-mode shortcuts: **Enter** edits the selected text, **⌘B / ⌘I / ⌘U** toggle
+bold, italic, and underline, **⌘⇧>** and **⌘⇧<** change text size, **⌘D**
+duplicates the selection, **C** toggles crop on a picture, **Delete** removes
+the selection, arrow keys nudge (Shift for larger steps), **⌥** while dragging
+disables snapping, **⌘Z / ⌘⇧Z** undo and redo, **⌘S** saves now, and **Esc**
+deselects, then leaves edit mode. Keyboard shortcuts are suppressed while typing
+in sticky notes, companion fields, dialogs, or editable elements. Edits are also
+saved automatically when you leave edit mode; the ribbon indicator shows
+**Saved**, **Unsaved**, **Saving…**, or **Conflict** when a slide changed on
+disk after the page loaded.
 
 Pictures include both `<img>` elements and elements whose CSS uses a background
 image. Select a picture and choose **Crop** to drag the image within its fixed
