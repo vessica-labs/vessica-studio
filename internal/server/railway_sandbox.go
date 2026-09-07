@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/cloudworkspace"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"gopkg.in/yaml.v3"
 )
@@ -100,17 +101,27 @@ func (w *agentWorker) validateExecutionBackend() error {
 }
 
 func (w *agentWorker) executeAgent(ctx context.Context, deck, slide, phase, prompt string, images []string) agentExecution {
-	if w.sandbox == "railway" && filepath.Base(w.bin) == "codex" {
-		return w.executeRailwaySandbox(ctx, deck, slide, phase, prompt, images)
+	branch, err := cloudworkspace.BeginBranch(w.s.St.Root)
+	if err != nil {
+		return agentExecution{Err: err}
 	}
-	cmd := agentCommandWithImages(ctx, w.bin, w.s.St.Root, prompt, images)
-	out, err := cmd.CombinedOutput()
-	return agentExecution{Output: out, Err: err}
+	prompt = strings.ReplaceAll(prompt, w.s.St.Root, branch.Root)
+	var result agentExecution
+	if w.sandbox == "railway" && filepath.Base(w.bin) == "codex" {
+		result = w.executeRailwaySandbox(ctx, branch.Root, deck, slide, phase, prompt, images)
+	} else {
+		cmd := agentCommandWithImages(ctx, w.bin, branch.Root, prompt, images)
+		result.Output, result.Err = cmd.CombinedOutput()
+	}
+	if result.Err == nil {
+		result.Err = cloudworkspace.FinishBranch(branch.Root)
+	}
+	return result
 }
 
-func (w *agentWorker) executeRailwaySandbox(ctx context.Context, deck, slide, phase, prompt string, images []string) agentExecution {
+func (w *agentWorker) executeRailwaySandbox(ctx context.Context, root, deck, slide, phase, prompt string, images []string) agentExecution {
 	enginePath, _ := os.Executable()
-	inputs, remoteImages, err := collectRailwaySandboxInputs(w.s.St.Root, deck, slide, images, enginePath)
+	inputs, remoteImages, err := collectRailwaySandboxInputs(root, deck, slide, images, enginePath)
 	if err != nil {
 		return agentExecution{Err: fmt.Errorf("prepare Railway sandbox: %w", err)}
 	}
@@ -188,7 +199,7 @@ func (w *agentWorker) executeRailwaySandbox(ctx context.Context, deck, slide, ph
 		}
 		return agentExecution{Output: out, Err: fmt.Errorf("Railway sandbox agent exited %d", code), SandboxID: result.SandboxID}
 	}
-	if err := applyRailwaySandboxChanges(w.s.St.Root, deck, resultDir, inputs, result.Changes); err != nil {
+	if err := applyRailwaySandboxChanges(root, deck, resultDir, inputs, result.Changes); err != nil {
 		return agentExecution{Output: out, Err: fmt.Errorf("apply Railway sandbox result: %w", err), SandboxID: result.SandboxID}
 	}
 	return agentExecution{Output: out, SandboxID: result.SandboxID}

@@ -699,7 +699,7 @@ body.editmode .slide.active{cursor:default}
 
   // Agenda always contains every usable page. Authored menu/section labels win;
   // otherwise fall back to the first visible heading and finally the page number.
-  slides.forEach((s,i)=>{
+  function buildAgenda(){menulist.innerHTML='';slides.forEach((s,i)=>{
     if(s.hasAttribute('data-parked'))return;
     const h=s.querySelector('.s-title,h1,h2,h3');
     const heading=h&&h.textContent&&h.textContent.trim();
@@ -709,7 +709,8 @@ body.editmode .slide.active{cursor:default}
     a.lastChild.textContent=label;
     a.addEventListener('click',()=>{menu.classList.remove('open');show(i);});
     menulist.appendChild(a);
-  });
+  });}
+  buildAgenda();
 
   // overview grid (rebuilt each open so edits show up)
   let dragSrc=null;
@@ -727,10 +728,54 @@ body.editmode .slide.active{cursor:default}
   });
   function selOrdered(){return slides.filter(x=>ovSel.has(x.dataset.vstd)).map(x=>x.dataset.vstd);}
   let selfMutations=0;
+  const originalFetch=window.fetch.bind(window);
+  let writeQueue=Promise.resolve();
+  const pendingOutbox=new Map();
+  let lastEditTime=0;
+  let pendingSync=false;
+  const outboxReplies=new Map();
+  addEventListener('message',event=>{if(event.source!==parent||!event.data||event.data.type!=='vstd:outbox-result')return;const handler=outboxReplies.get(event.data.id);if(handler){outboxReplies.delete(event.data.id);event.data.error?handler.reject(Error(event.data.error)):handler.resolve(event.data.result);}});
+  let localOutboxDB;
+  async function outbox(action,entry,operationId){
+    if(parent!==window)return new Promise((resolve,reject)=>{const id=crypto.randomUUID();const timer=setTimeout(()=>{outboxReplies.delete(id);reject(Error('Device save unavailable'));},8000);outboxReplies.set(id,{resolve:v=>{clearTimeout(timer);resolve(v);},reject:e=>{clearTimeout(timer);reject(e);}});parent.postMessage({type:'vstd:outbox',id,action,entry,operationId},'*');});
+    if(!localOutboxDB)localOutboxDB=new Promise((resolve,reject)=>{const req=indexedDB.open('vstd-local-outbox',1);req.onupgradeneeded=()=>req.result.createObjectStore('edits',{keyPath:'id'});req.onsuccess=()=>resolve(req.result);req.onerror=()=>reject(req.error);});
+    const db=await localOutboxDB,scope=location.pathname;
+    return new Promise((resolve,reject)=>{const tx=db.transaction('edits',action==='list'?'readonly':'readwrite'),store=tx.objectStore('edits');let value=true;
+      if(action==='put')store.put({...entry,scope});if(action==='delete')store.delete(operationId);
+      if(action==='list'){const req=store.getAll();req.onsuccess=()=>{value=req.result.filter(x=>x.scope===scope&&!x.failed).sort((a,b)=>a.createdAt-b.createdAt);};}
+      tx.oncomplete=()=>resolve(value);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error);
+    });
+  }
+  async function sendSavedEdit(entry){
+    const body=Uint8Array.from(atob(entry.body),c=>c.charCodeAt(0));
+    const response=await originalFetch(entry.url,{method:entry.method,headers:{...entry.headers,'X-VSTD-Operation-ID':entry.id},body});
+    if(response.ok){await outbox('delete',null,entry.id);pendingOutbox.delete(entry.id);pendingSync=false;}
+    else if([400,413,422].includes(response.status))await outbox('put',{...entry,failed:true});
+    return response;
+  }
+  async function retrySavedEdits(){
+    if(!window.VSTD||!canEditDeck())return;
+    const entries=await outbox('list');for(const entry of entries){if(pendingOutbox.has(entry.id))continue;pendingOutbox.set(entry.id,true);try{const response=await sendSavedEdit(entry);if(!response.ok)break;}finally{pendingOutbox.delete(entry.id);}}
+  }
+  setInterval(()=>{writeQueue=writeQueue.catch(()=>{}).then(retrySavedEdits).catch(()=>{});},5000);
   async function selfFetch(input,init){
     selfMutations++;
     window.__selfSave=Date.now();
-    try{return await fetch(input,init);}
+    try{
+      const req=new Request(input instanceof Request?input:new URL(input,location.href),init);const data=new Uint8Array(await req.arrayBuffer());
+      let binary='';for(let i=0;i<data.length;i+=8192)binary+=String.fromCharCode(...data.subarray(i,i+8192));
+      const entry={id:crypto.randomUUID(),url:new URL(req.url).pathname+new URL(req.url).search,method:req.method,headers:Object.fromEntries(req.headers),body:btoa(binary),createdAt:lastEditTime=Math.max(Date.now(),lastEditTime+1)};
+      await outbox('put',entry);pendingOutbox.set(entry.id,true);pendingSync=true;
+      const send=writeQueue.catch(()=>{}).then(async()=>{
+        for(const older of await outbox('list')){
+          if(older.id===entry.id)break;
+          if(!(await sendSavedEdit(older)).ok)throw Error('Saved on this device; waiting to sync');
+        }
+        return sendSavedEdit(entry);
+      });writeQueue=send.catch(()=>{});
+      try{return await send;}finally{pendingOutbox.delete(entry.id);}
+    }
+    catch(_){return new Response('{"error":"Save pending; automatic retry is active"}',{status:503,headers:{'Content-Type':'application/json'}});}
     finally{selfMutations--;window.__selfSave=Date.now();}
   }
   async function moveSeq(ids,after){
@@ -940,12 +985,12 @@ body.editmode .slide.active{cursor:default}
   function setSaveStatus(state){
     const el=document.getElementById('saveStatus');if(!el)return;
     el.className=state;
-    el.querySelector('.txt').textContent={saved:'Saved',unsaved:'Unsaved',saving:'Saving…',conflict:'Save conflict'}[state]||'Saved';
-    el.dataset.tip=state==='conflict'?'This slide was updated elsewhere; reopen it to review the latest version':'Save now';
+    el.querySelector('.txt').textContent={saved:pendingSync?'Saved on device':'Saved',unsaved:pendingSync?'Saved on device':'Unsaved',saving:'Saving…',conflict:'Syncing…'}[state]||'Saved';
+    el.dataset.tip=pendingSync?'Your device copy is retained; Cloud sync retries automatically':'Save now';
   }
   function scheduleAutosave(delay){
     if(!editMode||!canEditDeck())return;
-    clearTimeout(autosaveTimer);autosaveTimer=setTimeout(()=>{void autosaveNow();},delay==null?2000:delay);
+    clearTimeout(autosaveTimer);autosaveTimer=setTimeout(()=>{void autosaveNow();},delay==null?300:delay);
   }
   async function autosaveNow(){
     if(!editMode||!canEditDeck())return;
@@ -955,7 +1000,7 @@ body.editmode .slide.active{cursor:default}
       try{
         const out=await saveDirty();
         if(out.conflicts.length){setSaveStatus('conflict');reportSave(out,'',true);}
-        else if(out.errors.length){setSaveStatus('unsaved');reportSave(out,'',true);}
+        else if(out.errors.length){setSaveStatus('unsaved');}
         else{dirtyIds.clear();setSaveStatus('saved');dirtyCheck();}
         return out;
       }catch(_){setSaveStatus('unsaved');return null;}
@@ -1264,6 +1309,7 @@ body.editmode .slide.active{cursor:default}
   function insertObject(el){
     if(!editMode||!canEditDeck())return;
     const sec=slides[cur];if(!sec)return;
+    el.dataset.vstdId=crypto.randomUUID();
     pushUndo();sec.appendChild(el);selectEl(el);refreshThumb(cur);dirtyCheck();scheduleAutosave();
   }
   function addTextBox(){
@@ -1675,6 +1721,7 @@ body.editmode .slide.active{cursor:default}
     stopTextEdit();pushUndo();
     const clones=selEls.map(el=>{
       const c=el.cloneNode(true);c.removeAttribute('contenteditable');
+      [c,...c.querySelectorAll('[id],[data-vstd-id]')].forEach(node=>{node.removeAttribute('id');node.dataset.vstdId=crypto.randomUUID();});
       el.insertAdjacentElement('afterend',c);
       const [x,y]=getTx(el);keepOrig(c);setTx(c,x+24,y+24);
       return c;
@@ -1702,30 +1749,59 @@ body.editmode .slide.active{cursor:default}
   // ONLY slides the user actually changed, instead of rewriting the whole deck.
   const __baseline={};
   slides.forEach(s=>{if(s.dataset.vstd)__baseline[s.dataset.vstd]=cleanSlideHTML(s);});
+  const draftKey='vstd-slide-drafts:'+location.pathname;
+  function preserveDeviceDrafts(){
+    if(!editMode||!canEditDeck())return;
+    try{
+      const drafts=JSON.parse(localStorage.getItem(draftKey)||'{}');
+      slides.forEach(sec=>{const id=sec.dataset.vstd;if(id&&slideDirty(sec))drafts[id]={base:__baseline[id],html:cleanSlideHTML(sec)};});
+      localStorage.setItem(draftKey,JSON.stringify(drafts));
+    }catch{/* IndexedDB outbox still reports whether a save can be persisted. */}
+  }
+  document.getElementById('frame').addEventListener('input',()=>{preserveDeviceDrafts();scheduleAutosave(0);});
+  const draftObserver=new MutationObserver(preserveDeviceDrafts);
+  draftObserver.observe(document.getElementById('frame'),{subtree:true,childList:true,characterData:true,attributes:true});
+  async function recoverDeviceDrafts(){
+    if(!window.VSTD||!canEditDeck())return;
+    try{
+      const drafts=JSON.parse(localStorage.getItem(draftKey)||'{}');
+      for(const [id,draft] of Object.entries(drafts)){
+        if(slides.some(s=>s.dataset.vstd===id&&slideDirty(s)))continue;
+        const r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(draft)});
+        if(r.ok){const latest=JSON.parse(localStorage.getItem(draftKey)||'{}');if(latest[id]?.html===draft.html){delete latest[id];localStorage.setItem(draftKey,JSON.stringify(latest));}}
+      }
+    }catch{/* Retry without discarding the original device draft. */}
+  }
+  setInterval(()=>{void recoverDeviceDrafts();},5000);
   function slideDirty(sec){
     const id=sec.dataset.vstd;
     return !!id&&cleanSlideHTML(sec)!==__baseline[id];
   }
-  // Save one slide, guarded: sends the fragment hash this page was built from
-  // (X-VSTD-Base-Hash); the engine 409s if the file changed since — a stale
-  // tab can no longer silently clobber a redesign that landed after it loaded.
+  // Save a delta from the visible baseline; the engine reconciles concurrent edits.
   async function saveSlide(sec,options){
     const id=sec.dataset.vstd;
     if(!id||!window.VSTD)return {status:'skip'};
     const html=cleanSlideHTML(sec);
     const hashes=window.VSTD.hashes||(window.VSTD.hashes={});
-    const hdrs={'Content-Type':'text/html'};
-    if(hashes[id])hdrs['X-VSTD-Base-Hash']=hashes[id];
+    const hdrs={'Content-Type':'application/json'};
     const r=await selfFetch('/api/deck/'+window.VSTD.deck+'/slide/'+id+'/fragment',
-      {method:'PUT',headers:hdrs,body:html,keepalive:!!(options&&options.keepalive)});
+      {method:'PUT',headers:hdrs,body:JSON.stringify({base:__baseline[id]||html,html})});
     if(r.status===409)return {status:'conflict',id};
     if(!r.ok)return {status:'error',id,code:r.status};
     const j=await r.json().catch(()=>({}));
     if(j.hash)hashes[id]=j.hash;
     __baseline[id]=html;
+    try{const drafts=JSON.parse(localStorage.getItem(draftKey)||'{}');if(drafts[id]?.html===html){delete drafts[id];localStorage.setItem(draftKey,JSON.stringify(drafts));}}catch{}
     return {status:'ok',id};
   }
   window.__vsaveSlide=saveSlide;
+  window.__vwrite=selfFetch;
+  window.fetch=(input,init)=>{
+    const url=new URL(typeof input==='string'||input instanceof URL?input:input.url,location.href);
+    const method=(init?.method||(input instanceof Request?input.method:'GET')).toUpperCase();
+    if(url.origin===location.origin&&url.pathname.startsWith('/api/deck/')&&!url.pathname.endsWith('/presenting')&&!['GET','HEAD'].includes(method))return selfFetch(input,init);
+    return originalFetch(input,init);
+  };
   async function saveDirty(options){
     const out={saved:0,conflicts:[],errors:[]};
     const dirty=[...document.querySelectorAll('#frame > .slide')].filter(s=>s.dataset.vstd&&slideDirty(s));
@@ -1746,6 +1822,7 @@ body.editmode .slide.active{cursor:default}
   }
   function flushAutosave(){
     if(!editMode||!canEditDeck())return;
+    preserveDeviceDrafts();
     clearTimeout(autosaveTimer);
     if(autosaveInFlight)return;
     void saveDirty({keepalive:true});
@@ -1879,6 +1956,30 @@ body.editmode .slide.active{cursor:default}
     fetch('/api/observability/openai-usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck,source:source||'realtime',model:rt.model||'gpt-realtime-2',response_id:response.id||'',input_tokens:input,output_tokens:output,cached_input_tokens:cached,total_tokens:total}),keepalive:true}).catch(()=>{});
   };
   let deferredReload=false;
+  let refreshingPresentation=false;
+  async function refreshPresentation(){
+    if(refreshingPresentation||selfMutations||autosaveInFlight||!window.VSTD||window.__dictating)return;
+    if(slides.some(slideDirty)){scheduleAutosave(0);return;}
+    if(interactionSurfaceOpen()||frame.contains(document.activeElement))return;
+    refreshingPresentation=true;
+    try{
+      if((await outbox('list')).length)return;
+      const response=await fetch(location.pathname,{cache:'no-store'});if(!response.ok)return;
+      const doc=new DOMParser().parseFromString(await response.text(),'text/html');
+      const next=[...doc.querySelectorAll('#frame > .slide')];if(!next.length)return;
+      if(selfMutations||autosaveInFlight||slides.some(slideDirty)||frame.contains(document.activeElement))return;
+      if(next.length===slides.length&&next.every((s,i)=>s.dataset.vstd===slides[i].dataset.vstd&&cleanSlideHTML(s)===cleanSlideHTML(slides[i])))return;
+      const active=slides[cur]?.dataset.vstd;
+      setSelection([]);
+      slides.forEach(s=>s.remove());frame.prepend(...next);slides.splice(0,slides.length,...next);
+      slides.forEach(s=>{if(s.dataset.vstd)__baseline[s.dataset.vstd]=cleanSlideHTML(s);});
+      cur=Math.max(0,slides.findIndex(s=>s.dataset.vstd===active));
+      if(editMode)slides.forEach(s=>s.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable')));
+      buildAgenda();buildFilm();if(overview.classList.contains('open'))buildOv();show(cur);dirtyCheck();
+    }catch{/* A network failure leaves the current canvas and durable outbox intact. */}
+    finally{refreshingPresentation=false;}
+  }
+  setInterval(()=>{if(canEditDeck())void refreshPresentation();},4000);
   function interactionSurfaceOpen(){
     const sticky=document.getElementById('stickyPad');
     const companion=document.getElementById('companionDrawer');
@@ -1896,6 +1997,7 @@ body.editmode .slide.active{cursor:default}
     try{
       const es=window.VSTDEventStream('/api/events?deck='+encodeURIComponent(window.VSTD.deck));
       es.addEventListener('reload',()=>{
+        if(canEditDeck()){void refreshPresentation();return;}
         if(selfMutations||Date.now()-(window.__selfSave||0)<10000){/* our own write; DOM is already current */}
         else if(editMode){
           dirtyCheck();
@@ -2074,13 +2176,14 @@ body.editmode .slide.active{cursor:default}
   async function ensureLoaded(){const id=currentId();if(!id)throw new Error('no current slide');if(slideId!==id||!markdown){if(loading)await loading;else{loading=load(id).finally(()=>loading=null);await loading;}}}
   async function save(){
     if(!editable())throw new Error('read-only mode');await ensureLoaded();
-    markdown=ta.value;state.textContent='Saving…';window.__selfSave=Date.now();
-    const headers={'Content-Type':'text/markdown'};if(hash)headers['X-VSTD-Companion-Hash']=hash;
-    const r=await fetch('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/companion',{method:'PUT',headers,body:markdown});
+    const edited=ta.value;state.textContent='Saving…';window.__selfSave=Date.now();
+    const headers={'Content-Type':'application/json'};
+    const r=await window.__vwrite('/api/deck/'+window.VSTD.deck+'/slide/'+slideId+'/companion',{method:'PUT',headers,body:JSON.stringify({base:markdown,markdown:edited})});
     window.__selfSave=Date.now();
     if(r.status===409){state.textContent='Updated elsewhere';throw new Error('The companion was updated elsewhere. Reopen the presentation to review it before saving.');}
     if(!r.ok)throw new Error('save '+r.status);
-    const j=await r.json();hash=j.hash||hash;dirty=false;render(markdown);state.textContent='Saved live';
+    const j=await r.json();hash=j.hash||hash;markdown=j.markdown??edited;
+    if(ta.value===edited)ta.value=markdown;dirty=ta.value!==markdown;render(ta.value);state.textContent=dirty?'Saving…':'Saved';
     if(window.__vreportHostedSync)window.__vreportHostedSync();
     return 'companion saved';
   }

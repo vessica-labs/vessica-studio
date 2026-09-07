@@ -1,6 +1,6 @@
 {
   "name": "vessica-studio",
-  "version": "0.5.1",
+  "version": "0.6.0",
   "description": "Agent-driven presentation building on the Vessica Studio engine: create, edit, fork, refresh, and review file-native decks.",
   "author": {
     "name": "Vessica Labs",

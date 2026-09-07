@@ -188,10 +188,11 @@ vstd cloud workspace sync --message "Update product story"
 ```
 
 `status` reports the recorded base revision, Cloud head, and whether the local
-files are synchronized, unsynced, conflicted, or offline. `pull` refuses to
-replace unsynced local content. `sync` compares against the recorded base; if
-the Cloud head advanced, it reports a conflict and preserves both the local
-files and remote head for manual reconciliation.
+files are synchronized, unsynced, behind Cloud, or offline. Both `pull` and
+`sync` checkpoint local work, reconcile against the latest Cloud version, and
+update the local files directly. No GitHub repository or Git credentials are
+needed for presentation storage. Cloud uses Postgres for durable writer journals
+and revision heads, and private object storage for immutable source checkpoints.
 
 Publish the current synchronized revision, or select a revision explicitly:
 
@@ -201,15 +202,22 @@ vstd cloud publish create --revision REVISION_ID
 vstd cloud publish status PUBLICATION_ID
 ```
 
-After a sync conflict, inspect the remote head (for example, clone it to a separate
-directory) and reconcile the paired files locally. Acknowledge the exact recorded
-conflict head with `vstd cloud workspace sync --resolve-head REVISION_ID`; the
-server still rejects the operation if that head has changed again. Reconnecting
-an already connected studio is refused so it cannot silently reset the base.
+Browser writes are acknowledged after durable Cloud persistence, independently
+of background integration. A device outbox retries interrupted requests with
+the same operation ID. Compatible HTML properties, Markdown sections, and deck
+ordering changes merge automatically. Overlapping agent changes yield to direct
+human edits; original submitted checkpoints are retained rather than discarded.
+
+Run `vstd worktree begin --root STUDIO` before agent editing, work in the returned
+directory, then run `vstd worktree finish --root WORKTREE`. These commands sync
+connected presentations before/after reconciliation. Add `--local-only` to both
+commands for fully offline work. Worktrees and checkpoints remain under `.vstd/`.
+`vstd serve` synchronizes connected local workspaces every two seconds while
+running; otherwise run sync before opening files to fetch Cloud changes.
 
 Pull keeps a durable, private local recovery journal before replacing files. If
-interrupted, studio operations fail closed. Stop other writers, then run
-`vstd cloud workspace recover --root DIR` to restore the pre-pull projection.
+interrupted, the next sync restores the pre-pull projection before reconciliation.
+`vstd cloud workspace recover --root DIR` is also available for offline recovery.
 Do not delete the recovery journal manually. Unrelated Git and local state are
 preserved. Directory durability depends on the host filesystem (Windows lacks
 directory fsync); recovery is not a substitute for backups.

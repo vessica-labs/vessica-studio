@@ -10,9 +10,11 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/vessica-labs/vessica-studio/internal/cloud"
+	"github.com/vessica-labs/vessica-studio/internal/reconcile"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
@@ -25,8 +27,9 @@ type Cloud interface {
 	Sync(context.Context, string, cloud.SyncRequest) (cloud.Revision, error)
 }
 type Manager struct {
-	Cloud    Cloud
-	Endpoint string
+	PreferCurrent bool
+	Cloud         Cloud
+	Endpoint      string
 }
 type Association struct {
 	Version                int    `json:"version"`
@@ -116,6 +119,10 @@ func saveAssociation(root string, a Association) error {
 	}
 	defer os.Remove(tmp.Name())
 	if _, err := tmp.Write(b); err != nil {
+		tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
 		tmp.Close()
 		return err
 	}
@@ -230,100 +237,175 @@ func (m Manager) Status(ctx context.Context, root string) (Status, error) {
 	}
 	return out, nil
 }
+
+// Pull is a two-way synchronization: local work is checkpointed and reconciled.
 func (m Manager) Pull(ctx context.Context, root string) error {
-	a, err := m.Association(root)
-	if err != nil {
-		return err
-	}
-	before, err := studio.CloudContent(root)
-	if err != nil {
-		return err
-	}
-	if before.Digest != a.BaseDigest {
-		return ErrLocalChanges
-	}
-	w, err := m.Cloud.Workspace(ctx, a.WorkspaceID)
-	if err != nil {
-		return err
-	}
-	if w.ID != a.WorkspaceID || !idRE.MatchString(w.HeadRevisionID) {
-		return fmt.Errorf("cloud returned an ambiguous workspace")
-	}
-	if w.HeadRevisionID == a.BaseRevisionID {
-		return nil
-	}
-	r, err := m.Cloud.Revision(ctx, a.WorkspaceID, w.HeadRevisionID)
-	if err != nil {
-		return err
-	}
-	if r.ID != w.HeadRevisionID || (r.WorkspaceID != "" && r.WorkspaceID != a.WorkspaceID) {
-		return fmt.Errorf("cloud returned an ambiguous revision")
-	}
-	again, err := studio.CloudContent(root)
-	if err != nil {
-		return err
-	}
-	if again.Digest != before.Digest {
-		return ErrLocalChanges
-	}
-	if err := studio.ApplyCloudContent(root, contentFiles(r.Files)); err != nil {
-		return err
-	}
-	after, err := studio.CloudContent(root)
-	if err != nil {
-		return err
-	}
-	a.BaseRevisionID = w.HeadRevisionID
-	a.BaseDigest = after.Digest
-	a.ConflictHeadRevisionID = ""
-	return saveAssociation(root, a)
+	_, err := m.Sync(ctx, root, "Synced local and cloud changes")
+	return err
 }
 func (m Manager) Sync(ctx context.Context, root, message string) (cloud.Revision, error) {
-	return m.SyncResolved(ctx, root, message, "")
-}
-
-// SyncResolved explicitly acknowledges the recorded head after manual reconciliation.
-// It never advances the association until compare-and-create succeeds remotely.
-func (m Manager) SyncResolved(ctx context.Context, root, message, acknowledgedHead string) (cloud.Revision, error) {
-	a, err := m.Association(root)
+	unlockSync, err := studio.LockContent(root, "cloud-sync")
 	if err != nil {
 		return cloud.Revision{}, err
 	}
-	if acknowledgedHead != "" {
-		if !idRE.MatchString(acknowledgedHead) || acknowledgedHead != a.ConflictHeadRevisionID {
-			return cloud.Revision{}, fmt.Errorf("acknowledge the exact recorded conflict head after reconciling local files")
+	defer unlockSync()
+	unlock, err := studio.LockContent(root, "content")
+	if err != nil {
+		return cloud.Revision{}, err
+	}
+	locked := true
+	defer func() {
+		if locked {
+			unlock()
 		}
-		a.BaseRevisionID = acknowledgedHead
+	}()
+	if err := studio.RecoverCloudContent(root); err != nil {
+		return cloud.Revision{}, err
+	}
+	a, err := m.Association(root)
+	if err != nil {
+		return cloud.Revision{}, err
 	}
 	s, err := studio.CloudContent(root)
 	if err != nil {
 		return cloud.Revision{}, err
 	}
-	op := sha256.Sum256([]byte(a.WorkspaceID + "\x00" + a.BaseRevisionID + "\x00" + s.Digest + "\x00" + message))
-	r, err := m.Cloud.Sync(ctx, a.WorkspaceID, cloud.SyncRequest{BaseRevisionID: a.BaseRevisionID, Files: wireFiles(s.Files), Message: message, OperationID: hex.EncodeToString(op[:])})
-	if err != nil {
-		var c *cloud.ConflictError
-		if errors.As(err, &c) && idRE.MatchString(c.CloudHeadRevisionID) {
-			a.ConflictHeadRevisionID = c.CloudHeadRevisionID
-			_ = saveAssociation(root, a)
-		}
+	op := sha256.Sum256([]byte(fmt.Sprintf("%s\x00%s\x00%s\x00%s\x00%t", a.WorkspaceID, a.BaseRevisionID, s.Digest, message, m.PreferCurrent)))
+	operation := hex.EncodeToString(op[:])
+	if err := checkpoint(root, operation, s.Files); err != nil {
 		return cloud.Revision{}, err
 	}
-	if !idRE.MatchString(r.ID) || (r.WorkspaceID != "" && r.WorkspaceID != a.WorkspaceID) || (r.ParentID != "" && r.ParentID != a.BaseRevisionID) {
-		return cloud.Revision{}, fmt.Errorf("cloud returned an ambiguous revision")
+	unlock()
+	locked = false
+	var revision cloud.Revision
+	if s.Digest == a.BaseDigest {
+		w, e := m.Cloud.Workspace(ctx, a.WorkspaceID)
+		if e != nil {
+			return revision, e
+		}
+		if w.ID != a.WorkspaceID || !idRE.MatchString(w.HeadRevisionID) {
+			return revision, fmt.Errorf("invalid cloud head")
+		}
+		revision, err = m.Cloud.Revision(ctx, a.WorkspaceID, w.HeadRevisionID)
+	} else {
+		writerKind := "human"
+		if m.PreferCurrent {
+			writerKind = "agent"
+		}
+		revision, err = m.Cloud.Sync(ctx, a.WorkspaceID, cloud.SyncRequest{WriterKind: writerKind, BaseRevisionID: a.BaseRevisionID, Files: wireFiles(s.Files), Message: message, OperationID: operation})
+		if err == nil && len(revision.Files) == 0 {
+			revision, err = m.Cloud.Revision(ctx, a.WorkspaceID, revision.ID)
+		}
 	}
+	if err != nil {
+		return cloud.Revision{}, err
+	}
+	if !idRE.MatchString(revision.ID) || (revision.WorkspaceID != "" && revision.WorkspaceID != a.WorkspaceID) {
+		return cloud.Revision{}, fmt.Errorf("ambiguous cloud revision")
+	}
+	remote := contentFiles(revision.Files)
+	if err := studio.ValidateCloudContent(remote); err != nil {
+		return cloud.Revision{}, err
+	}
+	unlock, err = studio.LockContent(root, "content")
+	if err != nil {
+		return cloud.Revision{}, err
+	}
+	locked = true
 	again, err := studio.CloudContent(root)
 	if err != nil {
 		return cloud.Revision{}, err
 	}
+	incoming := remote
 	if again.Digest != s.Digest {
-		return cloud.Revision{}, ErrLocalChanges
+		// New edits made during the network request are a separate local delta.
+		if err := checkpoint(root, operation+"-during-sync", again.Files); err != nil {
+			return cloud.Revision{}, err
+		}
+		result, e := reconcile.Merge(reconcile.Input{Base: mergeSnapshot(s.Files), Incoming: mergeSnapshot(again.Files), Current: mergeSnapshot(remote)})
+		if e != nil {
+			return cloud.Revision{}, e
+		}
+		incoming = make([]studio.ContentFile, len(result.Files))
+		for i, f := range result.Files {
+			incoming[i] = studio.ContentFile{Path: f.Path, Content: f.Content, Mode: f.Mode}
+		}
 	}
-	a.BaseRevisionID = r.ID
-	a.BaseDigest = s.Digest
+	incomingDigest, err := studio.ContentDigest(incoming)
+	if err != nil {
+		return cloud.Revision{}, err
+	}
+	if incomingDigest != again.Digest {
+		if err := studio.ApplyCloudContent(root, incoming); err != nil {
+			return cloud.Revision{}, err
+		}
+	}
+	digest, err := studio.ContentDigest(remote)
+	if err != nil {
+		return cloud.Revision{}, err
+	}
+	a.BaseRevisionID = revision.ID
+	a.BaseDigest = digest
 	a.ConflictHeadRevisionID = ""
 	if err := saveAssociation(root, a); err != nil {
 		return cloud.Revision{}, err
 	}
-	return r, nil
+	return revision, nil
+}
+
+func mergeSnapshot(files []studio.ContentFile) reconcile.Snapshot {
+	s := reconcile.Snapshot{Files: make([]reconcile.File, len(files))}
+	for i, f := range files {
+		s.Files[i] = reconcile.File{Path: f.Path, Content: f.Content, Mode: f.Mode}
+	}
+	return s
+}
+
+// A durable local checkpoint exists before any network or replacement operation.
+func checkpoint(root, id string, files []studio.ContentFile) error {
+	relative := ".vstd/checkpoints/" + id + ".json"
+	if err := studio.CheckContentPath(root, relative); err != nil {
+		return err
+	}
+	target := filepath.Join(root, relative)
+	if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+		return err
+	}
+	data, err := json.Marshal(files)
+	if err != nil {
+		return err
+	}
+	digest := sha256.Sum256(data)
+	target = filepath.Join(filepath.Dir(target), id+"-"+hex.EncodeToString(digest[:])+".json")
+	if existing, err := os.ReadFile(target); err == nil && string(existing) == string(data) {
+		return nil
+	}
+	f, err := os.CreateTemp(filepath.Dir(target), ".checkpoint-")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(f.Name())
+	if _, err = f.Write(data); err != nil {
+		f.Close()
+		return err
+	}
+	if err = f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	if err := os.Rename(f.Name(), target); err != nil {
+		return err
+	}
+	if runtime.GOOS == "windows" {
+		return nil // File data is flushed above; directory handles cannot be synced here.
+	}
+	dir, err := os.Open(filepath.Dir(target))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	return dir.Sync()
 }

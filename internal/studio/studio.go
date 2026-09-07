@@ -50,6 +50,7 @@ type Config struct {
 
 // DeckMeta is deck.yaml inside a deck directory.
 type DeckMeta struct {
+	SlideOrder   []string          `yaml:"slide_order,omitempty"`
 	Title        string            `yaml:"title"`
 	Theme        string            `yaml:"theme"`
 	Visibility   string            `yaml:"visibility"`
@@ -177,6 +178,25 @@ func (s *Studio) SlideIDs(deck string) ([]string, error) {
 		out = append(out, id)
 	}
 	sort.Strings(out)
+	if meta, err := s.LoadDeckMeta(deck); err == nil && len(meta.SlideOrder) > 0 {
+		available := map[string]bool{}
+		for _, id := range out {
+			available[id] = true
+		}
+		ordered := make([]string, 0, len(out))
+		for _, id := range meta.SlideOrder {
+			if available[id] {
+				ordered = append(ordered, id)
+				delete(available, id)
+			}
+		}
+		for _, id := range out {
+			if available[id] {
+				ordered = append(ordered, id)
+			}
+		}
+		out = ordered
+	}
 	return out, nil
 }
 
@@ -325,24 +345,17 @@ func (s *Studio) MoveSlide(deck, id, after string) (string, error) {
 			return "", fmt.Errorf("slide %q not found", after)
 		}
 	}
-	slug := id[strings.Index(id, "-")+1:]
-	prev, next := "", ""
-	if pos > 0 {
-		prev = rest[pos-1]
-	}
-	if pos < len(rest) {
-		next = rest[pos]
-	}
-	if p := midPrefix(prev, next); p != "" {
-		newID := p + "-" + slug
-		if err := s.renameSlide(deck, id, newID); err != nil {
-			return "", err
-		}
-		return newID, nil
-	}
-	// no room — renumber the whole deck with the moved slide in place
+	// Order is metadata, never a rename: concurrent text edits retain identity.
 	order := append(append(append([]string{}, rest[:pos]...), id), rest[pos:]...)
-	return s.renumber(deck, order, id)
+	meta, err := s.LoadDeckMeta(deck)
+	if err != nil {
+		return "", err
+	}
+	meta.SlideOrder = order
+	if err := s.SaveDeckMeta(deck, meta); err != nil {
+		return "", err
+	}
+	return id, nil
 }
 
 // midPrefix returns a numeric prefix sorting strictly between prev and next

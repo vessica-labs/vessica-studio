@@ -162,7 +162,6 @@ func runCloudWorkspace(ctx context.Context, client *cloud.Client, endpoint strin
 		fs.SetOutput(io.Discard)
 		root := fs.String("root", ".", "studio root")
 		message := fs.String("message", "", "revision message")
-		acknowledgedHead := fs.String("resolve-head", "", "acknowledge reconciled conflict head")
 		parseArgs := args[1:]
 		workspaceID := ""
 		if args[0] == "connect" && len(parseArgs) > 0 && !strings.HasPrefix(parseArgs[0], "-") {
@@ -192,15 +191,12 @@ func runCloudWorkspace(ctx context.Context, client *cloud.Client, endpoint strin
 				state = "unsynced"
 			}
 			if s.Conflict {
-				state = "conflict"
+				state += ", cloud changes available"
 			}
 			if s.Offline {
 				state += ", offline"
 			}
 			fmt.Fprintf(out, "workspace: %s\nbase revision: %s\ncloud revision: %s\nstate: %s\n", s.WorkspaceID, s.BaseRevisionID, s.CloudHeadRevisionID, state)
-			if s.ConflictHeadRevisionID != "" {
-				fmt.Fprintf(out, "recorded conflict head: %s\nAfter reconciliation: vstd cloud workspace sync --resolve-head %s\n", s.ConflictHeadRevisionID, s.ConflictHeadRevisionID)
-			}
 			return nil
 		case "pull":
 			err := manager.Pull(ctx, *root)
@@ -209,7 +205,7 @@ func runCloudWorkspace(ctx context.Context, client *cloud.Client, endpoint strin
 			}
 			return err
 		case "sync":
-			r, err := manager.SyncResolved(ctx, *root, *message, *acknowledgedHead)
+			r, err := manager.Sync(ctx, *root, *message)
 			if err == nil {
 				fmt.Fprintf(out, "Synchronized revision %s.\n", r.ID)
 			}

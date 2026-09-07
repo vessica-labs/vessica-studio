@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.5.2"
+const version = "0.6.0"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -40,6 +40,10 @@ func main() {
 	cmd, args := os.Args[1], os.Args[2:]
 	var err error
 	switch cmd {
+	case "reconcile":
+		err = cmdReconcile(args)
+	case "worktree":
+		err = cmdWorktree(args)
 	case "init":
 		err = cmdInit(args)
 	case "new":
@@ -125,6 +129,8 @@ Usage:
   vstd cloud workspace <command>      list, create, clone, connect, status, pull, or sync
   vstd cloud publish create|status    publish or inspect a synchronized revision
   vstd cloud diagnostics              show sanitized protocol information
+  vstd worktree begin|finish          isolate agent edits and reconcile automatically
+  vstd reconcile                     merge three checkpoint snapshots from JSON stdin
   vstd version
 
 Serve flags:
@@ -513,6 +519,23 @@ func cmdServe(args []string) error {
 		p = *port
 	}
 	go srv.Watch(700 * time.Millisecond)
+	if m == server.ModeStudio {
+		go func() {
+			var lastError string
+			for {
+				err := syncConnected(st.Root, false)
+				message := ""
+				if err != nil {
+					message = err.Error()
+				}
+				if message != "" && message != lastError {
+					log.Printf("Cloud synchronization pending; local work is preserved: %s", message)
+				}
+				lastError = message
+				time.Sleep(2 * time.Second)
+			}
+		}()
+	}
 	if *agent {
 		os.Setenv("VSTD_AGENT", "1")
 	}

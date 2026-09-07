@@ -80,6 +80,7 @@ type CreateWorkspaceRequest struct {
 	OperationID string `json:"operation_id"`
 }
 type SyncRequest struct {
+	WriterKind     string `json:"writer_kind,omitempty"`
 	BaseRevisionID string `json:"base_revision_id"`
 	Files          []File `json:"files"`
 	Message        string `json:"message,omitempty"`

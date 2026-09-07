@@ -28,6 +28,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/catalog"
 	"github.com/vessica-labs/vessica-studio/internal/collab"
 	"github.com/vessica-labs/vessica-studio/internal/oai"
+	"github.com/vessica-labs/vessica-studio/internal/reconcile"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"gopkg.in/yaml.v3"
 )
@@ -296,6 +297,12 @@ func (s *Server) editOnly(h http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 		cw := &statusCapture{ResponseWriter: w, status: http.StatusOK}
+		unlock, err := studio.LockContent(s.St.Root, "content")
+		if err != nil {
+			jsonErr(w, err, 503)
+			return
+		}
+		defer unlock()
 		h(cw, r)
 		if cw.status < http.StatusBadRequest {
 			s.ContentSync.Notify()
@@ -464,7 +471,22 @@ func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deck, id := r.PathValue("deck"), r.PathValue("id")
-	if base := r.Header.Get("X-VSTD-Base-Hash"); base != "" {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		var edit struct {
+			Base string `json:"base"`
+			HTML string `json:"html"`
+		}
+		if json.Unmarshal(body, &edit) != nil || edit.Base == "" || edit.HTML == "" {
+			jsonErr(w, fmt.Errorf("invalid fragment edit"), 400)
+			return
+		}
+		current, _, readErr := s.St.ReadSlide(deck, id)
+		if readErr != nil {
+			jsonErr(w, readErr, 404)
+			return
+		}
+		body = reconcile.MergeFile(id+".html", []byte(edit.Base), []byte(edit.HTML), []byte(current), false)
+	} else if base := r.Header.Get("X-VSTD-Base-Hash"); base != "" {
 		if cur := s.St.HashSlide(deck, id); cur != "" && cur != base {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
@@ -480,7 +502,7 @@ func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.St.AppendLog(deck, id, "manual edit saved from player")
-	writeJSON(w, map[string]string{"status": "ok", "hash": s.St.HashSlide(deck, id)})
+	writeJSON(w, map[string]string{"status": "ok", "hash": s.St.HashSlide(deck, id), "html": string(body)})
 }
 
 func (s *Server) handlePutCompanion(w http.ResponseWriter, r *http.Request) {
@@ -511,7 +533,22 @@ func (s *Server) handlePutFullCompanion(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	deck, id := r.PathValue("deck"), r.PathValue("id")
-	if base := r.Header.Get("X-VSTD-Companion-Hash"); base != "" {
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+		var edit struct {
+			Base     string `json:"base"`
+			Markdown string `json:"markdown"`
+		}
+		if err := json.Unmarshal(body, &edit); err != nil {
+			jsonErr(w, err, 400)
+			return
+		}
+		_, current, err := s.St.ReadSlide(deck, id)
+		if err != nil {
+			jsonErr(w, err, 400)
+			return
+		}
+		body = reconcile.MergeFile(id+".md", []byte(edit.Base), []byte(edit.Markdown), []byte(current), false)
+	} else if base := r.Header.Get("X-VSTD-Companion-Hash"); base != "" {
 		if cur := s.St.HashCompanion(deck, id); cur != "" && cur != base {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(http.StatusConflict)
@@ -526,7 +563,7 @@ func (s *Server) handlePutFullCompanion(w http.ResponseWriter, r *http.Request) 
 		jsonErr(w, err, 400)
 		return
 	}
-	writeJSON(w, map[string]string{"status": "ok", "hash": s.St.HashCompanion(deck, id)})
+	writeJSON(w, map[string]string{"status": "ok", "hash": s.St.HashCompanion(deck, id), "markdown": string(body)})
 }
 
 func (s *Server) handlePutTitle(w http.ResponseWriter, r *http.Request) {

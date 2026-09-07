@@ -12,7 +12,7 @@ and `decks/<deck>/` with `deck.yaml`, `deck.css`, and `slides/`.
 Each slide is TWO files with the same basename in `slides/`:
 - `NNNN-slug.html` — exactly one `<section class="slide">` fragment using theme classes
   (s-title, s-lead, content, card, colcard, headband, chev, pill, numpill, icontile, aur, arc).
-  Slide order = filename number.
+  Slide order = `deck.yaml` `slide_order`; unlisted slides follow in filename order.
 - `NNNN-slug.md` — the companion: frontmatter (slide, status, visuals, layout) plus sections
   `## Intent`, `## Key ideas`, `## Evidence & sources`, `## Talk track`,
   `## Visual direction`, `## Log`.
@@ -58,41 +58,15 @@ Start every authoring workflow with `vstd cloud workspace status`. Use that
 command's result as the connection contract; never read or interpret cloud
 association files directly.
 
-- **Local-only workspace:** continue editing the paired HTML/Markdown files.
-  Login and network access are optional and must never block authoring, build,
-  serve, export, or skill discovery.
-- **Connected workspace:** when the user asks for changes to their Cloud presentation,
-  run `vstd cloud workspace pull` before editing if status reports a clean local
-  projection. After editing, building and reviewing the paired files, run
-  `vstd cloud workspace sync --message "Describe the change"` and report the
-  returned revision. This is part of completing the requested Cloud edit unless
-  the user specified local-only, offline, review-only, or no-sync work. Preserve
-  pre-existing unsynced changes; never pull over them or upload unrelated work.
-  Sync creates a revision; publishing requires the user to request publishing. Use
-  workspace, version, sync, conflict, and publish terminology: inspect with
-  `vstd cloud workspace status`, incorporate a newer version with
-  `vstd cloud workspace pull`, create an attributable version with
-  `vstd cloud workspace sync`, and publish a selected revision with
-  `vstd cloud publish create`.
-- **Offline or failed status:** keep local work intact and report it as offline
-  and unsynced. Never claim sync or publish succeeded. Local commands and direct
-  file editing remain available.
-- **Conflict:** do not replace local or cloud content. Re-run
-  `vstd cloud workspace status`; pull only when the local projection is clean.
-  Otherwise inspect the remote head in a separate clone, compare and reconcile
-  the paired files explicitly, then use
-  `vstd cloud workspace sync --resolve-head REVISION_ID` to acknowledge the
-  exact recorded conflict head. Never
-  ask for Git credentials or teach branch, push, pull, or rebase commands as the
-  cloud workflow.
-- **Interrupted pull:** stop other writers and use the local-only
-  `vstd cloud workspace recover --root DIR` before editing. Preserve the recovery
-  journal; do not bypass the pending-recovery error or delete recovery data.
+- **Connected workspace, including read/open requests:** run `vstd cloud workspace sync` before reading the presentation. `vstd cloud workspace pull` performs the same two-way reconciliation. This fetches Cloud edits directly and automatically reconciles local changes; GitHub is not involved. Do not sync when the user explicitly requests offline, local-only, or no-sync work.
+- **Agent changes:** run `vstd worktree begin --root STUDIO` and use the returned `worktree` directory for every edit, build, and review. It is an isolated file-contract workspace, not a Git branch. Never edit the original studio concurrently with the visual editor. At completion run `vstd worktree finish --root WORKTREE`; it reconciles against the latest parent and Cloud, preserves direct human edits on overlapping properties, and retains original checkpoints. Report whether Cloud synchronization succeeded.
+- **Local-only work:** use the same begin/finish commands with `--local-only`. No account or network is required. Pure reviews without edits do not need a worktree.
+- **Offline or failed sync:** continue in the isolated worktree. Original files and durable checkpoints remain available. Report work as unsynced and synchronization as pending, never as successful. On reconnect, repeat sync; no manual conflict-head acknowledgement is needed.
+- **Running local editor:** `vstd serve` automatically synchronizes a connected workspace every two seconds while it runs. A stopped local process cannot receive changes; sync before opening files again.
+- **Publication:** syncing saves versions, it does not publish. Use `vstd cloud publish create` only when publishing is requested.
+- **Interrupted projection replacement:** the next sync recovers its durable local transaction before reconciling. Do not delete recovery journals or checkpoints.
 
-- **Engine running?** `curl -s localhost:4400/api/decks` (port from studio.yaml). If yes,
-  prefer the edit API; the browser live-reloads on every file change either way.
-- **No engine:** edit files directly in the studio folder.
-  Everything works file-first; the engine picks changes up when it runs.
+Preserve existing `data-vstd-id` and HTML `id` attributes when modifying objects. Assign a unique `data-vstd-id` to newly inserted objects and a new ID to each duplicate. Slide filenames are stable identities; reorder using the editor or `slide_order` in `deck.yaml`, not by renaming slide pairs.
 
 Only provide a localhost deck URL after confirming the engine is serving it. If
 the engine is not running, report the built artifact path or the `vstd serve`

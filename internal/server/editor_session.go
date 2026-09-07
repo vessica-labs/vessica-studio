@@ -5,6 +5,7 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"path"
 	"strings"
@@ -72,6 +73,32 @@ func NewEditorSession(st *studio.Studio, options EditorSessionOptions) (http.Han
 		case "/api/me":
 			writeJSON(w, map[string]any{"mode": "studio", "presenter": true, "editable": true, "start_editing": true, "capabilities": map[string]bool{"transfer_slides": false}})
 		case "/api/editor/snapshot":
+			if r.Method == "PUT" {
+				var payload struct {
+					Files []struct {
+						Path    string `json:"path"`
+						Content []byte `json:"content"`
+					} `json:"files"`
+				}
+				if json.NewDecoder(io.LimitReader(r.Body, 180<<20)).Decode(&payload) != nil {
+					http.Error(w, "invalid checkpoint", 400)
+					return
+				}
+				files := make([]studio.ContentFile, len(payload.Files))
+				for i, f := range payload.Files {
+					files[i] = studio.ContentFile{Path: f.Path, Content: f.Content, Mode: 0644}
+				}
+				if err := studio.ApplyCloudContent(st.Root, files); err != nil {
+					http.Error(w, "checkpoint restore failed", 500)
+					return
+				}
+				if _, err := st.Build(options.Deck); err != nil {
+					http.Error(w, "checkpoint build failed", 500)
+					return
+				}
+				writeJSON(w, map[string]bool{"ok": true})
+				return
+			}
 			snapshot, err := studio.CloudContent(st.Root)
 			if err != nil {
 				http.Error(w, "editor snapshot unavailable", 500)
@@ -100,6 +127,9 @@ func NewEditorSession(st *studio.Studio, options EditorSessionOptions) (http.Han
 }
 
 func editorSessionRoute(method, p, deck string) bool {
+	if method == "PUT" && p == "/api/editor/snapshot" {
+		return true
+	}
 	if method == "GET" {
 		if p == "/api/me" || p == "/api/events" || p == "/api/editor/snapshot" || p == "/d/"+deck+"/" {
 			return true

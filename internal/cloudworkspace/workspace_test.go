@@ -2,7 +2,6 @@ package cloudworkspace
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -27,7 +26,9 @@ func (f *fakeCloud) Sync(_ context.Context, _ string, r cloud.SyncRequest) (clou
 	if f.syncErr != nil {
 		return cloud.Revision{}, f.syncErr
 	}
-	return cloud.Revision{ID: "r2"}, nil
+	f.rev = cloud.Revision{ID: "r2", Files: r.Files}
+	f.ws.HeadRevisionID = "r2"
+	return f.rev, nil
 }
 
 func localStudio(t *testing.T) string {
@@ -78,7 +79,7 @@ func TestConnectStatusSync(t *testing.T) {
 	}
 }
 
-func TestConflictPreservesLocal(t *testing.T) {
+func TestUnavailablePreservesLocal(t *testing.T) {
 	ctx := context.Background()
 	root := localStudio(t)
 	api := linkedCloud(t, root)
@@ -98,8 +99,8 @@ func TestConflictPreservesLocal(t *testing.T) {
 		t.Fatal("local content changed")
 	}
 	a, err := LoadAssociation(root)
-	if err != nil || a.ConflictHeadRevisionID != "r3" {
-		t.Fatalf("conflict not recorded %#v %v", a, err)
+	if err != nil || a.BaseRevisionID != "r1" || a.ConflictHeadRevisionID != "" {
+		t.Fatalf("base should remain unchanged %#v %v", a, err)
 	}
 }
 
@@ -148,7 +149,7 @@ func TestClonePull(t *testing.T) {
 	}
 }
 
-func TestPullRejectsConcurrentLocalEdit(t *testing.T) {
+func TestPullSynchronizesLocalEdit(t *testing.T) {
 	root := localStudio(t)
 	api := linkedCloud(t, root)
 	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
@@ -157,8 +158,8 @@ func TestPullRejectsConcurrentLocalEdit(t *testing.T) {
 	}
 	os.WriteFile(filepath.Join(root, "studio.yaml"), []byte("port: 4499\n"), 0644)
 	api.ws.HeadRevisionID = "r2"
-	api.rev = cloud.Revision{ID: "r2", Files: []cloud.File{{Path: "studio.yaml", Content: []byte("remote\n")}}}
-	if err := m.Pull(context.Background(), root); !errors.Is(err, ErrLocalChanges) {
+	api.rev = cloud.Revision{ID: "r2", Files: []cloud.File{{Path: "studio.yaml", Content: []byte("port: 4402\n")}}}
+	if err := m.Pull(context.Background(), root); err != nil {
 		t.Fatalf("got %v", err)
 	}
 }
@@ -174,7 +175,7 @@ func TestConnectDoesNotClaimDifferentContentIsSynchronized(t *testing.T) {
 	if err != nil || !status.Unsynced {
 		t.Fatalf("different content marked synchronized: %+v %v", status, err)
 	}
-	if err := m.Pull(context.Background(), root); !errors.Is(err, ErrLocalChanges) {
+	if err := m.Pull(context.Background(), root); err != nil {
 		t.Fatalf("pull should preserve local changes: %v", err)
 	}
 }
@@ -195,7 +196,7 @@ func TestAssociationCannotSwitchEndpoints(t *testing.T) {
 	}
 }
 
-func TestSyncExplicitlyResolvesRecordedConflict(t *testing.T) {
+func TestOfflineSaveRetriedAutomatically(t *testing.T) {
 	root := localStudio(t)
 	api := linkedCloud(t, root)
 	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
@@ -203,25 +204,21 @@ func TestSyncExplicitlyResolvesRecordedConflict(t *testing.T) {
 	if err := m.Connect(ctx, root, "ws1"); err != nil {
 		t.Fatal(err)
 	}
-	api.syncErr = &cloud.ConflictError{CloudHeadRevisionID: "r3"}
-	if _, err := m.Sync(ctx, root, ""); err == nil {
-		t.Fatal("expected conflict")
+	os.WriteFile(filepath.Join(root, "studio.yaml"), []byte("port: 4499\n"), 0644)
+	api.syncErr = &cloud.Error{Kind: cloud.ErrorOffline}
+	if _, err := m.Sync(ctx, root, "edit"); err == nil {
+		t.Fatal("expected offline")
 	}
+	operation := api.synced.OperationID
 	api.syncErr = nil
-	if _, err := m.SyncResolved(ctx, root, "reconciled", "wrong"); err == nil {
-		t.Fatal("accepted wrong head")
-	}
-	if _, err := m.SyncResolved(ctx, root, "reconciled", "r3"); err != nil {
+	if _, err := m.Sync(ctx, root, "edit"); err != nil {
 		t.Fatal(err)
 	}
-	if api.synced.BaseRevisionID != "r3" {
-		t.Fatal("did not use acknowledged head")
+	if api.synced.OperationID != operation {
+		t.Fatal("retry must reuse durable operation")
 	}
 	a, err := LoadAssociation(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if a.ConflictHeadRevisionID != "" || a.BaseRevisionID != "r2" {
-		t.Fatalf("bad association: %+v", a)
+	if err != nil || a.BaseRevisionID != "r2" || a.ConflictHeadRevisionID != "" {
+		t.Fatalf("%+v %v", a, err)
 	}
 }

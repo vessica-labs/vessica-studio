@@ -89,4 +89,8 @@ For a studio outside the current directory, add `--root=/absolute/path/to/studio
 
 ## Review before delivery
 
+For connected studios, synchronize before reading: `vstd cloud sync` fetches and reconciles through the Cloud API. `vstd serve` also synchronizes automatically while running; a closed local workspace does not update itself.
+
+Use `vstd worktree begin --root STUDIO` before agent edits, edit the returned worktree, then `vstd worktree finish --root WORKTREE` to reconcile with concurrent browser changes. Independent changes combine; concurrent human edits take priority over conflicting agent properties. Original inputs remain in `.vstd/checkpoints`. Offline work stays local until the next successful sync. These commands require `vstd 0.6.0` or newer; local-only studios need no Cloud account.
+
 Ask for `deck-review` before an important presentation. It checks narrative sequence, slide/companion integrity, source fidelity, library hygiene, clipping and overflow, generated assets, and individual-slide rendering—not only a montage.

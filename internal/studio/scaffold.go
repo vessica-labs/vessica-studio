@@ -3,6 +3,7 @@ package studio
 import (
 	"embed"
 	"fmt"
+	"github.com/vessica-labs/vessica-studio/internal/reconcile"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -63,6 +64,7 @@ func (s *Studio) NewDeck(name, title string) error {
 		Theme:      s.Config.ThemeDefault,
 		Visibility: "private",
 		Created:    time.Now().Format("2006-01-02"),
+		SlideOrder: []string{"0010-cover"},
 	}
 	if err := s.SaveDeckMeta(name, meta); err != nil {
 		return err
@@ -72,7 +74,7 @@ func (s *Studio) NewDeck(name, title string) error {
 	cover, _ := templates.ReadFile("templates/starter/0010-cover.html")
 	coverMD, _ := templates.ReadFile("templates/starter/0010-cover.md")
 	coverS := strings.ReplaceAll(string(cover), "{{TITLE}}", title)
-	os.WriteFile(filepath.Join(dir, "slides", "0010-cover.html"), []byte(coverS), 0o644)
+	os.WriteFile(filepath.Join(dir, "slides", "0010-cover.html"), reconcile.NormalizeHTML("decks/"+name+"/slides/0010-cover.html", []byte(coverS)), 0o644)
 	os.WriteFile(filepath.Join(dir, "slides", "0010-cover.md"),
 		[]byte(strings.ReplaceAll(string(coverMD), "{{TITLE}}", title)), 0o644)
 	return nil
@@ -96,7 +98,7 @@ func (s *Studio) NewSlide(deck, id, title, layoutHTML string) error {
   <aside class="notes">Talk track for this slide.</aside>
 </section>`, title, title)
 	}
-	if err := os.WriteFile(hp, []byte(layoutHTML+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(hp, reconcile.NormalizeHTML("decks/"+deck+"/slides/"+id+".html", []byte(layoutHTML+"\n")), 0o644); err != nil {
 		return err
 	}
 	md := fmt.Sprintf(`---

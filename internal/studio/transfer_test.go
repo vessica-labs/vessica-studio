@@ -148,6 +148,9 @@ func TestMoveSlidePersistsFilmstripReorderInBothDirections(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if moved != "0010-one" {
+		t.Fatal("reordering changed stable slide identity")
+	}
 	ids, err := st.SlideIDs("source")
 	if err != nil {
 		t.Fatal(err)

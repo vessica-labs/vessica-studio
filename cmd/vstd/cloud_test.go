@@ -50,7 +50,7 @@ func TestCloudWorkspaceSyncPublishAndAccount(t *testing.T) {
 		jsonResponse(w, cloud.Revision{ID: "rev-2", WorkspaceID: "ws-1"})
 	})
 	mux.HandleFunc("/v1/workspaces/ws-1/publications", func(w http.ResponseWriter, _ *http.Request) {
-		jsonResponse(w, cloud.Publication{ID: "pub-1", WorkspaceID: "ws-1", RevisionID: "rev-2", Status: "published", URL: "https://example.invalid/p/demo"})
+		jsonResponse(w, cloud.Publication{ID: "pub-1", WorkspaceID: "ws-1", RevisionID: head, Status: "published", URL: "https://example.invalid/p/demo"})
 	})
 	server := httptest.NewServer(mux)
 	defer server.Close()
@@ -83,7 +83,7 @@ func TestCloudWorkspaceSyncPublishAndAccount(t *testing.T) {
 		}
 	}
 	got := out.String()
-	if !strings.Contains(got, "Synchronized revision rev-2") || !strings.Contains(got, "publication: pub-1") || !strings.Contains(got, "acct-1") {
+	if !strings.Contains(got, "Synchronized revision rev-1") || !strings.Contains(got, "publication: pub-1") || !strings.Contains(got, "acct-1") {
 		t.Fatalf("unexpected output: %s", got)
 	}
 	if strings.Contains(got, secret) || strings.Contains(got, "sentinel-access-secret") || strings.Contains(got, "device-secret") {

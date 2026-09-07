@@ -46,3 +46,22 @@ jobs:
           name: vstd-${{ github.sha }}
           path: ${{ runner.temp }}/vstd-release/
           if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.ref_name }}
+      RELEASE_SHA: ${{ github.sha }}
+      RELEASE_RUN: ${{ github.run_id }}
+    steps:
+      - name: Download verified immutable binaries
+        run: gh run download "$RELEASE_RUN" --name "vstd-$RELEASE_SHA" --dir release
+      - name: Publish verified tag
+        run: gh release create "$RELEASE_TAG" release/* --verify-tag --title "Vessica Studio $RELEASE_TAG" --generate-notes
