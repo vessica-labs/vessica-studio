@@ -1255,3 +1255,8 @@ local directory for future `pull` and `sync` commands. It does not publish.
 An uncertain response leaves a non-secret `.vstd/cloud-create.json` retry journal;
 retry the same title and files, preserving the journal, to avoid duplicates.
 Local-only authoring continues to work without an account.
+
+File-backed `editor-transform` requests with `delta: true` support the canonical
+128 MiB snapshot budget (16 MiB per file, at most 2,000 files). Inline snapshot
+transforms retain their 20 MiB transport bound. Unchanged media is omitted from
+delta responses.

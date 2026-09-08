@@ -63,7 +63,14 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	for _, f := range in.Files {
 		total += len(f.Content)
 	}
-	if len(in.Files) > 2000 || total > 20<<20 {
+	// File-backed delta transforms do not send unchanged media through JSON.
+	// Keep the inline wire budget while matching the canonical snapshot bound
+	// for the file-backed Cloud editor.
+	maxTotal := 20 << 20
+	if in.Root != "" && in.Delta {
+		maxTotal = 128 << 20
+	}
+	if len(in.Files) > 2000 || total > maxTotal {
 		return result, errors.New("editor snapshot limit")
 	}
 	if err = studio.ValidateCloudContent(in.Files); err != nil {

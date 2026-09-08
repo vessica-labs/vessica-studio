@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -103,5 +105,33 @@ func TestEditorTransformFileBackedDelta(t *testing.T) {
 	in.Files = original.Files
 	if _, err = TransformEditor(context.Background(), in); err == nil {
 		t.Fatal("ambiguous root accepted")
+	}
+}
+
+func TestEditorTransformLargeFileBackedDeck(t *testing.T) {
+	st := testStudio(t)
+	if err := os.MkdirAll(filepath.Join(st.Root, "library", "img"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"a", "b", "c", "d"} {
+		if err := os.WriteFile(filepath.Join(st.Root, "library", "img", name+".png"), make([]byte, 11<<20), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	in := EditorTransformInput{Root: st.Root, Delta: true, Deck: "demo", Method: "GET", Path: "/d/demo/"}
+	rendered, err := TransformEditor(context.Background(), in)
+	if err != nil || rendered.Status != 200 || len(rendered.Files) != 0 || !strings.Contains(string(rendered.Body), `id="editRibbon"`) {
+		t.Fatalf("large render: status=%d files=%d err=%v", rendered.Status, len(rendered.Files), err)
+	}
+	in.Method, in.Path = "PUT", "/api/deck/demo/slide/0010-a/fragment"
+	in.Body = []byte(`<section class="slide"><h1>Large deck edit</h1></section>`)
+	edited, err := TransformEditor(context.Background(), in)
+	if err != nil || edited.Status != 200 || len(edited.Files) == 0 {
+		t.Fatalf("large edit: status=%d files=%d err=%v", edited.Status, len(edited.Files), err)
+	}
+	for _, f := range edited.Files {
+		if strings.HasPrefix(f.Path, "library/") {
+			t.Fatalf("unchanged media copied to delta: %s", f.Path)
+		}
 	}
 }
