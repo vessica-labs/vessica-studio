@@ -233,7 +233,7 @@ func (s *Server) handlePrintHTML(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !s.isPresenter(r) {
+	if r.Context().Value(editorRenderKey{}) == true || !s.isPresenter(r) {
 		http.Error(w, "forbidden", http.StatusForbidden)
 		return
 	}

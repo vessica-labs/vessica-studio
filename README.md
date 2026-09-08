@@ -215,6 +215,9 @@ credentials, `.git/`, and `.vstd/` remain excluded.
 Isolated `editor-session` workers can read the selected deck's cached raster at
 `GET /api/app/decks/NAME/thumbnail.png`; other catalog routes remain excluded.
 The host must authorize access and run rendering in its disposable content sandbox.
+Install Chromium and Poppler (`pdftoppm`) in raster workers. The engine gives its
+headless browser a temporary loopback-only, keyed print surface; the externally
+reachable editor remains bearer-protected throughout rendering.
 
 For trusted supervisors, `editor-transform` accepts `root` instead of `files` to
 read a validated, materialized snapshot directory without base64 transport. The

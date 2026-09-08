@@ -69,6 +69,10 @@ func NewEditorSession(st *studio.Studio, options EditorSessionOptions) (http.Han
 		}
 		mu.Lock()
 		defer mu.Unlock()
+		if p == "/api/app/decks/"+options.Deck+"/thumbnail.png" || p == "/api/deck/"+options.Deck+"/export.pdf" || p == "/api/deck/"+options.Deck+"/export.pptx" {
+			serveEditorRender(w, r, routes, options.Deck)
+			return
+		}
 		switch p {
 		case "/api/me":
 			writeJSON(w, map[string]any{"mode": "studio", "presenter": true, "editable": true, "start_editing": true, "capabilities": map[string]bool{"transfer_slides": false}})

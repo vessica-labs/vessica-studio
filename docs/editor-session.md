@@ -35,6 +35,12 @@ credential, rejects other decks, and grants no catalog mutation access. Hosts
 can generate and retain a small derivative asynchronously without loading a
 full presentation document in each catalog card.
 
+Raster and PDF/PPTX exports require Chromium; raster output also needs Poppler
+(`pdftoppm`). During rendering the engine opens a temporary loopback-only read
+listener for the selected deck's keyed print page and assets. It exposes no
+editing routes, requires a live print-job key, and closes after the export.
+The outer session endpoint always retains its bearer-token requirement.
+
 `GET /api/editor/snapshot` returns JSON:
 
 ```json
