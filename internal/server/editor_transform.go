@@ -36,8 +36,11 @@ type EditorTransformResult struct {
 func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransformResult, error) {
 	var result EditorTransformResult
 	u, err := url.ParseRequestURI(in.Path)
-	if err != nil || u.IsAbs() || u.Host != "" || u.RawPath != "" || strings.ContainsAny(u.Path, "\\\x00") || path.Clean(u.Path) != strings.TrimSuffix(u.Path, "/") || !studio.ValidDeckName(in.Deck) || !transformRoute(in.Method, u.Path, in.Deck) {
+	if err != nil || u.IsAbs() || u.Host != "" || u.RawPath != "" || strings.ContainsAny(u.Path, "\\\x00") || path.Clean(u.Path) != strings.TrimSuffix(u.Path, "/") || !studio.ValidDeckName(in.Deck) {
 		return result, errors.New("unsupported visual editor operation")
+	}
+	if !transformRoute(in.Method, u.Path, in.Deck) {
+		return EditorTransformResult{Status: http.StatusNotFound, Headers: map[string]string{"content-type": "application/json"}, Body: []byte(`{"error":"operation unavailable in visual editor"}`), Files: in.Files}, nil
 	}
 	if len(in.Body) > 16<<20 {
 		return result, errors.New("editor body limit")

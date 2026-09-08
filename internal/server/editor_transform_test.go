@@ -67,7 +67,7 @@ func TestEditorTransformRenderAndEdit(t *testing.T) {
 		input.Path = p
 		for _, method := range []string{"GET", "POST", "PUT"} {
 			input.Method = method
-			if _, err := TransformEditor(context.Background(), input); err == nil {
+			if got, err := TransformEditor(context.Background(), input); err == nil && got.Status != 404 {
 				t.Fatalf("allowed execution or unsafe route %s", p)
 			}
 		}
