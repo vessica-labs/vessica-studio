@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.7.6"
+const version = "0.7.7"
 
 func main() {
 	if len(os.Args) < 2 {

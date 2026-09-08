@@ -103,7 +103,7 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`<h1>Hi</h1>`,                                                     // slides injected
 		`"deck":"demo"`,                                                   // runtime meta injected
 		`.slide{background:#fff}`,                                         // theme.css injected
-		`id="vstd-presentation-styles"`,                                  // live refresh can replace theme.css + deck.css atomically with slide markup
+		`id="vstd-presentation-styles"`,                                   // live refresh can replace theme.css + deck.css atomically with slide markup
 		`syncPresentationStyles(doc)`,                                     // external revisions update presentation layout without a page reload
 		`c.removeAttribute('data-vstd')`,                                  // engine-only slide id is not persisted
 		`name:'open_companion'`,                                           // Vessica can open the narrative editor
