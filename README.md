@@ -212,6 +212,17 @@ across tabs and reloads. Slide reordering updates the canvas without reloading t
 page. The synchronized file contract includes the scaffold's root `.gitignore`;
 credentials, `.git/`, and `.vstd/` remain excluded.
 
+Isolated `editor-session` workers can read the selected deck's cached raster at
+`GET /api/app/decks/NAME/thumbnail.png`; other catalog routes remain excluded.
+The host must authorize access and run rendering in its disposable content sandbox.
+
+For trusted supervisors, `editor-transform` accepts `root` instead of `files` to
+read a validated, materialized snapshot directory without base64 transport. The
+input directory is never modified. Optional `delta: true` returns only changed
+`files` plus `deleted` paths, with `delta: true` identifying the response format.
+An unchanged read returns empty arrays. Original full-snapshot callers remain
+compatible. The supervisor must never accept a caller-supplied host path.
+
 Cloud visual editing can use `vstd editor-transform`: a bounded JSON input with
 `deck`, canonical `files` (path/base64 content), `method`, `path`, `headers`, and
 base64 `body` produces the HTTP-shaped result and resulting canonical `files`.

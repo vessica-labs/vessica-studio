@@ -131,6 +131,11 @@ func editorSessionRoute(method, p, deck string) bool {
 		return true
 	}
 	if method == "GET" {
+		// Raster-only catalog access is scoped to this session's single deck.
+		// Cloud thumbnail workers use the existing engine renderer in isolation.
+		if p == "/api/app/decks/"+deck+"/thumbnail.png" {
+			return true
+		}
 		if p == "/api/me" || p == "/api/events" || p == "/api/editor/snapshot" || p == "/d/"+deck+"/" {
 			return true
 		}

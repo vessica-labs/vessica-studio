@@ -73,3 +73,35 @@ func TestEditorTransformRenderAndEdit(t *testing.T) {
 		}
 	}
 }
+func TestEditorTransformFileBackedDelta(t *testing.T) {
+	st := testStudio(t)
+	in := EditorTransformInput{Root: st.Root, Delta: true, Deck: "demo", Method: "GET", Path: "/api/me"}
+	result, err := TransformEditor(context.Background(), in)
+	if err != nil || result.Status != 200 || !result.Delta || len(result.Files) != 0 {
+		t.Fatalf("read delta: %+v %v", result, err)
+	}
+	in.Method, in.Path = "PUT", "/api/deck/demo/slide/0010-a/fragment"
+	in.Body = []byte(`<section class="slide"><h1>Changed delta</h1></section>`)
+	result, err = TransformEditor(context.Background(), in)
+	if err != nil || result.Status != 200 || !result.Delta || len(result.Files) == 0 {
+		t.Fatalf("write delta: %+v %v", result, err)
+	}
+	for _, file := range result.Files {
+		if !strings.HasPrefix(file.Path, "decks/demo/") {
+			t.Fatalf("unchanged file in delta: %s", file.Path)
+		}
+	}
+	original, err := studio.CloudContent(st.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range original.Files {
+		if strings.Contains(string(f.Content), "Changed delta") {
+			t.Fatal("read-only input root mutated")
+		}
+	}
+	in.Files = original.Files
+	if _, err = TransformEditor(context.Background(), in); err == nil {
+		t.Fatal("ambiguous root accepted")
+	}
+}

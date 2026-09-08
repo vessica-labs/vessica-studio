@@ -19,6 +19,8 @@ import (
 )
 
 type EditorTransformInput struct {
+	Root    string               `json:"root,omitempty"`
+	Delta   bool                 `json:"delta,omitempty"`
 	Deck    string               `json:"deck"`
 	Files   []studio.ContentFile `json:"files"`
 	Method  string               `json:"method"`
@@ -27,6 +29,8 @@ type EditorTransformInput struct {
 	Body    []byte               `json:"body"`
 }
 type EditorTransformResult struct {
+	Delta   bool                 `json:"delta,omitempty"`
+	Deleted []string             `json:"deleted,omitempty"`
 	Status  int                  `json:"status"`
 	Headers map[string]string    `json:"headers"`
 	Body    []byte               `json:"body"`
@@ -35,6 +39,16 @@ type EditorTransformResult struct {
 
 func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransformResult, error) {
 	var result EditorTransformResult
+	if in.Root != "" {
+		if len(in.Files) != 0 {
+			return result, errors.New("root and files are mutually exclusive")
+		}
+		snapshot, err := studio.CloudContent(in.Root)
+		if err != nil {
+			return result, err
+		}
+		in.Files = snapshot.Files
+	}
 	u, err := url.ParseRequestURI(in.Path)
 	if err != nil || u.IsAbs() || u.Host != "" || u.RawPath != "" || strings.ContainsAny(u.Path, "\\\x00") || path.Clean(u.Path) != strings.TrimSuffix(u.Path, "/") || !studio.ValidDeckName(in.Deck) {
 		return result, errors.New("unsupported visual editor operation")
@@ -124,6 +138,26 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	for k, v := range w.Header() {
 		result.Headers[strings.ToLower(k)] = strings.Join(v, ", ")
 	}
+	if in.Delta {
+		result.Delta = true
+		result.Files = nil
+		before := make(map[string][]byte, len(in.Files))
+		for _, f := range in.Files {
+			before[f.Path] = f.Content
+		}
+		for _, f := range snapshot.Files {
+			old, exists := before[f.Path]
+			if !exists || !bytes.Equal(old, f.Content) {
+				result.Files = append(result.Files, f)
+			}
+			delete(before, f.Path)
+		}
+		for _, f := range in.Files {
+			if _, exists := before[f.Path]; exists {
+				result.Deleted = append(result.Deleted, f.Path)
+			}
+		}
+	}
 	return result, nil
 }
 
@@ -162,9 +196,11 @@ func (r EditorTransformResult) MarshalJSON() ([]byte, error) {
 		files[i] = file{f.Path, f.Content}
 	}
 	return json.Marshal(struct {
+		Delta   bool              `json:"delta,omitempty"`
+		Deleted []string          `json:"deleted,omitempty"`
 		Status  int               `json:"status"`
 		Headers map[string]string `json:"headers"`
 		Body    []byte            `json:"body"`
 		Files   []file            `json:"files"`
-	}{r.Status, r.Headers, r.Body, files})
+	}{r.Delta, r.Deleted, r.Status, r.Headers, r.Body, files})
 }

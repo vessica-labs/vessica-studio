@@ -29,6 +29,12 @@ sharing, Git collaboration, agent and external-provider routes are excluded;
 those require separate authorized host integrations. This command starts no
 Git sync, collaboration store or agent worker.
 
+`GET /api/app/decks/NAME/thumbnail.png` exposes only the selected deck's cached
+first-slide PNG through the existing renderer. It requires the same session
+credential, rejects other decks, and grants no catalog mutation access. Hosts
+can generate and retain a small derivative asynchronously without loading a
+full presentation document in each catalog card.
+
 `GET /api/editor/snapshot` returns JSON:
 
 ```json

@@ -27,12 +27,12 @@ func TestEditorSessionBoundary(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	for _, path := range []string{"/d/demo/", "/api/me", "/api/editor/snapshot"} {
+	for _, path := range []string{"/d/demo/", "/api/me", "/api/editor/snapshot", "/api/app/decks/demo/thumbnail.png"} {
 		if w := request("GET", path, "", ""); w.Code != 401 {
 			t.Fatalf("anonymous %s: %d", path, w.Code)
 		}
 	}
-	for _, path := range []string{"/api/app/team", "/api/deck/foreign/slide/a", "/auth/login", "/api/realtime/token", "/api/deck/demo/share", "/site/../studio.yaml"} {
+	for _, path := range []string{"/api/app/team", "/api/app/decks/foreign/thumbnail.png", "/api/app/decks/demo", "/api/deck/foreign/slide/a", "/auth/login", "/api/realtime/token", "/api/deck/demo/share", "/site/../studio.yaml"} {
 		if w := request("GET", path, "", token); w.Code != 404 {
 			t.Fatalf("excluded %s: %d", path, w.Code)
 		}
@@ -78,6 +78,16 @@ func TestEditorSessionBoundary(t *testing.T) {
 	}
 	if snapshot.Protocol != 1 || len(snapshot.Digest) != 64 || !found {
 		t.Fatal("snapshot must contain real edited canonical files")
+	}
+}
+func TestEditorSessionThumbnailRouteIsReadOnlyAndDeckScoped(t *testing.T) {
+	for _, method := range []string{"GET", "POST", "PUT", "DELETE", "PATCH"} {
+		if got := editorSessionRoute(method, "/api/app/decks/demo/thumbnail.png", "demo"); got != (method == "GET") {
+			t.Fatalf("thumbnail route method %s allowed=%v", method, got)
+		}
+		if editorSessionRoute(method, "/api/app/decks/foreign/thumbnail.png", "demo") {
+			t.Fatal("foreign thumbnail allowed")
+		}
 	}
 }
 func TestEditorSessionFailsClosed(t *testing.T) {
