@@ -1,7 +1,7 @@
 {
   "name": "vessica-studio",
-  "version": "0.7.4",
-  "description": "Agent-driven presentation building on the Vessica Studio engine: create, edit, fork, refresh, and review file-native decks.",
+  "version": "0.7.5",
+  "description": "Agent-driven presentation building on the Vessica Studio engine: open Cloud presentations and create, edit, fork, refresh, or review file-native decks.",
   "author": {
     "name": "Vessica Labs",
     "url": "https://github.com/vessica-labs"
@@ -14,12 +14,13 @@
   "interface": {
     "displayName": "Vessica Studio",
     "shortDescription": "Build and edit file-native presentations",
-    "longDescription": "Create, edit, fork, refresh, and review Vessica Studio decks with companion-first evidence and visual QA workflows.",
+    "longDescription": "Open or create Cloud presentations from chat, then edit, fork, refresh, and review Vessica Studio decks with companion-first evidence and visual QA workflows.",
     "developerName": "Vessica Labs",
     "category": "Productivity",
     "capabilities": ["Write"],
     "websiteURL": "https://studio-docs.vessica.ai/",
     "defaultPrompt": [
+      "Open my Acme presentation from Cloud and edit slide 40.",
       "Create a new presentation from my brief.",
       "Redesign this slide and preserve its evidence.",
       "Review this deck before I present it."

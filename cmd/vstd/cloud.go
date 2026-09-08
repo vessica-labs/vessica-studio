@@ -93,6 +93,8 @@ func runCloud(args []string, out io.Writer) error {
 		return nil
 	case "workspace":
 		return runCloudWorkspace(ctx, client, endpoint, args[1:], out)
+	case "presentation":
+		return runCloudPresentation(ctx, client, endpoint, args[1:], out)
 	case "publish":
 		return runCloudPublish(ctx, client, args[1:], out)
 	case "diagnostics":

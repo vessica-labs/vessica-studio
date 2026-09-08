@@ -95,6 +95,7 @@ func TestPackagedWorkflowsMatchCodexLaunchers(t *testing.T) {
 	}
 	for _, want := range []string{
 		"vstd cloud workspace status", "vstd cloud workspace pull", "vstd cloud workspace sync",
+		"vstd cloud presentation list", "vstd cloud presentation open", "vstd cloud presentation create",
 		"vstd cloud publish", "offline", "unsynced", "conflict",
 	} {
 		if !strings.Contains(conventions, want) {

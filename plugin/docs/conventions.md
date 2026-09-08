@@ -54,9 +54,11 @@ companion Log, and report that visual source comparison was not completed.
 
 ## Working modes — detect before acting
 
-Start every authoring workflow with `vstd cloud workspace status`. Use that
-command's result as the connection contract; never read or interpret cloud
-association files directly.
+When the user identifies a Cloud presentation but there is no current studio
+root, start with `vstd skill cloud-presentation` and use
+`vstd cloud presentation open "TITLE OR ID" --json`. Otherwise, start every
+authoring workflow with `vstd cloud workspace status`. Use these commands as the
+connection contract; never read or interpret cloud association files directly.
 
 - **Connected workspace, including read/open requests:** run `vstd cloud workspace sync` before reading the presentation. `vstd cloud workspace pull` performs the same two-way reconciliation. This fetches Cloud edits directly and automatically reconciles local changes; GitHub is not involved. Do not sync when the user explicitly requests offline, local-only, or no-sync work.
 - **Agent changes:** run `vstd worktree begin --root STUDIO` and use the returned `worktree` directory for every edit, build, and review. It is an isolated file-contract workspace, not a Git branch. Never edit the original studio concurrently with the visual editor. At completion run `vstd worktree finish --root WORKTREE`; it reconciles against the latest parent and Cloud, preserves direct human edits on overlapping properties, and retains original checkpoints. Report whether Cloud synchronization succeeded.
@@ -77,7 +79,9 @@ command instead of implying that a live preview exists.
 CLI deck lifecycle: `vstd new`, `vstd list`, `vstd fork`, `vstd diff-upstream`,
 `vstd build`, and `vstd serve`. Assets and tooling: `vstd asset gen`,
 `vstd asset find`, `vstd asset add-video`, `vstd chart promote-text`,
-`vstd key check`, and `vstd skill`.
+`vstd key check`, and `vstd skill`. Agent-first Cloud entry points are
+`vstd cloud presentation list`, `vstd cloud presentation open`, and
+`vstd cloud presentation create`.
 HTTP (studio mode): `GET /api/decks`, `GET /api/deck/{d}/slide/{id}`,
 `PUT .../fragment`, `PUT .../companion/{section}`, `PUT .../title`, `POST /api/deck/{d}/slides`.
 

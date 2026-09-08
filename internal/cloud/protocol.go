@@ -56,6 +56,7 @@ type Workspace struct {
 	ID             string `json:"id"`
 	Name           string `json:"name"`
 	HeadRevisionID string `json:"head_revision_id,omitempty"`
+	CanEdit        *bool  `json:"can_edit,omitempty"`
 }
 type WorkspaceList struct {
 	Workspaces []Workspace `json:"workspaces"`

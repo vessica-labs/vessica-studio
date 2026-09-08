@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.7.4"
+const version = "0.7.5"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -129,6 +129,7 @@ Usage:
   vstd railway up                     one-command Railway setup + deploy
   vstd railway status|<args>          linked project info / CLI passthrough
   vstd cloud login|logout|account     pair and inspect a Cloud account
+  vstd cloud presentation <command>   list, open, or create a presentation for agent work
   vstd cloud workspace <command>      list, create, clone, connect, status, pull, or sync
   vstd cloud publish create|status    publish or inspect a synchronized revision
   vstd cloud diagnostics              show sanitized protocol information

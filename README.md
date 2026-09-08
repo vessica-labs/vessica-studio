@@ -158,7 +158,7 @@ with the native device flow:
 ```sh
 vstd cloud login
 vstd cloud account
-vstd cloud workspace list
+vstd cloud presentation list
 ```
 
 `login` prints a verification URL and user code. Renewable session material is
@@ -168,6 +168,23 @@ writing a plaintext fallback. Concurrent native CLI processes serialize refresh
 credential rotation with an OS file lock, released automatically if a process
 exits. The per-endpoint lock in the user cache directory contains no credentials;
 refresh credentials remain in the OS credential store.
+
+From any Codex chat or terminal directory, open an existing presentation by ID,
+exact title, or one unambiguous partial title. Without `--root`, the CLI creates
+or reuses an account-scoped managed checkout and reconciles it with the latest
+Cloud revision:
+
+```sh
+vstd cloud presentation open "Acme strategy" --json
+vstd cloud presentation create --title "New client story" --json
+```
+
+Both commands return the local `root` used by the file-native authoring skills.
+The list marks known view-only presentations, and `open` refuses them before
+creating a checkout.
+Agent edits should run through `vstd worktree begin` and `vstd worktree finish`
+so concurrent visual-editor changes are reconciled before the result is saved to
+Cloud. A shared viewing link by itself does not grant authoring permission.
 
 Clone a workspace into a directory that does not yet exist, or connect a valid
 existing studio:
@@ -293,10 +310,11 @@ From the player HUD you can:
 
 ## Use Vessica Studio with Codex
 
-Vessica Studio keeps its authoring instructions in six canonical skills:
+Vessica Studio keeps its authoring instructions in seven canonical skills:
 
 | Skill | Use it for |
 |---|---|
+| `cloud-presentation` | Open or create a Cloud presentation from any Codex chat |
 | `deck-new` | Frame, outline, create, and visually review a new deck |
 | `slide-add` | Insert one or more context-aware slides into an existing narrative |
 | `slide-edit` | Edit content or layout while preserving the companion contract |
@@ -322,7 +340,7 @@ codex plugin marketplace add vessica-labs/vessica-studio --ref main
 codex plugin add vessica-studio@vessica-studio
 ```
 
-Start a new Codex task after installation so the six plugin skills are
+Start a new Codex task after installation so the seven plugin skills are
 discovered. In Codex CLI, `/plugins` opens the plugin browser; in Codex desktop,
 use the Plugins surface. Verify the install with `codex plugin list`.
 
@@ -334,6 +352,7 @@ copies launchers into `${CODEX_HOME:-$HOME/.codex}/prompts`. The launchers call
 Use a launcher explicitly:
 
 ```text
+/vstd-cloud-presentation Open the Acme strategy presentation from Cloud and edit slide 40
 /vstd-deck-new Build a 12-slide board presentation about our product strategy
 /vstd-slide-add Add a customer proof slide after 0040
 /vstd-slide-edit Redesign slide 0060 around the attached source PDF

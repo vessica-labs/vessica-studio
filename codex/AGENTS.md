@@ -17,7 +17,8 @@ Copy this file into a content repo (or merge into its AGENTS.md).
   promoted with `vstd chart promote-text <deck> <slide> --dry-run` followed by
   the write command after preview.
 - For a specific workflow, run `vstd skill <name>` and follow it exactly:
-  `deck-new`, `deck-fork`, `deck-review`, `market-refresh`, `slide-add`, `slide-edit`
+  `cloud-presentation`, `deck-new`, `deck-fork`, `deck-review`, `market-refresh`,
+  `slide-add`, `slide-edit`
 - Preview with `vstd serve` (default http://localhost:4400) — it watches and
   rebuilds; never edit files under `decks/*/build/` (generated).
 - Slide canvas is fixed 1280×720. Slide status lives on the root `<section>`:

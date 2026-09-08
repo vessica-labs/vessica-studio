@@ -9,6 +9,9 @@ Read `../../docs/conventions.md`, or run `vstd skill conventions` when the skill
 is loaded outside the plugin file tree. This skill exists to enforce one thing:
 **edits are context-aware**.
 
+If the user names a Cloud presentation but there is no current studio root, run
+`vstd skill cloud-presentation` and follow its open workflow before continuing.
+
 Run `vstd cloud workspace status` to detect connection state. In every state,
 edit the same paired local files; offline or unconnected status never requires
 login and must not be presented as a successful sync.

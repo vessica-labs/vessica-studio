@@ -10,6 +10,11 @@ skill is loaded outside the plugin file tree. Locate the studio root (folder wit
 `studio.yaml`, or ask). Run `vstd cloud workspace status` to detect whether it
 is connected; local-only work proceeds without login or network access.
 
+If the request starts from chat and asks for a new Cloud presentation without a
+current studio root, first run `vstd skill cloud-presentation` and follow its
+create workflow. Use the starter deck it returns instead of scaffolding another
+studio or deck.
+
 ## 1. Frame it
 
 If not already clear from conversation, ask the user: audience & setting, length
@@ -55,9 +60,9 @@ or the `vstd serve` command. Summarize the slide list, unresolved critic items,
 and any visual QA that optional tooling prevented.
 
 
-If the user requested a new presentation in their connected Cloud workspace,
-keep this deck in its own local studio directory. After the build and review,
-run `vstd cloud workspace create --title "T" --root DIR` (vstd 0.5.0 or newer).
+If the user requested a new presentation in Cloud and this deck was authored in
+an existing local studio, keep it in its own local studio directory. After the
+build and review, run `vstd cloud workspace create --title "T" --root DIR`.
 This creates its first Cloud revision and connects the directory for subsequent
 pull/sync commands. Use the existing browser device approval flow if sign-in is
 needed; never ask for a pasted credential. Report the returned presentation and
