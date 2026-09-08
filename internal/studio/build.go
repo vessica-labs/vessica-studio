@@ -83,7 +83,7 @@ func (s *Studio) Build(deck string) (string, error) {
 	out := string(player)
 	out = strings.ReplaceAll(out, "<!--VSTD:TITLE-->", htmlEscape(meta.Title))
 	out = strings.ReplaceAll(out, "<!--VSTD:THEME-->",
-		"<style>\n"+string(themeCSS)+"\n/* deck overrides */\n"+string(deckCSS)+"\n</style>")
+		"<style id=\"vstd-presentation-styles\">\n"+string(themeCSS)+"\n/* deck overrides */\n"+string(deckCSS)+"\n</style>")
 	out = strings.Replace(out, "<!--VSTD:SLIDES-->", slides.String(), 1)
 	out = strings.Replace(out, "/*VSTD:META*/null/*:VSTD*/", string(rtJSON), 1)
 

@@ -1,6 +1,6 @@
 {
   "name": "vessica-studio",
-  "version": "0.7.5",
+  "version": "0.7.6",
   "description": "Agent-driven presentation building on the Vessica Studio engine (vstd): open Cloud presentations and create, edit, fork, refresh, or review file-native decks.",
   "author": { "name": "Vessica Labs" },
   "license": "Apache-2.0",

@@ -1972,6 +1972,16 @@ body.editmode .slide.active{cursor:default}
   let deferredReload=false;
   let refreshingPresentation=false;
   let presentationETag='';
+  function syncPresentationStyles(doc){
+    const current=document.getElementById('vstd-presentation-styles');
+    const incoming=doc.getElementById('vstd-presentation-styles');
+    if(!current||!incoming||current.textContent===incoming.textContent)return false;
+    current.textContent=incoming.textContent;
+    // Filmstrip and grid thumbnails clone head styles into shadow roots.
+    // Drop that cache so their next build uses the newly committed theme/deck CSS.
+    filmStyles=null;
+    return true;
+  }
   async function refreshPresentation(){
     if(refreshingPresentation||selfMutations||autosaveInFlight||!window.VSTD||window.__dictating)return;
     if(slides.some(slideDirty)){scheduleAutosave(0);return;}
@@ -1984,7 +1994,10 @@ body.editmode .slide.active{cursor:default}
       const next=[...doc.querySelectorAll('#frame > .slide')];if(!next.length)return;
       if(selfMutations||autosaveInFlight||slides.some(slideDirty)||frame.contains(document.activeElement))return;
       presentationETag=response.headers.get('etag')||'';
-      if(next.length===slides.length&&next.every((s,i)=>s.dataset.vstd===slides[i].dataset.vstd&&cleanSlideHTML(s)===cleanSlideHTML(slides[i])))return;
+      const slidesChanged=next.length!==slides.length||!next.every((s,i)=>s.dataset.vstd===slides[i].dataset.vstd&&cleanSlideHTML(s)===cleanSlideHTML(slides[i]));
+      const stylesChanged=syncPresentationStyles(doc);
+      if(!slidesChanged&&!stylesChanged)return;
+      if(!slidesChanged){buildFilm();if(overview.classList.contains('open'))buildOv();fit();return;}
       const active=slides[cur]?.dataset.vstd;
       setSelection([]);
       slides.forEach(s=>s.remove());frame.prepend(...next);slides.splice(0,slides.length,...next);
