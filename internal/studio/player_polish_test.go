@@ -34,6 +34,7 @@ func TestPlayerPolishAgendaInsertGridAndChromePlacement(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	raw, err := chromium.Evaluate(ctx, browser, (&url.URL{Scheme: "file", Path: page}).String(), `(()=>{
+  if(document.readyState!=='complete')return '';
   if(!document.querySelector('#filmNew'))return '';
   window.__vme={presenter:true,editable:true};window.__vaudience=false;
   document.querySelector('#editbtn').click();

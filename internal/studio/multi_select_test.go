@@ -40,6 +40,7 @@ func TestPlayerMarqueeSelectsMovesAndDeletesMultipleObjects(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	raw, err := chromium.Evaluate(ctx, browser, target, `(()=>{
+  if(document.readyState!=='complete')return '';
   if(!document.querySelector('#editbtn')||!document.querySelector('#a'))return '';
   window.__vme={presenter:true,editable:true};window.__vaudience=false;
   document.querySelector('#editbtn').click();
