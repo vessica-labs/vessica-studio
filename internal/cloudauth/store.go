@@ -20,9 +20,20 @@ type Store interface {
 type MemoryStore struct {
 	mu         sync.Mutex
 	credential string
+	lockOnce   sync.Once
+	rotation   chan struct{}
 }
 
 func NewMemoryStore() *MemoryStore { return &MemoryStore{} }
+func (s *MemoryStore) Lock(ctx context.Context) (func(), error) {
+	s.lockOnce.Do(func() { s.rotation = make(chan struct{}, 1) })
+	select {
+	case s.rotation <- struct{}{}:
+		return func() { <-s.rotation }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
 func (s *MemoryStore) Load(context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

@@ -121,6 +121,11 @@ func (m *Manager) Login(ctx context.Context, prompt Prompt) (string, error) {
 func (m *Manager) accept(token cloud.Token) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	unlock, err := lockStore(context.Background(), m.store)
+	if err != nil {
+		return "", safeError("lock cloud session", err)
+	}
+	defer unlock()
 	return m.acceptLocked(token)
 }
 
@@ -144,6 +149,11 @@ func (m *Manager) Token(ctx context.Context) (string, error) {
 		v := m.access
 		return v, nil
 	}
+	unlock, err := lockStore(ctx, m.store)
+	if err != nil {
+		return "", safeError("lock cloud session", err)
+	}
+	defer unlock()
 	refresh, err := m.store.Load(ctx)
 	if err != nil {
 		return "", safeError("load cloud session", err)
@@ -169,6 +179,11 @@ func (m *Manager) Account(ctx context.Context) (cloud.Account, error) {
 func (m *Manager) Logout(ctx context.Context) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	unlock, err := lockStore(ctx, m.store)
+	if err != nil {
+		return &LogoutError{}
+	}
+	defer unlock()
 	refresh, loadErr := m.store.Load(ctx)
 	var revokeErr error
 	if loadErr == nil {
@@ -186,6 +201,17 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return &LogoutError{Remote: true}
 	}
 	return nil
+}
+
+// Stores shared by processes/managers can serialize the complete credential
+// rotation, not just individual reads and writes. Access tokens stay in memory.
+func lockStore(ctx context.Context, store Store) (func(), error) {
+	if locker, ok := store.(interface {
+		Lock(context.Context) (func(), error)
+	}); ok {
+		return locker.Lock(ctx)
+	}
+	return func() {}, nil
 }
 
 func Redact(message string, secrets ...string) string {

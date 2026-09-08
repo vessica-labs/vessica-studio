@@ -164,7 +164,10 @@ vstd cloud workspace list
 `login` prints a verification URL and user code. Renewable session material is
 stored in the operating system credential store; access tokens are kept only in
 memory. If secure credential storage is unavailable, login fails instead of
-writing a plaintext fallback.
+writing a plaintext fallback. Concurrent native CLI processes serialize refresh
+credential rotation with an OS file lock, released automatically if a process
+exits. The per-endpoint lock in the user cache directory contains no credentials;
+refresh credentials remain in the OS credential store.
 
 Clone a workspace into a directory that does not yet exist, or connect a valid
 existing studio:
