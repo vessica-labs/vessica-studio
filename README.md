@@ -1260,3 +1260,11 @@ File-backed `editor-transform` requests with `delta: true` support the canonical
 128 MiB snapshot budget (16 MiB per file, at most 2,000 files). Inline snapshot
 transforms retain their 20 MiB transport bound. Unchanged media is omitted from
 delta responses.
+
+Hosted audience elements use `data-vstd-audience-share` on their container,
+`data-vstd-audience-qr` on an image, and `data-vstd-audience-url` on the URL text.
+Cloud supplies the destination rather than copying a standalone `public_host`.
+`editor-transform` accepts optional `audience_url`; `release-build` accepts
+`--audience-url HTTPS_URL`. An explicitly empty value disables those elements,
+while omission preserves standalone behavior. Hosted QR images are embedded PNGs,
+so immutable releases require no sharing API or third-party image service.

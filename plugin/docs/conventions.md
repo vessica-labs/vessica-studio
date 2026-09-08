@@ -203,3 +203,12 @@ labels, geometry, hierarchy, omissions, and source attribution—not only style.
 If Playwright, Chromium, or a running engine is unavailable, perform static
 fragment and companion checks, run the applicable build/tests, log unresolved
 items, and report that screenshot-based visual QA was not completed.
+
+## Portable audience sharing
+
+Use `data-vstd-audience-share` for the share block, `data-vstd-audience-qr`
+for its image, and `data-vstd-audience-url` for the readable link. Do not bake a
+personal hostname or `/follow` destination into Cloud presentation fragments.
+The host supplies a presentation-scoped audience URL and self-contained QR.
+An unconfigured Cloud link displays a sharing-unavailable state. Audience links
+open the latest published version; editing source does not publish it.

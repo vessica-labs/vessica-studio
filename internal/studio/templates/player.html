@@ -377,6 +377,16 @@ body.editmode .slide.active{cursor:default}
 </style>
 <!--VSTD:THEME-->
 <script>window.VSTD=/*VSTD:META*/null/*:VSTD*/;</script>
+<script>
+// These declarative elements travel with a deck; the host supplies its audience URL.
+document.addEventListener('DOMContentLoaded',()=>{
+ const hosted=Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url');
+ const url=hosted?window.VSTD.audience_url:((window.VSTD||{}).follow_url||'');
+ document.querySelectorAll('[data-vstd-audience-url]').forEach(el=>{el.textContent=url?url.replace(/^https?:\/\//,''):'Sharing is not enabled';if(el.tagName==='A'){if(url)el.setAttribute('href',url);else el.removeAttribute('href');}});
+ document.querySelectorAll('[data-vstd-audience-qr]').forEach(el=>{if(url){el.hidden=false;el.setAttribute('src',window.VSTD.audience_qr||'/api/deck/'+window.VSTD.deck+'/share-qr.png');}else if(hosted){el.hidden=true;el.removeAttribute('src');}});
+ document.querySelectorAll('[data-vstd-audience-share]').forEach(el=>el.setAttribute('aria-label',url?'Scan or visit '+url.replace(/^https?:\/\//,'')+' to view this presentation':'Audience sharing is not enabled'));
+});
+</script>
 </head>
 <body>
 <div id="stage"><div id="frame">
@@ -2893,8 +2903,10 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
           '<img src="/api/deck/'+window.VSTD.deck+'/share-qr.png" style="width:380px;height:380px;display:block" alt="Scan to follow along">'+
           '<div style="font-family:var(--vstd-display);font-size:26px;color:#1A1A1A;margin-top:14px;letter-spacing:-.01em">Scan to follow along live</div>'+
           '<div data-follow-url style="font-family:var(--vstd-ui);font-size:17px;color:#565248;margin-top:6px"></div></div>';
-        const followURL=(window.VSTD&&window.VSTD.follow_url)||location.origin+'/follow';
-        q.querySelector('[data-follow-url]').textContent=followURL.replace(/^https?:\/\//,'');
+        const followURL=Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url')?window.VSTD.audience_url:((window.VSTD&&window.VSTD.follow_url)||location.origin+'/follow');
+        if(window.VSTD.audience_qr)q.querySelector('img').src=window.VSTD.audience_qr;
+        else if(Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url'))q.querySelector('img').hidden=true;
+        q.querySelector('[data-follow-url]').textContent=followURL?followURL.replace(/^https?:\/\//,''):'Enable audience sharing and publish a version in Details.';
         q.addEventListener('click',()=>q.remove());
         document.body.appendChild(q);}
       out='QR shown';}

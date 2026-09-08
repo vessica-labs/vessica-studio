@@ -332,6 +332,8 @@ func cmdReleaseBuild(args []string) error {
 	fs := flag.NewFlagSet("release-build", flag.ContinueOnError)
 	root := rootFlag(fs)
 	output := fs.String("output", "", "empty destination for release artifacts")
+	audience := fs.String("audience-url", "", "host-owned HTTPS audience entry; empty disables sharing elements")
+	var audienceURL *string
 	var deck string
 	if len(args) > 0 && !strings.HasPrefix(args[0], "-") {
 		deck = args[0]
@@ -362,11 +364,16 @@ func cmdReleaseBuild(args []string) error {
 	if err != nil {
 		return err
 	}
-	manifest, err := st.BuildRelease(deck, *output, studio.ReleaseEngineIdentity{
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "audience-url" {
+			audienceURL = audience
+		}
+	})
+	manifest, err := st.BuildReleaseWithAudienceURL(deck, *output, studio.ReleaseEngineIdentity{
 		Name:     "vstd",
 		Version:  version,
 		Revision: revision,
-	})
+	}, audienceURL)
 	if err != nil {
 		return err
 	}

@@ -1,9 +1,12 @@
 package studio
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/skip2/go-qrcode"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -28,6 +31,18 @@ import (
 //	<!--VSTD:SLIDES-->  concatenated fragments (each stamped data-vstd="id")
 //	/*VSTD:META*/null/*:VSTD*/  runtime metadata JSON
 func (s *Studio) Build(deck string) (string, error) {
+	return s.BuildWithAudienceURL(deck, nil)
+}
+
+// BuildWithAudienceURL supplies host-owned sharing context without changing source files.
+// A nil URL preserves standalone behavior; an empty URL disables hosted sharing.
+func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string, error) {
+	if audienceURL != nil && *audienceURL != "" {
+		u, e := url.Parse(*audienceURL)
+		if e != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.Fragment != "" || len(*audienceURL) > 2048 {
+			return "", fmt.Errorf("invalid audience URL")
+		}
+	}
 	meta, err := s.LoadDeckMeta(deck)
 	if err != nil {
 		return "", err
@@ -77,6 +92,17 @@ func (s *Studio) Build(deck string) (string, error) {
 	}
 	if s.Config.FollowDeck != "" && s.Config.PublicHost != "" {
 		rt["follow_url"] = strings.TrimRight(s.Config.PublicHost, "/") + "/follow"
+	}
+	if audienceURL != nil {
+		rt["audience_url"] = *audienceURL
+		if *audienceURL != "" {
+			png, e := qrcode.Encode(*audienceURL, qrcode.Medium, 640)
+			if e != nil {
+				return "", e
+			}
+			rt["audience_qr"] = "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+		}
+		rt["follow_url"] = *audienceURL
 	}
 	rtJSON, _ := json.Marshal(rt)
 

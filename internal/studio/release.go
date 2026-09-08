@@ -65,6 +65,11 @@ const (
 // It consumes the engine-owned player and file model through Build and never
 // includes authoring source, companion notes, credentials, or generated state.
 func (s *Studio) BuildRelease(deck, output string, engine ReleaseEngineIdentity) (*ReleaseManifest, error) {
+	return s.BuildReleaseWithAudienceURL(deck, output, engine, nil)
+}
+
+// BuildReleaseWithAudienceURL renders portable QR elements for a host-owned audience entrance.
+func (s *Studio) BuildReleaseWithAudienceURL(deck, output string, engine ReleaseEngineIdentity, audienceURL *string) (*ReleaseManifest, error) {
 	if engine.Name != "vstd" || engine.Version == "" || !releaseRevisionRE.MatchString(engine.Revision) {
 		return nil, fmt.Errorf("invalid release engine identity")
 	}
@@ -108,7 +113,7 @@ func (s *Studio) BuildRelease(deck, output string, engine ReleaseEngineIdentity)
 		}
 	}()
 
-	built, err := s.Build(deck)
+	built, err := s.BuildWithAudienceURL(deck, audienceURL)
 	if err != nil {
 		return nil, err
 	}

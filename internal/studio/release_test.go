@@ -205,3 +205,37 @@ func TestBuildReleaseRejectsUnsafeOutputAndMissingAssets(t *testing.T) {
 		t.Fatalf("missing asset error = %v", err)
 	}
 }
+
+func TestHostedReleaseAudienceIsSelfContained(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "studio.yaml"), "theme_default: default\n")
+	writeFile(t, filepath.Join(root, "themes", "default", "theme.css"), ".slide{background:#fff}")
+	writeFile(t, filepath.Join(root, "decks", "demo", "deck.yaml"), "title: Demo\ntheme: default\n")
+	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0010-a.html"), `<section class="slide"><img data-vstd-audience-qr><span data-vstd-audience-url></span></section>`)
+	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0010-a.md"), "# Companion\n")
+	st, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := "https://studio.example/s/ABCDEFG234"
+	identity := ReleaseEngineIdentity{Name: "vstd", Version: "test", Revision: strings.Repeat("a", 40)}
+	firstDir := filepath.Join(t.TempDir(), "first")
+	first, err := st.BuildReleaseWithAudienceURL("demo", firstDir, identity, &link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := st.BuildReleaseWithAudienceURL("demo", filepath.Join(t.TempDir(), "second"), identity, &link)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first.ManifestChecksum != second.ManifestChecksum {
+		t.Fatal("hosted release not deterministic")
+	}
+	content, err := os.ReadFile(filepath.Join(firstDir, "index.html"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(content, []byte(`"audience_url":"https://studio.example/s/ABCDEFG234"`)) || !bytes.Contains(content, []byte(`"audience_qr":"data:image/png;base64,`)) {
+		t.Fatal("release lacks portable sharing")
+	}
+}

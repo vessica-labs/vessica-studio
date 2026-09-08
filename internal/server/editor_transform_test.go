@@ -135,3 +135,31 @@ func TestEditorTransformLargeFileBackedDeck(t *testing.T) {
 		}
 	}
 }
+
+func TestEditorTransformCloudAudience(t *testing.T) {
+	st := testStudio(t)
+	snapshot, err := studio.CloudContent(st.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	link := "https://studio.example/s/ABCD2345"
+	input := EditorTransformInput{Deck: "demo", Files: snapshot.Files, Method: "GET", Path: "/d/demo/", AudienceURL: &link}
+	result, err := TransformEditor(context.Background(), input)
+	if err != nil || result.Status != 200 || !strings.Contains(string(result.Body), `"audience_url":"https://studio.example/s/ABCD2345"`) {
+		t.Fatalf("render: %v %d", err, result.Status)
+	}
+	input.Path = "/api/deck/demo/share-qr.png?ttl=168"
+	result, err = TransformEditor(context.Background(), input)
+	if err != nil || result.Status != 200 || result.Headers["content-type"] != "image/png" {
+		t.Fatalf("QR: %v %+v", err, result.Headers)
+	}
+	link = ""
+	result, err = TransformEditor(context.Background(), input)
+	if err != nil || result.Status != 404 {
+		t.Fatalf("disabled QR: %v %d", err, result.Status)
+	}
+	link = "javascript:alert(1)"
+	if _, err = TransformEditor(context.Background(), input); err == nil {
+		t.Fatal("unsafe URL accepted")
+	}
+}

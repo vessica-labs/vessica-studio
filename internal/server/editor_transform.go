@@ -15,18 +15,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/skip2/go-qrcode"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
 type EditorTransformInput struct {
-	Root    string               `json:"root,omitempty"`
-	Delta   bool                 `json:"delta,omitempty"`
-	Deck    string               `json:"deck"`
-	Files   []studio.ContentFile `json:"files"`
-	Method  string               `json:"method"`
-	Path    string               `json:"path"`
-	Headers map[string]string    `json:"headers"`
-	Body    []byte               `json:"body"`
+	AudienceURL *string              `json:"audience_url,omitempty"`
+	Root        string               `json:"root,omitempty"`
+	Delta       bool                 `json:"delta,omitempty"`
+	Deck        string               `json:"deck"`
+	Files       []studio.ContentFile `json:"files"`
+	Method      string               `json:"method"`
+	Path        string               `json:"path"`
+	Headers     map[string]string    `json:"headers"`
+	Body        []byte               `json:"body"`
 }
 type EditorTransformResult struct {
 	Delta   bool                 `json:"delta,omitempty"`
@@ -39,6 +41,12 @@ type EditorTransformResult struct {
 
 func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransformResult, error) {
 	var result EditorTransformResult
+	if in.AudienceURL != nil && *in.AudienceURL != "" {
+		audience, e := url.Parse(*in.AudienceURL)
+		if e != nil || audience.Scheme != "https" || audience.Host == "" || audience.User != nil || audience.Fragment != "" || len(*in.AudienceURL) > 2048 {
+			return result, errors.New("invalid audience URL")
+		}
+	}
 	if in.Root != "" {
 		if len(in.Files) != 0 {
 			return result, errors.New("root and files are mutually exclusive")
@@ -109,7 +117,7 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	case u.Path == "/api/me":
 		writeJSON(w, map[string]any{"mode": "studio", "presenter": true, "editable": true, "start_editing": true, "capabilities": map[string]bool{"transfer_slides": false}})
 	case u.Path == "/d/"+in.Deck+"/":
-		built, e := st.Build(in.Deck)
+		built, e := st.BuildWithAudienceURL(in.Deck, in.AudienceURL)
 		if e != nil {
 			return result, e
 		}
@@ -119,6 +127,18 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(content)
+	case u.Path == "/api/deck/"+in.Deck+"/share-qr.png":
+		if in.AudienceURL == nil || *in.AudienceURL == "" {
+			w.WriteHeader(http.StatusNotFound)
+		} else {
+			png, e := qrcode.Encode(*in.AudienceURL, qrcode.Medium, 640)
+			if e != nil {
+				return result, e
+			}
+			w.Header().Set("Content-Type", "image/png")
+			w.Header().Set("Cache-Control", "no-store")
+			_, _ = w.Write(png)
+		}
 	case strings.HasPrefix(u.Path, "/library/"):
 		found := false
 		for _, f := range in.Files {
@@ -179,7 +199,7 @@ func transformRoute(method, p, deck string) bool {
 	suffix := strings.TrimPrefix(p, prefix)
 	parts := strings.Split(suffix, "/")
 	if method == "GET" {
-		return suffix == "status" || len(parts) == 2 && (parts[0] == "slide" && studio.ValidSlideID(parts[1]) || parts[0] == "source")
+		return suffix == "share-qr.png" || suffix == "status" || len(parts) == 2 && (parts[0] == "slide" && studio.ValidSlideID(parts[1]) || parts[0] == "source")
 	}
 	if method == "POST" && suffix == "slides" {
 		return true
