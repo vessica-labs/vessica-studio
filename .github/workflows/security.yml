@@ -63,5 +63,9 @@ jobs:
     steps:
       - name: Download verified immutable binaries
         run: gh run download "$RELEASE_RUN" --name "vstd-$RELEASE_SHA" --dir release
+      - name: Verify release binary version
+        run: |
+          chmod +x release/vstd_linux_amd64
+          test "$(release/vstd_linux_amd64 version)" = "vstd ${RELEASE_TAG#v}"
       - name: Publish verified tag
         run: gh release create "$RELEASE_TAG" release/* --verify-tag --title "Vessica Studio $RELEASE_TAG" --generate-notes
