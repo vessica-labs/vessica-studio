@@ -62,6 +62,9 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`window.VSTDPresenterControl`,                            // all client control paths share the same presenter gate
 		`/api/observability/view`,                                // audience and team slide views feed the owner dashboard asynchronously
 		`/api/observability/openai-usage`,                        // authenticated Realtime usage is reported without exposing the API key
+		`/api/realtime/end`,                                      // hosted billing can settle a bounded voice reservation promptly
+		`Promise.allSettled([...openAIUsageReports])`,            // final usage receipts drain before hosted settlement
+		`problem.message`,                                        // hosted entitlement/provider errors replace misleading local-key advice
 		`keepalive:true`,                                         // telemetry never blocks navigation or unload
 		`new MutationObserver(lockAudienceHUD)`,                  // dynamically injected HUD controls are also hidden
 		`chip.setAttribute('role','status')`,                     // follow state is an indicator, not an audience control
