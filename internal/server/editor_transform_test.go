@@ -2,12 +2,15 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/vessica-labs/vessica-studio/internal/library"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
@@ -86,6 +89,30 @@ func TestEditorTransformAllowsReadOnlyVideoPlayback(t *testing.T) {
 		}
 	}
 }
+
+func TestEditorTransformServesMaterializedFileBackedVideo(t *testing.T) {
+	st := testStudio(t)
+	videoBytes := []byte("materialized cloud video")
+	digest := fmt.Sprintf("%x", sha256.Sum256(videoBytes))
+	manifest := &library.Manifest{Version: 1, StyleFamilies: map[string]library.StyleFamily{}, Videos: []library.VideoAsset{{
+		ID: "cloud-video", File: "video/" + digest + ".mp4", Hash: digest, Bytes: int64(len(videoBytes)), Poster: "img/cloud-video.jpg",
+	}}}
+	if err := manifest.Save(filepath.Join(st.Root, "library")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(st.Root, "library", "video"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(st.Root, "library", "video", digest+".mp4"), videoBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	in := EditorTransformInput{Root: st.Root, Delta: true, Deck: "demo", Method: "GET", Path: "/assets/video/cloud-video", Headers: map[string]string{"range": "bytes=0-10"}}
+	result, err := TransformEditor(context.Background(), in)
+	if err != nil || result.Status != 206 || string(result.Body) != string(videoBytes[:11]) || result.Headers["content-range"] != "bytes 0-10/24" {
+		t.Fatalf("video response: status=%d headers=%v body=%q err=%v", result.Status, result.Headers, result.Body, err)
+	}
+}
+
 func TestEditorTransformFileBackedDelta(t *testing.T) {
 	st := testStudio(t)
 	in := EditorTransformInput{Root: st.Root, Delta: true, Deck: "demo", Method: "GET", Path: "/api/me"}
