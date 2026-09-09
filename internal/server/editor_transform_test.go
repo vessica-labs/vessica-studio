@@ -75,6 +75,17 @@ func TestEditorTransformRenderAndEdit(t *testing.T) {
 		}
 	}
 }
+
+func TestEditorTransformAllowsReadOnlyVideoPlayback(t *testing.T) {
+	if !transformRoute("GET", "/assets/video/vstd-upload-850815525", "demo") {
+		t.Fatal("editor transform rejected the engine video route")
+	}
+	for _, method := range []string{"POST", "PUT", "DELETE"} {
+		if transformRoute(method, "/assets/video/vstd-upload-850815525", "demo") {
+			t.Fatalf("editor transform allowed %s video route", method)
+		}
+	}
+}
 func TestEditorTransformFileBackedDelta(t *testing.T) {
 	st := testStudio(t)
 	in := EditorTransformInput{Root: st.Root, Delta: true, Deck: "demo", Method: "GET", Path: "/api/me"}
