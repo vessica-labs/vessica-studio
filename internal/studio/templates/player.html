@@ -483,7 +483,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   <button type="button" class="ico" data-act="vessica" data-tip="Vessica" data-key="V" aria-label="Vessica"><svg class="i"><use href="#vi-vessica"/></svg></button>
   <div class="rgrow"></div>
   <button type="button" id="saveStatus" class="saved" data-act="save" data-tip="Save now" data-key="&#8984;S"><span class="dot"></span><span class="txt">Saved</span><span class="kbd">&#8984;S</span></button>
-  <button type="button" id="detailsbtn" style="display:none" data-act="details" data-tip="Presentation details">Details</button>
   <button type="button" class="ico" data-act="share" data-mirror="sharebtn" data-tip="Share" aria-label="Share"><svg class="i"><use href="#vi-share"/></svg></button>
   <span class="rwrap" id="rdlwrap"><button type="button" class="ico" data-act="download" data-mirror="downloadbtn" data-tip="Download" aria-label="Download"><svg class="i"><use href="#vi-download"/></svg></button></span>
   <span class="rsep"></span>
@@ -957,7 +956,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     else if(a==='newslide')newSlide();
     else if(a==='addtext')addTextBox();
     else if(a==='shapes')toggleShapeMenu(b);
-    else if(a==='details'&&window.parent!==window)window.parent.postMessage({type:'vstd:details'},'*');
     else if(a==='kb'){const k=document.getElementById('kbbtn');if(k)k.click();}
     else if(a==='film')toggleFilm();
   }
@@ -980,8 +978,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   function syncRibbon(){
     document.querySelectorAll('#editRibbon [data-mirror]').forEach(b=>{const src=document.getElementById(b.dataset.mirror);b.style.display=(src&&src.style.display!=='none')?'':'none';});
     const fn=document.getElementById('filmNew');if(fn)fn.style.display=canEditDeck()?'':'none';
-    const details=document.getElementById('detailsbtn');if(details)details.style.display=window.parent!==window?'':'none';
-    if(window.parent!==window)window.parent.postMessage({type:'vstd:editor-ready',details:true},'*');
+    if(window.parent!==window)window.parent.postMessage({type:'vstd:editor-ready'},'*');
   }
   document.addEventListener('vstd:identity',syncRibbon);
   function dockDownloadMenu(on){
@@ -2906,7 +2903,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
         const followURL=Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url')?window.VSTD.audience_url:((window.VSTD&&window.VSTD.follow_url)||location.origin+'/follow');
         if(window.VSTD.audience_qr)q.querySelector('img').src=window.VSTD.audience_qr;
         else if(Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url'))q.querySelector('img').hidden=true;
-        q.querySelector('[data-follow-url]').textContent=followURL?followURL.replace(/^https?:\/\//,''):'Enable audience sharing and publish a version in Details.';
+        q.querySelector('[data-follow-url]').textContent=followURL?followURL.replace(/^https?:\/\//,''):'Enable audience sharing and publish a version from its presentation card.';
         q.addEventListener('click',()=>q.remove());
         document.body.appendChild(q);}
       out='QR shown';}

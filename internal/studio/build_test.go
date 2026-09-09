@@ -73,7 +73,6 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`body.editmode.hassel #objectBar`,                        // the object bar only shows while something is selected
 		`id="filmstrip"`,                                         // slide thumbnails dock left while editing
 		`id="saveStatus"`,                                        // save state is an indicator in the ribbon, not a button label
-		`id="detailsbtn"`,                                        // embedded Cloud details opens from the shared ribbon
 		`data-act="addtext"`,                                     // the ribbon can insert a new editable text box
 		`data-shape="rect"`,                                      // the ribbon exposes new shape choices
 		`data-shape="circle"`,                                    // circle insertion is available without authored HTML
@@ -118,7 +117,6 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`body.gridmode #filmstrip{display:none!important}`,                // Grid fully hides the slide filmstrip
 		`const label=s.dataset.menu||s.dataset.sec||heading`,              // Agenda falls back to every slide's visible title
 		`vtip.classList.toggle('above',above)`,                            // bottom controls place tooltips above the viewport edge
-		`window.parent.postMessage({type:'vstd:details'}`,                 // embedded Details action is handled by the Cloud shell
 		`vstd:interactionend`,                                             // deferred reload resumes only after editing ends
 		`[data-chart-group]>.chart-art`,                                   // chart geometry yields selection to its movable group
 		`const HIGHLIGHT_TITLE`,                                           // Vessica has one explicit title-exclusion boundary
@@ -136,6 +134,11 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)
+		}
+	}
+	for _, removed := range []string{`id="detailsbtn"`, `vstd:details`} {
+		if strings.Contains(html, removed) {
+			t.Errorf("built player retains removed Details control %q", removed)
 		}
 	}
 	if strings.Contains(html, "<!--VSTD:") {
