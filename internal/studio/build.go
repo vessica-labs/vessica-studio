@@ -69,11 +69,15 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 		return "", fmt.Errorf("deck %q has no slides", deck)
 	}
 	var slides strings.Builder
-	for _, id := range ids {
+	for index, id := range ids {
 		frag, _, err := s.ReadSlide(deck, id)
 		if err != nil {
 			return "", err
 		}
+		if index == 0 && audienceURL != nil && *audienceURL != "" {
+			frag = ensureAudienceShare(frag)
+		}
+		frag = prioritizeSlideAssets(frag, index == 0)
 		slides.WriteString(stampFragment(ensurePagePill(frag), id))
 		slides.WriteString("\n")
 	}
@@ -137,6 +141,54 @@ func warnThemePlayerOnce(theme string) {
 
 var sectionTagRe = regexp.MustCompile(`<section\s`)
 var pagePillClassRe = regexp.MustCompile(`class\s*=\s*["'][^"']*\bpgpill\b[^"']*["']`)
+var imageTagRe = regexp.MustCompile(`(?is)<img\b[^>]*>`)
+var sourceTagRe = regexp.MustCompile(`(?is)<source\b[^>]*>`)
+var srcAttrRe = regexp.MustCompile(`(?i)(\s)src(\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)`)
+var srcsetAttrRe = regexp.MustCompile(`(?i)(\s)srcset(\s*=\s*)("[^"]*"|'[^']*'|[^\s>]+)`)
+
+func prioritizeSlideAssets(frag string, eager bool) string {
+	frag = imageTagRe.ReplaceAllStringFunc(frag, func(tag string) string {
+		if eager {
+			return addImageLoadingHints(tag, "eager", "high")
+		}
+		tag = srcsetAttrRe.ReplaceAllString(tag, `${1}data-vstd-srcset${2}${3}`)
+		tag = srcAttrRe.ReplaceAllString(tag, `${1}data-vstd-src${2}${3}`)
+		return addImageLoadingHints(tag, "lazy", "low")
+	})
+	if !eager {
+		frag = sourceTagRe.ReplaceAllStringFunc(frag, func(tag string) string {
+			return srcsetAttrRe.ReplaceAllString(tag, `${1}data-vstd-srcset${2}${3}`)
+		})
+	}
+	return frag
+}
+
+func addImageLoadingHints(tag, loading, priority string) string {
+	lower := strings.ToLower(tag)
+	attrs := ""
+	if !strings.Contains(lower, " loading=") {
+		attrs += ` loading="` + loading + `"`
+	}
+	if !strings.Contains(lower, " fetchpriority=") {
+		attrs += ` fetchpriority="` + priority + `"`
+	}
+	if !strings.Contains(lower, " decoding=") {
+		attrs += ` decoding="async"`
+	}
+	return strings.TrimSuffix(tag, ">") + attrs + ">"
+}
+
+func ensureAudienceShare(frag string) string {
+	if strings.Contains(frag, "data-vstd-audience-qr") || strings.Contains(frag, "data-vstd-audience-share") {
+		return frag
+	}
+	i := strings.LastIndex(strings.ToLower(frag), "</section>")
+	if i < 0 {
+		return frag
+	}
+	block := `<div class="vstd-audience-share" data-vstd-audience-share data-vstd-generated="audience-share"><img data-vstd-audience-qr alt="QR code to view this presentation"><span>View this presentation</span><strong data-vstd-audience-url></strong></div>`
+	return frag[:i] + block + frag[i:]
+}
 
 // ensurePagePill makes slide numbering an engine guarantee instead of
 // requiring every author (or agent) to remember presentation chrome. Existing

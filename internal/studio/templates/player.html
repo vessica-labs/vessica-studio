@@ -36,10 +36,12 @@ html,body{height:100%;background:#0A0E13;font-family:var(--vstd-ui)}
 /* ---------- Stage & scaling ---------- */
 #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
 #frame{width:1280px;height:720px;position:relative;flex:0 0 auto;box-shadow:0 12px 60px rgba(0,0,0,.5)}
-.slide{display:none}
+.slide{display:none;font-family:var(--sans,var(--vstd-sans))}
 .slide.active{display:block!important}
 .slide.active{display:block}
 .notes{display:none}
+.vstd-audience-share{position:absolute;right:48px;bottom:36px;z-index:12;width:218px;min-height:126px;padding:15px 16px 13px;border-radius:14px;background:#fff;color:#1a1a1a;box-shadow:0 7px 24px rgba(0,0,0,.2);display:grid;grid-template-columns:76px 1fr;grid-template-rows:auto auto;gap:4px 12px;align-items:center;font-family:var(--vstd-ui)}
+.vstd-audience-share img{width:76px;height:76px;grid-row:1/3;object-fit:contain}.vstd-audience-share span{align-self:end;font-size:10px;line-height:1.15;text-transform:uppercase;letter-spacing:.06em;color:#565248}.vstd-audience-share strong{align-self:start;font-size:13px;line-height:1.2;overflow-wrap:anywhere}.vstd-audience-share[hidden],[data-vstd-audience-share][hidden]{display:none!important}
 .slide .pgpill{position:absolute;right:44px;bottom:12px;z-index:8;font:14px var(--vstd-ui);color:var(--vstd-line-strong);border:1px solid var(--vstd-line-strong);border-radius:999px;padding:2px 9px;line-height:1.2}
 
 /* ---------- Viewer chrome ---------- */
@@ -384,7 +386,7 @@ document.addEventListener('DOMContentLoaded',()=>{
  const url=hosted?window.VSTD.audience_url:((window.VSTD||{}).follow_url||'');
  document.querySelectorAll('[data-vstd-audience-url]').forEach(el=>{el.textContent=url?url.replace(/^https?:\/\//,''):'Sharing is not enabled';if(el.tagName==='A'){if(url)el.setAttribute('href',url);else el.removeAttribute('href');}});
  document.querySelectorAll('[data-vstd-audience-qr]').forEach(el=>{if(url){el.hidden=false;el.setAttribute('src',window.VSTD.audience_qr||'/api/deck/'+window.VSTD.deck+'/share-qr.png');}else if(hosted){el.hidden=true;el.removeAttribute('src');}});
- document.querySelectorAll('[data-vstd-audience-share]').forEach(el=>el.setAttribute('aria-label',url?'Scan or visit '+url.replace(/^https?:\/\//,'')+' to view this presentation':'Audience sharing is not enabled'));
+ document.querySelectorAll('[data-vstd-audience-share]').forEach(el=>{el.hidden=hosted&&!url;el.setAttribute('aria-label',url?'Scan or visit '+url.replace(/^https?:\/\//,'')+' to view this presentation':'Audience sharing is not enabled');});
 });
 </script>
 </head>
@@ -863,6 +865,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(s.hasAttribute('data-parked'))t.classList.add('parkedSlide');
       if(ovSel.has(s.dataset.vstd))t.classList.add('selected');
       const c=s.cloneNode(true);c.classList.add('active');c.classList.add('mini');c.style.display='block';
+      if(window.__vhydrateAssets)window.__vhydrateAssets(c,'low');
       t.appendChild(c);
       const cap=document.createElement('div');cap.className='cap';
       cap.textContent=(s.hasAttribute('data-parked')?'unused':dispNum(i))+' · '+(s.dataset.sec||'');
@@ -1046,6 +1049,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     const root=host.attachShadow({mode:'open'});
     root.appendChild(filmStyleNodes());
     const c=s.cloneNode(true);c.classList.add('active','mini');
+    if(window.__vhydrateAssets)window.__vhydrateAssets(c,'low');
     c.removeAttribute('data-vstd');c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
     c.querySelectorAll('video').forEach(v=>{v.removeAttribute('autoplay');v.muted=true;});
     // keep the slide's own inline style (themes put backgrounds there), then pin the thumbnail geometry
@@ -3375,6 +3379,30 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     state:()=>window.VSTDPresenterControl()?D:{on:false,error:'presenter auth required'}
   };
 })();
+/* ================= Progressive slide assets =================
+   The first slide is emitted eager. Nearby slides hydrate as navigation moves;
+   the rest are admitted gradually so they cannot compete with first paint. */
+(function(){
+  const frame=document.getElementById('frame');if(!frame)return;
+  const slides=()=>[...frame.querySelectorAll('.slide')];
+  function hydrate(root,priority){
+    root.querySelectorAll('[data-vstd-src]').forEach(el=>{
+      el.setAttribute('src',el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');
+      if(el.tagName==='IMG'){el.loading=priority==='high'?'eager':'lazy';el.fetchPriority=priority;el.decoding='async';}
+    });
+    root.querySelectorAll('[data-vstd-srcset]').forEach(el=>{el.setAttribute('srcset',el.getAttribute('data-vstd-srcset'));el.removeAttribute('data-vstd-srcset');});
+  }
+  window.__vhydrateAssets=hydrate;
+  function nearby(){
+    const all=slides(),at=Math.max(0,all.findIndex(s=>s.classList.contains('active')));
+    for(let i=at;i<Math.min(all.length,at+3);i++)hydrate(all[i],i===at?'high':'low');
+  }
+  document.addEventListener('vstd:slide',nearby);nearby();
+  const remaining=()=>slides().filter(s=>s.querySelector('[data-vstd-src],[data-vstd-srcset]'));
+  function admit(){const next=remaining()[0];if(!next)return;hydrate(next,'low');setTimeout(admit,350);}
+  addEventListener('load',()=>setTimeout(admit,1800),{once:true});
+})();
+
 /* ================= Video assets layer =================
    Slides stay declarative: <video class="vid" data-vstd-video="<asset-id>"
    data-autoplay data-loop [data-unmuted] [data-keep-time]></video>
@@ -3466,7 +3494,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     allVids().forEach(v=>{
       if(!s.contains(v)){if(!v.paused)v.pause();return;}
       setup(v);
-      if(isAudience()){soundChip(v);tapToPlay(v);return;} // poster + explicit tap-to-stream keeps protected bytes lazy
+      if(isAudience()&&!v.hasAttribute('data-autoplay')){soundChip(v);tapToPlay(v);return;}
       if(!v.hasAttribute('data-autoplay')){soundChip(v);return;} // manual video: presenter uses controls
       ensureSrc(v,false);
       if(!v.hasAttribute('data-keep-time')){try{v.currentTime=0;}catch(_){}}
@@ -3510,17 +3538,20 @@ If narration starts with no draft slide, call new_slide first (infer a working t
       audApplied=true;
       allVids().forEach(v=>{
         if(!v.paused)v.pause();
-        if(v.getAttribute('src')){v.removeAttribute('src');v.preload='none';try{v.load();}catch(_){}} // drop any pre-identity prefetch
+        if(v.getAttribute('src')){v.removeAttribute('src');v.preload='none';try{v.load();}catch(_){}}
         v.controls=true;
       });
       clearOverlays();
-      const s=activeSlide();if(s)s.querySelectorAll('video[data-vstd-video]').forEach(v=>{soundChip(v);tapToPlay(v);});
+      activate();
     }
   },400);
   setTimeout(()=>clearInterval(audPoll),15000);
 
   // ---- save-path helpers (called by saveToEngine/persistSlide/saveHtml) ----
   window.__vclean=function(rootEl){
+    rootEl.querySelectorAll('[data-vstd-src]').forEach(el=>{el.setAttribute('src',el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');});
+    rootEl.querySelectorAll('[data-vstd-srcset]').forEach(el=>{el.setAttribute('srcset',el.getAttribute('data-vstd-srcset'));el.removeAttribute('data-vstd-srcset');});
+    rootEl.querySelectorAll('img').forEach(el=>{el.removeAttribute('loading');el.removeAttribute('fetchpriority');el.removeAttribute('decoding');});
     rootEl.querySelectorAll('video[data-vstd-video]').forEach(v=>{
       ['src','poster','controls','loop','playsinline','preload','autoplay','muted','data-vinit','data-vsound'].forEach(a=>v.removeAttribute(a));
     });
