@@ -134,8 +134,11 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`className='vsound'`,                                              // video sound control is a durable toggle
 		`.vsound{position:fixed`,                                          // control remains usable when the slide is scaled on mobile
 		`s.querySelectorAll('video[data-vstd-video]').forEach(soundChip)`, // fullscreen preserves/rebuilds the toggle
-		`if(isAudience()){soundChip(v);tapToPlay(v);return;}`,             // audience video restores its protected source only after an explicit tap
-		`forEach(v=>{soundChip(v);tapToPlay(v);})`,                        // async audience identity still wires tap-to-stream on the active slide
+		`if(isAudience()&&!v.hasAttribute('data-autoplay'))`,              // manual audience videos remain explicit tap-to-stream
+		`clearOverlays();
+      activate();`, // async audience identity re-applies autoplay to the active slide
+		`window.__vhydrateAssets=hydrate`,                                      // slide images are admitted in navigation order
+		`.slide{display:none;font-family:var(--sans,var(--vstd-sans))}`,        // slide content inherits the theme typeface, not UI chrome
 		`Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url')`, // hosted release mode is available even when its static CSP blocks /api/me
 	} {
 		if !strings.Contains(html, want) {
@@ -179,16 +182,15 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 	if got := strings.Count(html, `aria-label="Slide number"`); got != 1 {
 		t.Fatalf("built slide has %d page-number pills, want 1", got)
 	}
-	// chrome must not depend on theme-overridable tokens: every var(--x)
-	// outside the injected theme/deck CSS block is engine-owned (--vstd-*)
-	// except the runtime-set --ts thumbnail scale
+	// Chrome must not depend on theme-overridable tokens. The slide canvas itself
+	// intentionally inherits --sans; all other player tokens are engine-owned.
 	chrome := html[:strings.Index(html, "/* deck overrides */")]
 	themeStart := strings.Index(chrome, ":root{--sans")
 	if themeStart >= 0 {
 		chrome = chrome[:themeStart]
 	}
 	for _, m := range varRe.FindAllString(chrome, -1) {
-		if m != "var(--ts" && !strings.HasPrefix(m, "var(--vstd-") {
+		if m != "var(--ts" && m != "var(--sans" && !strings.HasPrefix(m, "var(--vstd-") {
 			t.Errorf("chrome uses theme-overridable token %s", m)
 		}
 	}
@@ -206,6 +208,61 @@ func TestEnsurePagePillAddsMissingPill(t *testing.T) {
 	got := ensurePagePill(frag)
 	if !strings.Contains(got, `<div class="pgpill" data-vstd-generated="page-number" aria-label="Slide number"></div>`) || strings.Count(got, `pgpill`) != 1 {
 		t.Fatalf("generated page pill missing or duplicated:\n%s", got)
+	}
+}
+
+func TestPrioritizeSlideAssets(t *testing.T) {
+	first := prioritizeSlideAssets(`<section class="slide"><img src="/library/cover.png"><picture><source srcset="/library/cover.webp"><img src="/library/fallback.png"></picture></section>`, true)
+	if strings.Contains(first, "data-vstd-src") || strings.Count(first, `loading="eager"`) != 2 || strings.Count(first, `fetchpriority="high"`) != 2 {
+		t.Fatalf("first slide assets were not prioritized:\n%s", first)
+	}
+	later := prioritizeSlideAssets(`<section class="slide"><img src="/library/later.png" srcset="/library/later-2x.png 2x"><source srcset="/library/later.webp"></section>`, false)
+	for _, want := range []string{`data-vstd-src="/library/later.png"`, `data-vstd-srcset="/library/later-2x.png 2x"`, `data-vstd-srcset="/library/later.webp"`, `loading="lazy"`, `fetchpriority="low"`} {
+		if !strings.Contains(later, want) {
+			t.Fatalf("later slide missing %q:\n%s", want, later)
+		}
+	}
+}
+
+func TestEnsureAudienceShareAddsOnlyMissingTitleControl(t *testing.T) {
+	frag := `<section class="slide"><h1>Title</h1></section>`
+	got := ensureAudienceShare(frag)
+	if !strings.Contains(got, `data-vstd-generated="audience-share"`) || !strings.Contains(got, `data-vstd-audience-qr`) {
+		t.Fatalf("generated audience share block missing:\n%s", got)
+	}
+	existing := `<section class="slide"><img data-vstd-audience-qr></section>`
+	if ensureAudienceShare(existing) != existing {
+		t.Fatal("existing audience share element was duplicated")
+	}
+}
+
+func TestHostedBuildAddsAndRemovesGeneratedTitleShare(t *testing.T) {
+	root := t.TempDir()
+	writeFile(t, filepath.Join(root, "studio.yaml"), "theme_default: default\n")
+	writeFile(t, filepath.Join(root, "themes", "default", "theme.css"), ".slide{}")
+	writeFile(t, filepath.Join(root, "decks", "demo", "deck.yaml"), "title: Demo\ntheme: default\n")
+	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0010-a.html"), `<section class="slide"><h1>Title</h1></section>`)
+	studio, err := Open(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := "https://studio.example/s/123-456"
+	withQR, err := studio.BuildWithAudienceURL("demo", &url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, _ := os.ReadFile(withQR)
+	if !strings.Contains(string(content), `data-vstd-generated="audience-share"`) {
+		t.Fatal("checked audience sharing did not add the title control")
+	}
+	empty := ""
+	withoutQR, err := studio.BuildWithAudienceURL("demo", &empty)
+	if err != nil {
+		t.Fatal(err)
+	}
+	content, _ = os.ReadFile(withoutQR)
+	if strings.Contains(string(content), `data-vstd-generated="audience-share"`) {
+		t.Fatal("unchecked audience sharing retained the generated title control")
 	}
 }
 
