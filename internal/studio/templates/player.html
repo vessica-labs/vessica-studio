@@ -405,13 +405,13 @@ document.addEventListener('DOMContentLoaded',()=>{
   <button data-act="vessica" id="hudVessica" data-presenter-control style="display:none" title="Start/stop Vessica (V)">Vessica</button>
   <button data-act="menu" data-presenter-control style="display:none">Agenda</button>
   <button data-act="grid" data-presenter-control style="display:none">Grid</button>
-  <button data-act="sticky" id="hudSticky" data-presenter-control style="display:none">Sticky</button>
-  <button data-act="companion" id="companionbtn" style="display:none">Companion</button>
+  <button data-act="sticky" id="hudSticky" data-edit-control style="display:none">Sticky</button>
+  <button data-act="companion" id="companionbtn" data-edit-control style="display:none">Companion</button>
   <button data-act="notes" data-presenter-control style="display:none">Notes</button>
   <button data-act="present" id="presentbtn" data-presenter-control style="display:none">Present</button>
   <button data-act="share" id="sharebtn" style="display:none">Share</button>
   <button data-act="download" id="downloadbtn" style="display:none" title="Download deck" aria-label="Download deck"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 20h14"/></svg></button>
-  <button id="newslidebtn" style="display:none">+ Slide</button>
+  <button id="newslidebtn" data-edit-control style="display:none">+ Slide</button>
   <button data-act="edit" id="editbtn" data-presenter-control style="display:none">Edit</button>
   <button data-act="save" id="savebtn" style="display:none;color:var(--vstd-accent)">Save now</button>
   <button data-act="more" id="hudMore" style="display:none">⋯</button>
@@ -976,7 +976,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   }
   // Ribbon controls mirror the HUD's visibility rules (presenter gate, capabilities, editable).
   function syncRibbon(){
-    document.querySelectorAll('#editRibbon [data-mirror]').forEach(b=>{const src=document.getElementById(b.dataset.mirror);b.style.display=(src&&src.style.display!=='none')?'':'none';});
+    document.querySelectorAll('#editRibbon [data-mirror]').forEach(b=>{const src=document.getElementById(b.dataset.mirror);b.style.display=(src&&(src.hasAttribute('data-edit-control')?canEditDeck():src.style.display!=='none'))?'':'none';});
     const fn=document.getElementById('filmNew');if(fn)fn.style.display=canEditDeck()?'':'none';
     if(window.parent!==window)window.parent.postMessage({type:'vstd:editor-ready'},'*');
   }
@@ -1170,7 +1170,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();step(-1);}
     else if(e.key==='Home')show(0);else if(e.key==='End')show(slides.length-1);
     else if(e.key==='n'||e.key==='N'){notesOn=!notesOn;notesPanel.classList.toggle('open',notesOn);}
-    else if(e.key==='s'||e.key==='S'){e.preventDefault();if(window.__stickyToggle)window.__stickyToggle();}
+    else if(editMode&&(e.key==='s'||e.key==='S')){e.preventDefault();if(window.__stickyToggle)window.__stickyToggle();}
     else if(e.key==='m'||e.key==='M')menu.classList.toggle('open');
     else if(e.key==='g'||e.key==='G'){buildOv();overview.classList.toggle('open');if(window.__vprogApply)window.__vprogApply();}
     else if(e.key==='e'||e.key==='E')toggleEdit();
@@ -2069,7 +2069,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       fetch('/api/me').then(r=>r.json()).then(me=>{
         window.__vme=me;
         let resume=false;try{resume=sessionStorage.getItem('vstd_resume_edit')==='1';sessionStorage.removeItem('vstd_resume_edit');}catch(_){}
-        if((me.start_editing===true||resume)&&me.editable===true&&!editMode)toggleEdit();
+        const presentationStart=new URLSearchParams(location.search).get('mode')==='presentation';
+        if(((me.start_editing===true&&!presentationStart)||resume)&&me.editable===true&&!editMode)toggleEdit();
         const audience=me.audience===true||(me.audience===undefined&&((me.mode==='public'&&!me.presenter)||(me.mode!=='public'&&/[?&]follow=1/.test(location.search))));
         window.__vaudience=audience;
         const transfer=document.getElementById('ovTransfer');
@@ -2077,8 +2078,7 @@ document.addEventListener('DOMContentLoaded',()=>{
         if(!audience&&me.presenter){
           document.getElementById('cnt').style.display='';
           document.querySelectorAll('[data-presenter-control]').forEach(b=>b.style.display='');
-          if(me.editable){['newslidebtn','companionbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});}
-		  else ['editbtn','hudSticky'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='none';});
+		  if(!me.editable)document.getElementById('editbtn').style.display='none';
 		}else if(!audience){
 		  document.getElementById('cnt').style.display='';
 		  ['homebtn','downloadbtn'].forEach(id=>{const b=document.getElementById(id);if(b)b.style.display='';});
@@ -3112,7 +3112,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   if(hud){
     const btn=document.createElement('button');
     btn.id='kbbtn';btn.textContent='KB';btn.title='Upload knowledge-base markdown for Vessica (audience + company notes)';
-    btn.dataset.presenterControl='';btn.style.display='none';
+    btn.dataset.editControl='';btn.style.display='none';
     btn.addEventListener('click',ev=>{
       ev.stopPropagation();
       const inp=document.createElement('input');inp.type='file';inp.accept='.md,.markdown,text/markdown,text/plain';
@@ -3129,7 +3129,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     });
     const anchor=document.getElementById('hudSticky');
     hud.insertBefore(btn,anchor?anchor.nextSibling:null);
-    const syncKB=()=>{btn.style.display=window.VSTDPresenterControl()?'':'none';};
+    const syncKB=()=>{btn.style.display='none';};
     document.addEventListener('vstd:identity',syncKB);syncKB();
   }
 })();
