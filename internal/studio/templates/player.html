@@ -1969,13 +1969,21 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(!observedDeck){observedDeck=true;fetch('/api/observability/view',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck}),keepalive:true}).catch(()=>{});}
     if(slide&&!observedSlides.has(slide)){observedSlides.add(slide);fetch('/api/observability/view',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck,slide:slide}),keepalive:true}).catch(()=>{});}
   }
+  const openAIUsageReports=new Set();
   window.__vreportOpenAIUsage=(response,source)=>{
     const u=response&&response.usage;if(!u||!window.VSTD||!window.VSTD.deck)return;
     const input=u.input_tokens||0,output=u.output_tokens||0,total=u.total_tokens||(input+output),details=u.input_token_details||u.input_tokens_details||{},cached=details.cached_tokens||0;
     if(!total&&!input&&!output)return;
     const rt=window.VSTD.realtime||{};
-    fetch('/api/observability/openai-usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck,source:source||'realtime',model:rt.model||'gpt-realtime-2',response_id:response.id||'',input_tokens:input,output_tokens:output,cached_input_tokens:cached,total_tokens:total}),keepalive:true}).catch(()=>{});
+    const report=fetch('/api/observability/openai-usage',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({deck:window.VSTD.deck,source:source||'realtime',model:rt.model||'gpt-realtime-2',response_id:response.id||'',input_tokens:input,output_tokens:output,cached_input_tokens:cached,total_tokens:total}),keepalive:true}).then(async r=>{
+      if(r.status!==402)return;
+      const j=await r.json().catch(()=>({}));
+      if(window.__vstopVessica)window.__vstopVessica();
+      toast(j.message||'This Vessica session reached its credit limit.',7000);
+    }).catch(()=>{});
+    openAIUsageReports.add(report);report.finally(()=>openAIUsageReports.delete(report));
   };
+  window.__vendRealtimeSession=()=>Promise.allSettled([...openAIUsageReports]).then(()=>fetch('/api/realtime/end',{method:'POST',keepalive:true})).catch(()=>{});
   let deferredReload=false;
   let refreshingPresentation=false;
   let presentationETag='';
@@ -2466,7 +2474,7 @@ document.addEventListener('DOMContentLoaded',()=>{
    client-side exclusively by a begin_conversation tool call — that mute is
    the guarantee, not the prompt. */
 (function(){
-  const S={pc:null,dc:null,audio:null,mic:null,on:false,talking:false};
+  const S={pc:null,dc:null,audio:null,mic:null,on:false,talking:false,minted:false};
   const status=document.getElementById('vstatus');
   const label=document.getElementById('vlabel');
   const P=()=>window.VSTDP;
@@ -2499,10 +2507,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     try{
       stage('minting token…');
       const tr=await fetchT('/api/realtime/token',{method:'POST'},20000,'token mint (engine → OpenAI)');
-      if(!tr.ok)throw new Error('token '+tr.status+' — is OPENAI_API_KEY configured?');
+      if(!tr.ok){const problem=await tr.json().catch(()=>({}));throw new Error(problem.message||('token request failed: HTTP '+tr.status));}
       const tj=await tr.json();
       const secret=(tj.client_secret&&tj.client_secret.value)||tj.value||tj.client_secret;
       if(!secret||typeof secret!=='string')throw new Error('no client secret in token response: '+JSON.stringify(tj).slice(0,120));
+      S.minted=true;
 
       stage('requesting microphone…');
       S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -2575,6 +2584,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(msg)P().toast(msg);
   }
   function cleanup(){
+    if(S.minted){S.minted=false;window.__vendRealtimeSession&&window.__vendRealtimeSession();}
     try{S.dc&&S.dc.close();}catch(_){}
     try{S.pc&&S.pc.close();}catch(_){}
     try{S.mic&&S.mic.getTracks().forEach(t=>t.stop());}catch(_){}
@@ -3131,7 +3141,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
    edit API. The dictating page updates its own DOM optimistically and
    suppresses live-reload; a final reload on finish syncs the canon. */
 (function(){
-  const D={on:false,pc:null,dc:null,mic:null,draft:null,dirty:false,timer:null,seq:0};
+  const D={on:false,pc:null,dc:null,mic:null,draft:null,dirty:false,timer:null,seq:0,minted:false};
   let bar,dlabel,dtrans,dact;
   const P=()=>window.VSTDP;
 
@@ -3162,10 +3172,11 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     dtrans.textContent='connecting…';
     try{
       const tr=await fetch('/api/realtime/token',{method:'POST'});
-      if(!tr.ok)throw new Error('token '+tr.status);
+      if(!tr.ok){const problem=await tr.json().catch(()=>({}));throw new Error(problem.message||('token request failed: HTTP '+tr.status));}
       const tj=await tr.json();
       const secret=(tj.client_secret&&tj.client_secret.value)||tj.value||tj.client_secret;
       if(!secret||typeof secret!=='string')throw new Error('no client secret');
+      D.minted=true;
       D.mic=await navigator.mediaDevices.getUserMedia({audio:true});
       D.pc=new RTCPeerConnection();
       const sink=new Audio();sink.autoplay=true;sink.muted=true; // scribe never speaks
@@ -3198,6 +3209,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     setTimeout(()=>location.reload(),1200);
   }
   function cleanup(){
+    if(D.minted){D.minted=false;window.__vendRealtimeSession&&window.__vendRealtimeSession();}
     try{D.dc&&D.dc.close();}catch(_){}
     try{D.pc&&D.pc.close();}catch(_){}
     try{D.mic&&D.mic.getTracks().forEach(t=>t.stop());}catch(_){}
