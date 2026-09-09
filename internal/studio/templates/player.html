@@ -3454,7 +3454,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     allVids().forEach(v=>{
       if(!s.contains(v)){if(!v.paused)v.pause();return;}
       setup(v);
-      if(isAudience()){soundChip(v);return;} // poster + native controls; streams on tap only
+      if(isAudience()){soundChip(v);tapToPlay(v);return;} // poster + explicit tap-to-stream keeps protected bytes lazy
       if(!v.hasAttribute('data-autoplay')){soundChip(v);return;} // manual video: presenter uses controls
       ensureSrc(v,false);
       if(!v.hasAttribute('data-keep-time')){try{v.currentTime=0;}catch(_){}}
@@ -3502,7 +3502,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
         v.controls=true;
       });
       clearOverlays();
-      const s=activeSlide();if(s)s.querySelectorAll('video[data-vstd-video]').forEach(soundChip);
+      const s=activeSlide();if(s)s.querySelectorAll('video[data-vstd-video]').forEach(v=>{soundChip(v);tapToPlay(v);});
     }
   },400);
   setTimeout(()=>clearInterval(audPoll),15000);
