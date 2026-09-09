@@ -5,17 +5,23 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"os"
 	"path"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/skip2/go-qrcode"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
@@ -41,6 +47,7 @@ type EditorTransformResult struct {
 
 func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransformResult, error) {
 	var result EditorTransformResult
+	sourceRoot := in.Root
 	if in.AudienceURL != nil && *in.AudienceURL != "" {
 		audience, e := url.Parse(*in.AudienceURL)
 		if e != nil || audience.Scheme != "https" || audience.Host == "" || audience.User != nil || audience.Fragment != "" || len(*in.AudienceURL) > 2048 {
@@ -91,6 +98,15 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	defer os.RemoveAll(root)
 	if err = studio.ApplyCloudContent(root, in.Files); err != nil {
 		return result, err
+	}
+	// CloudContent deliberately omits large video blobs. A file-backed transform
+	// may still serve a video materialized by the trusted Cloud runtime, so copy
+	// only regular, manifest-addressed, integrity-checked video files into the
+	// disposable transform root.
+	if sourceRoot != "" {
+		if err = copyEditorTransformVideos(sourceRoot, root); err != nil {
+			return result, err
+		}
 	}
 	st, err := studio.Open(root)
 	if err != nil {
@@ -186,6 +202,55 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 		}
 	}
 	return result, nil
+}
+
+var editorTransformVideoHash = regexp.MustCompile(`^[a-f0-9]{64}$`)
+
+func copyEditorTransformVideos(sourceRoot, targetRoot string) error {
+	manifest, err := library.Load(filepath.Join(sourceRoot, "library"))
+	if err != nil {
+		return err
+	}
+	for _, asset := range manifest.Videos {
+		if !editorTransformVideoHash.MatchString(asset.Hash) || asset.File != "video/"+asset.Hash+".mp4" || asset.Bytes <= 0 || asset.Bytes > 512<<20 {
+			return errors.New("invalid editor video reference")
+		}
+		source := filepath.Join(sourceRoot, "library", filepath.FromSlash(asset.File))
+		info, err := os.Lstat(source)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil || !info.Mode().IsRegular() || info.Size() != asset.Bytes {
+			return errors.New("invalid editor video file")
+		}
+		target := filepath.Join(targetRoot, "library", filepath.FromSlash(asset.File))
+		if err = os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+			return err
+		}
+		input, err := os.Open(source)
+		if err != nil {
+			return err
+		}
+		output, err := os.OpenFile(target, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0600)
+		if err != nil {
+			input.Close()
+			return err
+		}
+		digest := sha256.New()
+		written, copyErr := io.Copy(io.MultiWriter(output, digest), input)
+		closeErr := output.Close()
+		input.Close()
+		if copyErr != nil {
+			return copyErr
+		}
+		if closeErr != nil {
+			return closeErr
+		}
+		if written != asset.Bytes || fmt.Sprintf("%x", digest.Sum(nil)) != asset.Hash {
+			return errors.New("editor video integrity failure")
+		}
+	}
+	return nil
 }
 
 func transformRoute(method, p, deck string) bool {
