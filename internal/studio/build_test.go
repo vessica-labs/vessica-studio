@@ -133,6 +133,7 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`s.querySelectorAll('video[data-vstd-video]').forEach(soundChip)`, // fullscreen preserves/rebuilds the toggle
 		`if(isAudience()){soundChip(v);tapToPlay(v);return;}`,             // audience video restores its protected source only after an explicit tap
 		`forEach(v=>{soundChip(v);tapToPlay(v);})`,                        // async audience identity still wires tap-to-stream on the active slide
+		`Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url')`, // hosted release mode is available even when its static CSP blocks /api/me
 	} {
 		if !strings.Contains(html, want) {
 			t.Errorf("built deck missing %q", want)
