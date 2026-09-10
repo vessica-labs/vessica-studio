@@ -26,15 +26,17 @@ import (
 )
 
 type EditorTransformInput struct {
-	AudienceURL *string              `json:"audience_url,omitempty"`
-	Root        string               `json:"root,omitempty"`
-	Delta       bool                 `json:"delta,omitempty"`
-	Deck        string               `json:"deck"`
-	Files       []studio.ContentFile `json:"files"`
-	Method      string               `json:"method"`
-	Path        string               `json:"path"`
-	Headers     map[string]string    `json:"headers"`
-	Body        []byte               `json:"body"`
+	AssetURLs       map[string]string    `json:"asset_urls,omitempty"`
+	AssetSessionURL string               `json:"asset_session_url,omitempty"`
+	AudienceURL     *string              `json:"audience_url,omitempty"`
+	Root            string               `json:"root,omitempty"`
+	Delta           bool                 `json:"delta,omitempty"`
+	Deck            string               `json:"deck"`
+	Files           []studio.ContentFile `json:"files"`
+	Method          string               `json:"method"`
+	Path            string               `json:"path"`
+	Headers         map[string]string    `json:"headers"`
+	Body            []byte               `json:"body"`
 }
 type EditorTransformResult struct {
 	Delta   bool                 `json:"delta,omitempty"`
@@ -47,6 +49,10 @@ type EditorTransformResult struct {
 
 func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransformResult, error) {
 	var result EditorTransformResult
+	if err := studio.ValidateEditorAssetURLs(in.AssetURLs, in.AssetSessionURL); err != nil {
+		return result, err
+	}
+	in.Body = studio.RestoreEditorAssetPaths(in.Body, in.AssetURLs)
 	sourceRoot := in.Root
 	if in.AudienceURL != nil && *in.AudienceURL != "" {
 		audience, e := url.Parse(*in.AudienceURL)
@@ -140,6 +146,13 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 		content, e := os.ReadFile(built)
 		if e != nil {
 			return result, e
+		}
+		if len(in.AssetURLs) > 0 || in.AssetSessionURL != "" {
+			rendered, e := studio.ApplyEditorAssetURLs(string(content), in.AssetURLs, in.AssetSessionURL)
+			if e != nil {
+				return result, e
+			}
+			content = []byte(rendered)
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		_, _ = w.Write(content)

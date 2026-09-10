@@ -548,6 +548,38 @@ When `deck` is omitted, the studio must contain exactly one deck.
 vstd release-build product-story --output /tmp/product-story-release
 ```
 
+Optional delivery flags preserve editable originals and produce host-ready artifacts:
+
+```sh
+vstd release-build product-story --output /tmp/product-story-release --delivery-template --optimize-delivery
+vstd delivery-resources --output /tmp/vstd-platform-assets
+```
+
+`--delivery-template` emits typed `vstd-asset:<sha256>:<base64url-path>` slots.
+An authorized host must replace only manifest members with its delivery URLs;
+`vstd-session:keepalive` accepts a cookie-authenticated renewal URL or an empty string.
+Templates are not directly browsable until these slots are resolved. Ordinary
+`release-build` remains self-contained and needs no Cloud account or network.
+
+`--optimize-delivery` requires **cwebp** for raster images and **FFmpeg** for videos.
+It emits transparent WebP variants up to 640/1280/1920 pixels without upscaling,
+responsive srcsets, sanitized SVG, minified HTML/CSS/JS, H.264 MP4 capped at 1080p
+with fast-start, and WebP posters. Variants and dimensions are optional artifact
+fields; delivery settings and variant rules participate in the deterministic
+manifest checksum. Original studio files are retained unchanged. Encoder versions
+should be pinned consistently across build workers.
+
+`delivery-resources` exports only compiled-in engine/default-theme CSS named by
+its digest. Hosts install this trusted output independently of tenant uploads;
+custom themes and deck overrides remain presentation scoped. A host must not
+trust a tenant-provided path as permission to populate its shared namespace.
+
+The data-only `editor-transform` protocol also accepts optional `asset_urls`
+(logical `/library/...` or `/assets/video/...` paths mapped to HTTPS URLs) and
+`asset_session_url`. The engine applies these at render time, uses direct video
+URLs, and restores logical paths on saves. Hosts provide access metadata; the
+engine continues to own rendering, progressive loading and editor serialization.
+
 The release output contains no companion Markdown or authoring source. Missing,
 unsafe, symlink-escaped, oversized, or mutable assets fail the build rather than
 producing a partial release.

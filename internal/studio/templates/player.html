@@ -1755,7 +1755,9 @@ document.addEventListener('DOMContentLoaded',()=>{
     c.querySelectorAll('[data-vstd-generated]').forEach(el=>el.remove());
     c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
     if(window.__vclean)window.__vclean(c);
-    return c.outerHTML;
+    let html=c.outerHTML;
+    for(const [path,url] of Object.entries(window.VSTDAssetURLs||{}))html=html.split(url).join(path);
+    return html;
   }
   // What each slide's DOM looked like when this page loaded — lets Save touch
   // ONLY slides the user actually changed, instead of rewriting the whole deck.
@@ -3387,7 +3389,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   const slides=()=>[...frame.querySelectorAll('.slide')];
   function hydrate(root,priority){
     root.querySelectorAll('[data-vstd-src]').forEach(el=>{
-      el.setAttribute('src',el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');
+      el.setAttribute('src',window.VSTDAssetURL?window.VSTDAssetURL(el.getAttribute('data-vstd-src')):el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');
       if(el.tagName==='IMG'){el.loading=priority==='high'?'eager':'lazy';el.fetchPriority=priority;el.decoding='async';}
     });
     root.querySelectorAll('[data-vstd-srcset]').forEach(el=>{el.setAttribute('srcset',el.getAttribute('data-vstd-srcset'));el.removeAttribute('data-vstd-srcset');});
@@ -3436,8 +3438,8 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   addEventListener('pointerdown',markG,true);
   addEventListener('keydown',markG,true);
 
-  const srcFor=id=>httpMode?'/assets/video/'+id:'assets/video/'+id+'.mp4';
-  const posterFor=id=>httpMode?'/assets/video/'+id+'/poster':'assets/video-posters/'+id+'.jpg';
+  const srcFor=id=>httpMode?(window.VSTDAssetURL?window.VSTDAssetURL('/assets/video/'+id):'/assets/video/'+id):'assets/video/'+id+'.mp4';
+  const posterFor=id=>httpMode?(window.VSTDAssetURL?window.VSTDAssetURL('/assets/video/'+id+'/poster'):'/assets/video/'+id+'/poster'):'assets/video-posters/'+id+'.jpg';
   const isAudience=()=>{const me=window.__vme;return me?me.mode==='public'&&!me.presenter:Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url');};
   const allVids=()=>[...frame.querySelectorAll('.slide video[data-vstd-video]')];
   const activeSlide=()=>frame.querySelector('.slide.active');
@@ -3450,8 +3452,8 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     if(isAudience()||!v.hasAttribute('data-autoplay')){v.controls=true;}
   }
   function ensureSrc(v,preload){
-    if(!v.getAttribute('src')){v.src=srcFor(v.dataset.vstdVideo);if(preload){v.preload='auto';try{v.load();}catch(_){}}}
-    else if(preload&&v.preload!=='auto'){v.preload='auto';}
+    if(!v.getAttribute('src')){v.src=srcFor(v.dataset.vstdVideo);if(preload){v.preload='metadata';try{v.load();}catch(_){}}}
+    else if(preload&&v.preload!=='metadata'){v.preload='metadata';}
   }
   function clearOverlays(scope){(scope||document).querySelectorAll('.vtap,.vsound').forEach(el=>el.remove());}
   function overlayFor(v,cls,html,onTap){
@@ -3518,7 +3520,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     let n=s.nextElementSibling;
     while(n&&(!n.classList||!n.classList.contains('slide')||n.hasAttribute('data-hidden')||n.hasAttribute('data-parked')))n=n.nextElementSibling;
     if(!n)return;
-    n.querySelectorAll('video[data-vstd-video]').forEach(v=>{setup(v);ensureSrc(v,true);});
+    const next=n.querySelector('video[data-vstd-video]');if(next)setup(next);
   }
   document.addEventListener('vstd:slide',activate);
   // present-mode entry is a user gesture — unlock sound on data-unmuted videos
@@ -3549,7 +3551,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
 
   // ---- save-path helpers (called by saveToEngine/persistSlide/saveHtml) ----
   window.__vclean=function(rootEl){
-    rootEl.querySelectorAll('[data-vstd-src]').forEach(el=>{el.setAttribute('src',el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');});
+    rootEl.querySelectorAll('[data-vstd-src]').forEach(el=>{el.setAttribute('src',window.VSTDAssetURL?window.VSTDAssetURL(el.getAttribute('data-vstd-src')):el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');});
     rootEl.querySelectorAll('[data-vstd-srcset]').forEach(el=>{el.setAttribute('srcset',el.getAttribute('data-vstd-srcset'));el.removeAttribute('data-vstd-srcset');});
     rootEl.querySelectorAll('img').forEach(el=>{el.removeAttribute('loading');el.removeAttribute('fetchpriority');el.removeAttribute('decoding');});
     rootEl.querySelectorAll('video[data-vstd-video]').forEach(v=>{
