@@ -182,3 +182,19 @@ func TestPlatformResourcesAreOnlyCompiledInCSS(t *testing.T) {
 		t.Fatal("private CSS was extracted")
 	}
 }
+
+func TestDeliveryTemplateRewritesEntityQuotedCSSURLs(t *testing.T) {
+	digest := strings.Repeat("a", 64)
+	for _, quote := range []string{"'", `"`, "&#39;", "&#x27;", "&#34;", "&quot;", "&apos;"} {
+		t.Run(quote, func(t *testing.T) {
+			html := `<div style="background:url(` + quote + `/library/img/hero.png` + quote + `)"></div>`
+			rendered, err := releaseDeliveryTemplate(releaseRelativePlayer(html), []ReleaseArtifact{{Path: "library/img/hero.png", SHA256: digest}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.Contains(rendered, "/library/img/hero.png") || !strings.Contains(rendered, "vstd-asset:"+digest) {
+				t.Fatalf("quoted CSS URL was not scoped: %s", rendered)
+			}
+		})
+	}
+}

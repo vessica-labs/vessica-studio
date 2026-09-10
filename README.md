@@ -558,7 +558,8 @@ vstd delivery-resources --output /tmp/vstd-platform-assets
 `--delivery-template` emits typed `vstd-asset:<sha256>:<base64url-path>` slots.
 An authorized host must replace only manifest members with its delivery URLs;
 `vstd-session:keepalive` accepts a cookie-authenticated renewal URL or an empty string.
-Templates are not directly browsable until these slots are resolved. Ordinary
+Image and CSS background references, including quoted URLs in inline styles, use
+the same manifest-scoped delivery paths. Templates are not directly browsable until these slots are resolved. Ordinary
 `release-build` remains self-contained and needs no Cloud account or network.
 
 `--optimize-delivery` requires **cwebp** for raster images and **FFmpeg** for videos.
