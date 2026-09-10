@@ -67,7 +67,7 @@ type unsignedReleaseManifest struct {
 var (
 	releaseRevisionRE    = regexp.MustCompile(`^[a-f0-9]{40}$`)
 	releaseLibraryRE     = regexp.MustCompile(`(?:\./|/)library/([A-Za-z0-9][A-Za-z0-9._/-]*)`)
-	releaseRootLibraryRE = regexp.MustCompile(`(^|[("'=:\s])\/library\/`)
+	releaseRootLibraryRE = regexp.MustCompile(`(^|[("'=:\s]|&(?:quot|apos|#0*(?:34|39)|#[xX]0*(?:22|27));)\/library\/`)
 	releaseVideoRE       = regexp.MustCompile(`data-vstd-video=["']([a-z0-9][a-z0-9-]*)["']`)
 )
 
