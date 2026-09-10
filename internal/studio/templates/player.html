@@ -3382,29 +3382,73 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   };
 })();
 /* ================= Progressive slide assets =================
-   The first slide is emitted eager. Nearby slides hydrate as navigation moves;
-   the rest are admitted gradually so they cannot compete with first paint. */
+   Visible images take priority. Two low-priority background requests at a time
+   warm the entire deck, including CSS backgrounds and video posters. */
 (function(){
   const frame=document.getElementById('frame');if(!frame)return;
   const slides=()=>[...frame.querySelectorAll('.slide')];
+  const assetURL=value=>window.VSTDAssetURL?window.VSTDAssetURL(value):value;
+  function restore(el){
+    if(el.hasAttribute('data-vstd-srcset')){el.setAttribute('srcset',el.getAttribute('data-vstd-srcset'));el.removeAttribute('data-vstd-srcset');}
+    if(el.hasAttribute('data-vstd-src')){el.setAttribute('src',assetURL(el.getAttribute('data-vstd-src')));el.removeAttribute('data-vstd-src');}
+  }
   function hydrate(root,priority){
-    // Promote already admitted images when their slide becomes visible. Set hints
-    // before assigning sources so the first request has the correct priority.
     root.querySelectorAll('img').forEach(el=>{el.loading=priority==='high'?'eager':'lazy';el.fetchPriority=priority;el.decoding='async';});
-    root.querySelectorAll('[data-vstd-src]').forEach(el=>{
-      el.setAttribute('src',window.VSTDAssetURL?window.VSTDAssetURL(el.getAttribute('data-vstd-src')):el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');
-    });
-    root.querySelectorAll('[data-vstd-srcset]').forEach(el=>{el.setAttribute('srcset',el.getAttribute('data-vstd-srcset'));el.removeAttribute('data-vstd-srcset');});
+    root.querySelectorAll('[data-vstd-srcset],[data-vstd-src]').forEach(restore);
   }
   window.__vhydrateAssets=hydrate;
+  let started=false,running=0,queue=[],queued=new Set();
+  const admitted=new WeakSet(),backgrounds=new Map();
+  function imageJob(img){
+    return ()=>new Promise(resolve=>{
+      let timer;
+      const done=()=>{clearTimeout(timer);img.removeEventListener('load',done);img.removeEventListener('error',done);resolve();};
+      img.addEventListener('load',done);img.addEventListener('error',done);
+      timer=setTimeout(done,15000);
+      img.loading='eager';img.fetchPriority=img.closest?.('.slide.active')?'high':'low';img.decoding='async';
+      const picture=img.closest?.('picture');if(picture)picture.querySelectorAll('source').forEach(restore);
+      restore(img);
+      if(img.complete)done();
+    });
+  }
+  function enqueue(img){
+    if(admitted.has(img)||queued.has(img))return;
+    queued.add(img);queue.push(()=>{admitted.add(img);return imageJob(img)();});
+  }
+  function backgroundJob(url){
+    if(!url)return;
+    let img=backgrounds.get(url);
+    if(!img){img=new Image();backgrounds.set(url,img);img.setAttribute('data-vstd-src',assetURL(url));}
+    enqueue(img);
+  }
+  function collect(){
+    const all=slides(),at=Math.max(0,all.findIndex(s=>s.classList.contains('active')));
+    // Rebuild pending order on navigation, keeping completed/in-flight work.
+    queue=[];queued=new Set();
+    for(const slide of [...all.slice(at),...all.slice(0,at)]){
+      slide.querySelectorAll('img').forEach(enqueue);
+      for(const el of [slide,...slide.querySelectorAll('*')]){
+        const css=getComputedStyle(el).backgroundImage;
+        for(const match of css.matchAll(/url\(\s*(?:"([^"]*)"|'([^']*)'|([^)]*?))\s*\)/g))backgroundJob(match[1]||match[2]||match[3]);
+        if(el.tagName==='VIDEO')backgroundJob(el.getAttribute('poster')||(el.dataset.vstdVideo&&window.__vstdPosterFor?.(el.dataset.vstdVideo)));
+      }
+    }
+    pump();
+  }
+  function pump(){
+    while(running<2&&queue.length){
+      const job=queue.shift();running++;
+      Promise.resolve().then(job).catch(()=>{}).finally(()=>{running--;pump();});
+    }
+  }
   function nearby(){
     const all=slides(),at=Math.max(0,all.findIndex(s=>s.classList.contains('active')));
-    for(let i=at;i<Math.min(all.length,at+3);i++)hydrate(all[i],i===at?'high':'low');
+    if(all[at])hydrate(all[at],'high');
+    if(started)collect();
   }
   document.addEventListener('vstd:slide',nearby);nearby();
-  const remaining=()=>slides().filter(s=>s.querySelector('[data-vstd-src],[data-vstd-srcset]'));
-  function admit(){const next=remaining()[0];if(!next)return;hydrate(next,'low');setTimeout(admit,350);}
-  addEventListener('load',()=>setTimeout(admit,1800),{once:true});
+  function start(){setTimeout(()=>{started=true;collect();},800);}
+  if(document.readyState==='complete')start();else addEventListener('load',start,{once:true});
 })();
 
 /* ================= Video assets layer =================
@@ -3442,6 +3486,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
 
   const srcFor=id=>httpMode?(window.VSTDAssetURL?window.VSTDAssetURL('/assets/video/'+id):'/assets/video/'+id):'assets/video/'+id+'.mp4';
   const posterFor=id=>httpMode?(window.VSTDAssetURL?window.VSTDAssetURL('/assets/video/'+id+'/poster'):'/assets/video/'+id+'/poster'):'assets/video-posters/'+id+'.jpg';
+  window.__vstdPosterFor=posterFor;
   const isAudience=()=>{const me=window.__vme;return me?me.mode==='public'&&!me.presenter:Object.prototype.hasOwnProperty.call(window.VSTD||{},'audience_url');};
   const allVids=()=>[...frame.querySelectorAll('.slide video[data-vstd-video]')];
   const activeSlide=()=>frame.querySelector('.slide.active');

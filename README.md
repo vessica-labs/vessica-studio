@@ -1312,3 +1312,9 @@ The output must not already exist. JSON stdout records `sourceSha256`, `sha256`,
 `bytes`, `width`, `height`, `mediaType`, and `recipe`. Hosted adapters may cache
 this disposable display copy while retaining original bytes and logical paths
 for editing. Authorization remains the host's responsibility.
+
+In both editing and presentation mode, the player preloads all slide images, CSS
+backgrounds, and video posters after the visible slide's initial load. Background
+work uses two low-priority requests at a time and follows the current navigation
+position; visible images become eager/high priority immediately. Video streams
+retain their separate playback policy.
