@@ -1301,3 +1301,14 @@ Cloud supplies the destination rather than copying a standalone `public_host`.
 `--audience-url HTTPS_URL`. An explicitly empty value disables those elements,
 while omission preserves standalone behavior. Hosted QR images are embedded PNGs,
 so immutable releases require no sharing API or third-party image service.
+
+### Display images without changing source files
+
+`vstd image-delivery --input original.png --output display.webp` creates a new
+WebP using the same deterministic `webp-v1-1920` recipe as optimized releases
+(maximum width 1920, no enlargement, quality 82, alpha preserved). It requires
+`cwebp`; PNG, JPEG, and WebP inputs are limited to 16 MiB and 40 million pixels.
+The output must not already exist. JSON stdout records `sourceSha256`, `sha256`,
+`bytes`, `width`, `height`, `mediaType`, and `recipe`. Hosted adapters may cache
+this disposable display copy while retaining original bytes and logical paths
+for editing. Authorization remains the host's responsibility.

@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.7.21"
+const version = "0.7.22"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -56,6 +56,8 @@ func main() {
 		err = cmdDiffUpstream(args)
 	case "build":
 		err = cmdBuild(args)
+	case "image-delivery":
+		err = cmdImageDelivery(args)
 	case "delivery-resources":
 		err = cmdDeliveryResources(os.Args[2:])
 	case "release-build":
@@ -111,6 +113,8 @@ Usage:
   vstd build <deck>|--all             assemble build/index.html
   vstd release-build [deck] --output DIR
                                       emit immutable hosted-release artifacts + manifest
+  vstd image-delivery --input FILE --output FILE
+                                      create a source-preserving display WebP + JSON receipt
   vstd delivery-resources --output DIR export trusted shared engine/theme resources
   vstd agent                          run one headless redesign-queue sweep
   vstd editor-session [flags]       isolated gateway-authenticated editor transport

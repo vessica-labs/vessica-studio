@@ -3388,9 +3388,11 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   const frame=document.getElementById('frame');if(!frame)return;
   const slides=()=>[...frame.querySelectorAll('.slide')];
   function hydrate(root,priority){
+    // Promote already admitted images when their slide becomes visible. Set hints
+    // before assigning sources so the first request has the correct priority.
+    root.querySelectorAll('img').forEach(el=>{el.loading=priority==='high'?'eager':'lazy';el.fetchPriority=priority;el.decoding='async';});
     root.querySelectorAll('[data-vstd-src]').forEach(el=>{
       el.setAttribute('src',window.VSTDAssetURL?window.VSTDAssetURL(el.getAttribute('data-vstd-src')):el.getAttribute('data-vstd-src'));el.removeAttribute('data-vstd-src');
-      if(el.tagName==='IMG'){el.loading=priority==='high'?'eager':'lazy';el.fetchPriority=priority;el.decoding='async';}
     });
     root.querySelectorAll('[data-vstd-srcset]').forEach(el=>{el.setAttribute('srcset',el.getAttribute('data-vstd-srcset'));el.removeAttribute('data-vstd-srcset');});
   }
