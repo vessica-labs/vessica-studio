@@ -27,25 +27,41 @@ type ReleaseArtifact struct {
 	SHA256    string `json:"sha256"`
 	Bytes     int64  `json:"bytes"`
 	MediaType string `json:"mediaType"`
+	Width     int    `json:"width,omitempty"`
+	Height    int    `json:"height,omitempty"`
+	Variant   string `json:"variant,omitempty"`
+}
+
+type ReleaseDeliverySettings struct {
+	SchemaVersion int    `json:"schemaVersion"`
+	VariantRules  string `json:"variantRules"`
+	Template      bool   `json:"template"`
+}
+type ReleaseOptions struct {
+	AudienceURL      *string
+	DeliveryTemplate bool
+	Optimize         bool
 }
 
 type ReleaseManifest struct {
-	SchemaVersion    int                   `json:"schemaVersion"`
-	Engine           ReleaseEngineIdentity `json:"engine"`
-	Entrypoint       string                `json:"entrypoint"`
-	Theme            string                `json:"theme"`
-	Assets           []string              `json:"assets"`
-	Artifacts        []ReleaseArtifact     `json:"artifacts"`
-	ManifestChecksum string                `json:"manifestChecksum"`
+	Delivery         *ReleaseDeliverySettings `json:"delivery,omitempty"`
+	SchemaVersion    int                      `json:"schemaVersion"`
+	Engine           ReleaseEngineIdentity    `json:"engine"`
+	Entrypoint       string                   `json:"entrypoint"`
+	Theme            string                   `json:"theme"`
+	Assets           []string                 `json:"assets"`
+	Artifacts        []ReleaseArtifact        `json:"artifacts"`
+	ManifestChecksum string                   `json:"manifestChecksum"`
 }
 
 type unsignedReleaseManifest struct {
-	SchemaVersion int                   `json:"schemaVersion"`
-	Engine        ReleaseEngineIdentity `json:"engine"`
-	Entrypoint    string                `json:"entrypoint"`
-	Theme         string                `json:"theme"`
-	Assets        []string              `json:"assets"`
-	Artifacts     []ReleaseArtifact     `json:"artifacts"`
+	Delivery      *ReleaseDeliverySettings `json:"delivery,omitempty"`
+	SchemaVersion int                      `json:"schemaVersion"`
+	Engine        ReleaseEngineIdentity    `json:"engine"`
+	Entrypoint    string                   `json:"entrypoint"`
+	Theme         string                   `json:"theme"`
+	Assets        []string                 `json:"assets"`
+	Artifacts     []ReleaseArtifact        `json:"artifacts"`
 }
 
 var (
@@ -70,6 +86,10 @@ func (s *Studio) BuildRelease(deck, output string, engine ReleaseEngineIdentity)
 
 // BuildReleaseWithAudienceURL renders portable QR elements for a host-owned audience entrance.
 func (s *Studio) BuildReleaseWithAudienceURL(deck, output string, engine ReleaseEngineIdentity, audienceURL *string) (*ReleaseManifest, error) {
+	return s.BuildReleaseWithOptions(deck, output, engine, ReleaseOptions{AudienceURL: audienceURL})
+}
+
+func (s *Studio) BuildReleaseWithOptions(deck, output string, engine ReleaseEngineIdentity, options ReleaseOptions) (*ReleaseManifest, error) {
 	if engine.Name != "vstd" || engine.Version == "" || !releaseRevisionRE.MatchString(engine.Revision) {
 		return nil, fmt.Errorf("invalid release engine identity")
 	}
@@ -113,7 +133,7 @@ func (s *Studio) BuildReleaseWithAudienceURL(deck, output string, engine Release
 		}
 	}()
 
-	built, err := s.BuildWithAudienceURL(deck, audienceURL)
+	built, err := s.BuildWithAudienceURL(deck, options.AudienceURL)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +166,43 @@ func (s *Studio) BuildReleaseWithAudienceURL(deck, output string, engine Release
 		return nil, err
 	}
 
+	var delivery *ReleaseDeliverySettings
+	if options.Optimize {
+		html, err = extractPlatformDelivery(staging, html, assetPaths)
+		if err != nil {
+			return nil, err
+		}
+		html, err = optimizeReleaseDelivery(staging, html, assetPaths)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if options.DeliveryTemplate {
+		media, err := releaseArtifacts(staging)
+		if err != nil {
+			return nil, err
+		}
+		html, err = releaseDeliveryTemplate(html, media)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if options.Optimize || options.DeliveryTemplate {
+		rules := "original-v1"
+		if options.Optimize {
+			rules = "webp-1920-h264-1080-minify-v1"
+		}
+		delivery = &ReleaseDeliverySettings{SchemaVersion: 1, VariantRules: rules, Template: options.DeliveryTemplate}
+		if options.Optimize {
+			html, err = deliveryMinifier().String("text/html", html)
+			if err != nil {
+				return nil, err
+			}
+		}
+		if err := writeReleaseFile(staging, "index.html", []byte(html)); err != nil {
+			return nil, err
+		}
+	}
 	artifacts, err := releaseArtifacts(staging)
 	if err != nil {
 		return nil, err
@@ -156,6 +213,7 @@ func (s *Studio) BuildReleaseWithAudienceURL(deck, output string, engine Release
 	}
 	sort.Strings(assets)
 	unsigned := unsignedReleaseManifest{
+		Delivery:      delivery,
 		SchemaVersion: 1,
 		Engine:        engine,
 		Entrypoint:    "index.html",
@@ -168,6 +226,7 @@ func (s *Studio) BuildReleaseWithAudienceURL(deck, output string, engine Release
 		return nil, err
 	}
 	manifest := &ReleaseManifest{
+		Delivery:         delivery,
 		SchemaVersion:    unsigned.SchemaVersion,
 		Engine:           unsigned.Engine,
 		Entrypoint:       unsigned.Entrypoint,
@@ -200,10 +259,10 @@ func (s *Studio) BuildReleaseWithAudienceURL(deck, output string, engine Release
 func releaseRelativePlayer(html string) string {
 	html = releaseRootLibraryRE.ReplaceAllString(html, `${1}./library/`)
 	html = strings.ReplaceAll(html,
-		`const srcFor=id=>httpMode?'/assets/video/'+id:'assets/video/'+id+'.mp4';`,
+		`const srcFor=id=>httpMode?(window.VSTDAssetURL?window.VSTDAssetURL('/assets/video/'+id):'/assets/video/'+id):'assets/video/'+id+'.mp4';`,
 		`const srcFor=id=>'./assets/video/'+id+'.mp4';`)
 	html = strings.ReplaceAll(html,
-		`const posterFor=id=>httpMode?'/assets/video/'+id+'/poster':'assets/video-posters/'+id+'.jpg';`,
+		`const posterFor=id=>httpMode?(window.VSTDAssetURL?window.VSTDAssetURL('/assets/video/'+id+'/poster'):'/assets/video/'+id+'/poster'):'assets/video-posters/'+id+'.jpg';`,
 		`const posterFor=id=>'./assets/video-posters/'+id+'.jpg';`)
 	return html
 }
@@ -406,6 +465,14 @@ func releaseArtifacts(root string) ([]ReleaseArtifact, error) {
 			Bytes:     int64(len(contents)),
 			MediaType: mediaType,
 		})
+		if strings.HasPrefix(mediaType, "image/") {
+			width, height := releaseImageDimensions(path)
+			artifacts[len(artifacts)-1].Width = width
+			artifacts[len(artifacts)-1].Height = height
+		}
+		if strings.HasPrefix(relative, "assets/variants/") {
+			artifacts[len(artifacts)-1].Variant = "webp-v1"
+		}
 		return nil
 	})
 	if err != nil {

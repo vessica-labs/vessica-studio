@@ -201,3 +201,39 @@ func TestEditorTransformCloudAudience(t *testing.T) {
 		t.Fatal("unsafe URL accepted")
 	}
 }
+
+func TestEditorDeliveryURLsNeverPersistIntoSource(t *testing.T) {
+	st := testStudio(t)
+	snapshot, err := studio.CloudContent(st.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	destination := "https://assets.example/protected/scope/digest/photo.png"
+	input := EditorTransformInput{Deck: "demo", Files: snapshot.Files, Method: "PUT", Path: "/api/deck/demo/slide/0010-a/fragment", AssetURLs: map[string]string{"/library/img/photo.png": destination}, AssetSessionURL: "https://assets.example/protected/scope/_session.gif", Body: []byte(`<section class="slide"><img src="` + destination + `"></section>`)}
+	edited, err := TransformEditor(context.Background(), input)
+	if err != nil || edited.Status != 200 {
+		t.Fatalf("save: %v %d", err, edited.Status)
+	}
+	for _, file := range edited.Files {
+		if file.Path == "decks/demo/slides/0010-a.html" {
+			if strings.Contains(string(file.Content), "assets.example") || !strings.Contains(string(file.Content), "/library/img/photo.png") {
+				t.Fatal("delivery identity persisted in source")
+			}
+		}
+	}
+	input.Files = edited.Files
+	input.Method = "GET"
+	input.Path = "/d/demo/"
+	input.Body = nil
+	rendered, err := TransformEditor(context.Background(), input)
+	if err != nil || !strings.Contains(string(rendered.Body), `src="`+destination+`"`) {
+		t.Fatal("missing direct URL", err)
+	}
+	if !strings.Contains(string(rendered.Body), "_session.gif") {
+		t.Fatal("missing session renewal")
+	}
+	input.AssetURLs["/library/img/photo.png"] = "javascript:alert(1)"
+	if _, err = TransformEditor(context.Background(), input); err == nil {
+		t.Fatal("unsafe delivery URL accepted")
+	}
+}

@@ -56,6 +56,8 @@ func main() {
 		err = cmdDiffUpstream(args)
 	case "build":
 		err = cmdBuild(args)
+	case "delivery-resources":
+		err = cmdDeliveryResources(os.Args[2:])
 	case "release-build":
 		err = cmdReleaseBuild(args)
 	case "agent":
@@ -109,6 +111,7 @@ Usage:
   vstd build <deck>|--all             assemble build/index.html
   vstd release-build [deck] --output DIR
                                       emit immutable hosted-release artifacts + manifest
+  vstd delivery-resources --output DIR export trusted shared engine/theme resources
   vstd agent                          run one headless redesign-queue sweep
   vstd editor-session [flags]       isolated gateway-authenticated editor transport
   vstd editor-transform             bounded snapshot/render/visual-edit JSON transform
@@ -332,6 +335,8 @@ func cmdReleaseBuild(args []string) error {
 	fs := flag.NewFlagSet("release-build", flag.ContinueOnError)
 	root := rootFlag(fs)
 	output := fs.String("output", "", "empty destination for release artifacts")
+	deliveryTemplate := fs.Bool("delivery-template", false, "emit manifest-bound asset URL placeholders for an authorized host")
+	optimize := fs.Bool("optimize-delivery", false, "optimize release media and text; requires cwebp for images and FFmpeg for video")
 	audience := fs.String("audience-url", "", "host-owned HTTPS audience entry; empty disables sharing elements")
 	var audienceURL *string
 	var deck string
@@ -369,11 +374,11 @@ func cmdReleaseBuild(args []string) error {
 			audienceURL = audience
 		}
 	})
-	manifest, err := st.BuildReleaseWithAudienceURL(deck, *output, studio.ReleaseEngineIdentity{
+	manifest, err := st.BuildReleaseWithOptions(deck, *output, studio.ReleaseEngineIdentity{
 		Name:     "vstd",
 		Version:  version,
 		Revision: revision,
-	}, audienceURL)
+	}, studio.ReleaseOptions{AudienceURL: audienceURL, DeliveryTemplate: *deliveryTemplate, Optimize: *optimize})
 	if err != nil {
 		return err
 	}
@@ -1012,4 +1017,13 @@ func envOr(k, def string) string {
 		return v
 	}
 	return def
+}
+
+func cmdDeliveryResources(args []string) error {
+	fs := flag.NewFlagSet("delivery-resources", flag.ContinueOnError)
+	output := fs.String("output", "", "empty destination for trusted platform resources")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+	return studio.ExportPlatformDeliveryResources(*output)
 }
