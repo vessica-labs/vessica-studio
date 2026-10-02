@@ -3,7 +3,8 @@
 // it transfers bytes, never cookies, capability URLs or application credentials.
 (()=>{
  const deck=document.getElementById('deck'),assets=/*VSTD:RELAY_ASSETS*/{},pending=new Map();
- deck.src='./presentation.html'+location.hash;
+ // Preserve the authorized viewer selector and slide location when entering the deck.
+ deck.src='./presentation.html'+location.search+location.hash;
  addEventListener('message',async event=>{
   if(event.source!==deck.contentWindow||event.origin!=='null')return;
   if(event.data?.type==='vstd-bundle-cancel'){pending.get(event.data.request)?.abort();return;}

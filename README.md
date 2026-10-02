@@ -770,7 +770,9 @@ sizes and manifest integrity are validated without executing the app.
 
 Immutable releases include the ZIP and an engine-generated download shell
 marked `bundle-relay-v1`; the authored presentation remains sandboxed in
-`presentation.html`. Hosts may give only that verified entrypoint authority to
+`presentation.html`. The shell preserves the viewer query and slide fragment
+when opening that document, so unlisted links remain authorized.
+Hosts may give only that verified entrypoint authority to
 fetch declared release assets and transfer bytes into its opaque child. Never
 give application frames cookies, delivery URLs or a credentialed `null`-origin
 CORS allowance. Serve ZIPs as binary attachments, never application HTML from a
