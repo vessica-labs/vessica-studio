@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.7.23"
+const version = "0.7.24"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -124,6 +124,8 @@ Usage:
   vstd asset list|find [--tags a,b --family F]   browse/reuse the library
   vstd asset add-video <file> [--slug S --tags a,b --no-transcode]
                                       ingest a video (normalize, poster, manifest)
+  vstd asset add-bundle <zip> --slug ID [--entrypoint index.html --poster img/demo.jpg]
+  vstd asset inspect-bundle <zip> [--entrypoint index.html --json]
   vstd asset push|pull                sync video bytes with the S3 bucket
   vstd chart promote-text <deck> <slide> [--dry-run]
                                       promote inline SVG text to editable overlays
@@ -694,6 +696,12 @@ func cmdAssetList(args []string, find bool) error {
 }
 
 func cmdAsset(args []string) error {
+	if len(args) > 0 && args[0] == "add-bundle" {
+		return cmdAssetBundle(args[1:], false)
+	}
+	if len(args) > 0 && args[0] == "inspect-bundle" {
+		return cmdAssetBundle(args[1:], true)
+	}
 	if len(args) >= 1 && args[0] == "list" {
 		return cmdAssetList(args[1:], false)
 	}

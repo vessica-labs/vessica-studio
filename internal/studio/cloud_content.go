@@ -84,7 +84,7 @@ func CloudContent(root string) (CloudSnapshot, error) {
 }
 
 func excludedCloudDir(rel string) bool {
-	return rel == ".git" || rel == ".vstd" || rel == "requests" || strings.Contains(rel, "/build") || rel == "library/video" || rel == "library/videos"
+	return rel == ".git" || rel == ".vstd" || rel == "requests" || strings.Contains(rel, "/build") || rel == "library/video" || rel == "library/videos" || rel == "library/bundle"
 }
 func allowedCloudPath(p string) bool {
 	if p == "studio.yaml" || p == "library/manifest.json" || p == ".gitignore" {

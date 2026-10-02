@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/vessica-labs/vessica-studio/internal/bundle"
 	"github.com/vessica-labs/vessica-studio/internal/library"
 )
 
@@ -166,6 +167,9 @@ func (s *Studio) BuildReleaseWithOptions(deck, output string, engine ReleaseEngi
 		return nil, err
 	}
 
+	if err := s.copyReleaseBundles(staging, html, assetPaths); err != nil {
+		return nil, err
+	}
 	var delivery *ReleaseDeliverySettings
 	if options.Optimize {
 		html, err = extractPlatformDelivery(staging, html, assetPaths)
@@ -203,9 +207,20 @@ func (s *Studio) BuildReleaseWithOptions(deck, output string, engine ReleaseEngi
 			return nil, err
 		}
 	}
+	wrapped, err := s.wrapBundleRelease(staging, html, options.DeliveryTemplate)
+	if err != nil {
+		return nil, err
+	}
 	artifacts, err := releaseArtifacts(staging)
 	if err != nil {
 		return nil, err
+	}
+	if wrapped {
+		for i, a := range artifacts {
+			if a.Path == "index.html" {
+				artifacts[i].Variant = "bundle-relay-v1"
+			}
+		}
 	}
 	assets := make([]string, 0, len(assetPaths))
 	for path := range assetPaths {
@@ -257,6 +272,7 @@ func (s *Studio) BuildReleaseWithOptions(deck, output string, engine ReleaseEngi
 }
 
 func releaseRelativePlayer(html string) string {
+	html = strings.Replace(html, "const logical='/assets/bundle/'+asset.id;", "const logical='./assets/bundle/'+asset.id+'.zip';", 1)
 	html = releaseRootLibraryRE.ReplaceAllString(html, `${1}./library/`)
 	html = strings.ReplaceAll(html,
 		`const srcFor=id=>httpMode?(window.VSTDAssetURL?window.VSTDAssetURL('/assets/video/'+id):'/assets/video/'+id):'assets/video/'+id+'.mp4';`,
@@ -456,6 +472,9 @@ func releaseArtifacts(root string) ([]ReleaseArtifact, error) {
 		}
 		digest := sha256.Sum256(contents)
 		mediaType := mime.TypeByExtension(filepath.Ext(relative))
+		if filepath.Ext(relative) == ".zip" {
+			mediaType = "application/zip"
+		}
 		if mediaType == "" {
 			mediaType = "application/octet-stream"
 		}
@@ -537,6 +556,42 @@ func writeCanonicalJSON(output *bytes.Buffer, value any) error {
 			return err
 		}
 		output.Write(encoded)
+	}
+	return nil
+}
+
+func (s *Studio) copyReleaseBundles(staging, html string, assets map[string]struct{}) error {
+	re := regexp.MustCompile(`data-vstd-bundle=["']([a-z0-9][a-z0-9-]*)["']`)
+	m, err := library.Load(filepath.Join(s.Root, "library"))
+	if err != nil {
+		return err
+	}
+	for _, match := range re.FindAllStringSubmatch(html, -1) {
+		found := false
+		for _, a := range m.Bundles {
+			if a.ID != match[1] {
+				continue
+			}
+			found = true
+			if a.File != "bundle/"+a.Hash+".zip" {
+				return fmt.Errorf("invalid release bundle path")
+			}
+			data, err := readReleaseSource(filepath.Join(s.Root, "library"), a.File)
+			if err != nil {
+				return fmt.Errorf("release bundle bytes unavailable")
+			}
+			if err = bundle.Verify(data, a); err != nil {
+				return err
+			}
+			file := "assets/bundle/" + a.ID + ".zip"
+			if err = writeReleaseFile(staging, file, data); err != nil {
+				return err
+			}
+			assets[file] = struct{}{}
+		}
+		if !found {
+			return fmt.Errorf("release bundle is absent from manifest")
+		}
 	}
 	return nil
 }

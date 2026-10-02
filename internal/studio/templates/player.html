@@ -378,7 +378,7 @@ body.editmode .slide.active{cursor:default}
 
 </style>
 <!--VSTD:THEME-->
-<script>window.VSTD=/*VSTD:META*/null/*:VSTD*/;</script>
+<script id="vstd-runtime">window.VSTD=/*VSTD:META*/null/*:VSTD*/;</script>
 <script>
 // These declarative elements travel with a deck; the host supplies its audience URL.
 document.addEventListener('DOMContentLoaded',()=>{
@@ -2013,6 +2013,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       const response=await fetch(location.pathname,{cache:'no-store',headers:presentationETag?{'If-None-Match':presentationETag}:{}});if(response.status===304||!response.ok)return;
       const doc=new DOMParser().parseFromString(await response.text(),'text/html');
       const next=[...doc.querySelectorAll('#frame > .slide')];if(!next.length)return;
+      const runtime=doc.getElementById('vstd-runtime')?.textContent||'';
+      if(runtime.startsWith('window.VSTD=')&&runtime.endsWith(';')){const metadata=JSON.parse(runtime.slice(12,-1));window.VSTD.bundles=metadata.bundles||[];}
       if(selfMutations||autosaveInFlight||slides.some(slideDirty)||frame.contains(document.activeElement))return;
       presentationETag=response.headers.get('etag')||'';
       const slidesChanged=next.length!==slides.length||!next.every((s,i)=>s.dataset.vstd===slides[i].dataset.vstd&&cleanSlideHTML(s)===cleanSlideHTML(slides[i]));
@@ -3531,6 +3533,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
  };
 })();
 /* ================= End simulation control bridge ================= */
+/*VSTD:BUNDLES*/
 
 /* ================= Video assets layer =================
    Slides stay declarative: <video class="vid" data-vstd-video="<asset-id>"

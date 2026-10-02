@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/skip2/go-qrcode"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 	"log"
 	"net/url"
 	"os"
@@ -108,9 +109,18 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 		}
 		rt["follow_url"] = *audienceURL
 	}
+	manifest, err := library.Load(filepath.Join(s.Root, "library"))
+	if err != nil {
+		return "", err
+	}
+	rt["bundles"] = manifest.Bundles
 	rtJSON, _ := json.Marshal(rt)
 
-	out := string(player)
+	bundleJS, err := templates.ReadFile("templates/bundles.js")
+	if err != nil {
+		return "", err
+	}
+	out := strings.Replace(string(player), "/*VSTD:BUNDLES*/", string(bundleJS), 1)
 	out = strings.ReplaceAll(out, "<!--VSTD:TITLE-->", htmlEscape(meta.Title))
 	out = strings.ReplaceAll(out, "<!--VSTD:THEME-->",
 		"<style id=\"vstd-presentation-styles\">\n"+string(themeCSS)+"\n/* deck overrides */\n"+string(deckCSS)+"\n</style>")

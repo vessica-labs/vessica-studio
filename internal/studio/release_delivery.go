@@ -24,13 +24,16 @@ import (
 func releaseDeliveryTemplate(html string, artifacts []ReleaseArtifact) (string, error) {
 	ordered := append([]ReleaseArtifact(nil), artifacts...)
 	sort.Slice(ordered, func(i, j int) bool { return len(ordered[i].Path) > len(ordered[j].Path) })
-	videos, posters := map[string]string{}, map[string]string{}
+	videos, posters, bundles := map[string]string{}, map[string]string{}, map[string]string{}
 	for _, a := range ordered {
 		if a.Path == "index.html" {
 			continue
 		}
 		token := "vstd-asset:" + a.SHA256 + ":" + base64.RawURLEncoding.EncodeToString([]byte(a.Path))
 		html = strings.ReplaceAll(html, "./"+a.Path, token)
+		if strings.HasPrefix(a.Path, "assets/bundle/") {
+			bundles[strings.TrimSuffix(filepath.Base(a.Path), filepath.Ext(a.Path))] = token
+		}
 		if strings.HasPrefix(a.Path, "assets/video/") {
 			videos[strings.TrimSuffix(filepath.Base(a.Path), filepath.Ext(a.Path))] = token
 		}
@@ -38,6 +41,8 @@ func releaseDeliveryTemplate(html string, artifacts []ReleaseArtifact) (string, 
 			posters[strings.TrimSuffix(filepath.Base(a.Path), filepath.Ext(a.Path))] = token
 		}
 	}
+	bundleJSON, _ := json.Marshal(bundles)
+	html = strings.Replace(html, `const logical='./assets/bundle/'+asset.id+'.zip';`, `const logical=(`+string(bundleJSON)+`)[asset.id]||'';`, 1)
 	videoJSON, _ := json.Marshal(videos)
 	posterJSON, _ := json.Marshal(posters)
 	html = strings.ReplaceAll(html, `const srcFor=id=>'./assets/video/'+id+'.mp4';`, `const srcFor=id=>(`+string(videoJSON)+`)[id]||'';`)
