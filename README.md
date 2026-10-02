@@ -977,6 +977,40 @@ Keep an accessible description on the chart geometry with `aria-label`,
 matches its accessible description or visible labels. Slide titles are excluded
 from Vessica highlighting.
 
+### Interactive simulation controls
+
+Vessica can launch/resume, pause, jump to a checkpoint, change playback speed,
+select a camera, or request the actual state of an opted-in simulation on the
+active slide. For example: “Vessica, pause the simulation” or “Vessica, switch to
+the cockpit.” `control_simulation` accepts `action` (`start`, `stop`, `checkpoint`,
+`speed`, `camera`, or `status`), plus the matching `checkpoint`, `speed`, or
+`camera` argument. Stop pauses and retains position. Only explicit simulator
+requests trigger these controls; stopping the flight does not end the conversation.
+
+An iframe opts in with its supported values and a same-origin launch URL:
+
+```html
+<iframe data-vstd-simulation='{"name":"Flight","checkpoints":["Dzong"],"speeds":[1,2,4],"cameras":["director","cockpit"]}'
+        data-vstd-simulation-src="/site/flight/" srcdoc="Launch screen"></iframe>
+```
+
+An optional comma-separated `data-vstd-simulation-hosts` restricts availability
+to named hosts, useful while a runtime is local only. Thumbnails, hidden slides,
+and audience clients cannot issue commands. Launching requires `start`; subsequent
+commands return the simulator's confirmed state, or an error after a bounded wait.
+
+The embedded application listens for parent `postMessage` requests with type
+`vstd:simulation:command`, a unique `id`, `action`, and its matching argument. It
+must validate the parent source/origin, permitted values, and slide visibility;
+deduplicate by `id`; and pause rendering/playback when its slide is inactive.
+Reply to the exact parent origin with `vstd:simulation:accepted` while loading,
+then `vstd:simulation:result` with the same `id` and either `{ok:true,state:{...}}`
+or `{ok:false,error:"..."}`. The player verifies frame source and origin, cancels
+requests on slide/auth changes, and includes the capability catalog in Vessica's
+current-slide instructions. No arbitrary code or iframe URL is supplied by the
+voice tool. This contract controls an available runtime; it does not upload or
+host application assets.
+
 ### Video playback
 
 The player starts and stops cataloged videos as slides enter and leave. Video

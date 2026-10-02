@@ -2022,6 +2022,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const active=slides[cur]?.dataset.vstd;
       setSelection([]);
       slides.forEach(s=>s.remove());frame.prepend(...next);slides.splice(0,slides.length,...next);
+      renumberPills();
       slides.forEach(s=>{if(s.dataset.vstd)__baseline[s.dataset.vstd]=cleanSlideHTML(s);});
       cur=Math.max(0,slides.findIndex(s=>s.dataset.vstd===active));
       if(editMode)slides.forEach(s=>s.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable')));
@@ -2599,6 +2600,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   }
 
   const TOOLS=[
+    {type:'function',name:'control_simulation',description:'Control the opted-in simulation on the CURRENT slide, only on an explicit request. start launches/resumes; stop pauses and retains position; checkpoint jumps; speed sets a multiplier; camera selects an angle; status reports actual state. Use only values listed in SIMULATION CONTROLS. Wait for the result before claiming success. Stopping the simulation does not end your conversation.',parameters:{type:'object',properties:{action:{type:'string',enum:['start','stop','checkpoint','speed','camera','status']},checkpoint:{type:'string'},speed:{type:'number'},camera:{type:'string'}},required:['action']}},
     {type:'function',name:'next_slide',description:'Advance to the next slide. Call when the speaker has clearly finished this slide and lands the opening idea of the next one.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'prev_slide',description:'Go back one slide.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'goto_slide',description:'Jump to a slide by its 1-based number.',parameters:{type:'object',properties:{number:{type:'integer'}},required:['number']}},
@@ -2701,7 +2703,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     const nextCue=next?((next.querySelector('.notes')||{}).textContent||'').slice(0,300):'';
     return `You are Vessica, a silent presentation co-pilot for the deck "${window.VSTD.title}". REHEARSAL MODE.
 RULES:
-- Stay COMPLETELY SILENT unless the speaker says the wake word "Vessica" — then call begin_conversation and respond briefly and helpfully, drawing on the slide context. When told to stop / be quiet / thanked, call end_conversation and go silent again.
+- Stay COMPLETELY SILENT unless the speaker says the wake word "Vessica" — then call begin_conversation and respond briefly and helpfully, drawing on the slide context. When told to stop speaking / be quiet / thanked, call end_conversation and go silent again. A command to stop the simulation controls the flight instead.
 - While silent, your ONLY actions are tool calls. Never produce audio without begin_conversation.
 - Advance slides with next_slide when the speaker finishes the current slide's material and begins the next slide's opening idea. Be conservative — never advance mid-thought. Obey explicit commands ("next slide", "go back", "go to slide 12") immediately via tools.
 - Use highlight(phrase) when the speaker dwells on a specific non-title element visible on the slide; clear_highlight when they move on. Never highlight the slide title. A chart is highlightable when the speaker's topic relates to its accessible description or one of its labels; use the corresponding verbatim highlightable phrase and the whole chart will glow.
@@ -2714,6 +2716,7 @@ ${deckMap()}
 HIGHLIGHTABLE ELEMENTS ON THIS SLIDE (for highlight(phrase) — copy one VERBATIM): ${highlightables()}
 CURRENT SLIDE ${P().cur()+1}/${P().count}: "${title.trim()}"
 SPEAKER'S TALK TRACK FOR THIS SLIDE: ${notes.trim().slice(0,600)}
+SIMULATION CONTROLS: ${JSON.stringify(window.VSTDSimulation?.context()||null)}. Only control a simulation when this context is available and the speaker explicitly asks. A request to pause/stop the flight uses control_simulation(stop); a request to stop speaking uses end_conversation. Camera values identify viewing angles; do not invent arbitrary coordinates or checkpoint names. Starting resumes the current flight; stop retains its position. Do not automatically advance away during a simulator command.
 NEXT SLIDE: "${nextTitle.trim()}" — its talk track begins: ${nextCue}
 PROJECT MODE (in conversation): the speaker may hand you a real project ("get input from the audience", "make us a visualization"). Your PROJECT TOOLS act in the REAL world — send_sms and send_email reach the actual people in the KNOWLEDGE BASE below. When handed a project: state your plan aloud in one or two sentences, create it with tasks_create (the audience watches it on the demo slide), then execute step by step — checking off tasks with tasks_check as you complete them and keeping the Live Display current with display_render. Individual SMS replies and [CALL REPORT]s arrive as their own events; weave those in. Audience-chat input arrives BATCHED as [AUDIENCE PULSE] events (totals + recent messages) — treat pulses as a stream of aggregate data: keep a running synthesis on the Live Display (themes, counts, a chart when it stabilizes) and comment aloud only on the AGGREGATE picture, briefly, at natural pauses. Never read out or reply to individual chat messages one by one, and never interrupt the presenter mid-thought for a pulse. For BROAD audience input, prefer the scan-to-chat channel: audience_ask(what you want to learn) then show_chat_qr — each scanner gets a one-on-one chat with you and their answers stream back as [INCOMING REPLY] events (use this over SMS when texting is unavailable). Text individuals for quick pulses; use call_person when a real conversation would be richer (it dials, converses, and reports back as a [CALL REPORT] while you keep working); email those with only an email address. If a tool reports "not configured", say so plainly and continue with what works.
 KNOWLEDGE BASE (this presentation's company + audience notes, may include contact details — use kb_read for full documents):
@@ -2872,6 +2875,12 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   }
   function runTool(name,args,callId){
     let out='ok';
+    if(name==='control_simulation'){
+      return window.VSTDSimulation.run(args).then(state=>JSON.stringify(state)).catch(e=>'FAILED: '+e.message).then(output=>{
+        send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output}});
+        requestResponse();return output;
+      });
+    }
     if(CTOOLS[name]){
       if(!window.__companionDrawer){out='companion drawer unavailable';}
       else{
@@ -3450,6 +3459,78 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   function start(){setTimeout(()=>{started=true;collect();},800);}
   if(document.readyState==='complete')start();else addEventListener('load',start,{once:true});
 })();
+
+/* ================= Simulation control bridge ================= */
+(()=>{
+ const pending=new Map();let sequence=0;
+ const current=()=>window.VSTDP?.slideEl();
+ const frameFor=slide=>slide?.querySelector('iframe[data-vstd-simulation]');
+ const configFor=frame=>{
+  try{const c=JSON.parse(frame.getAttribute('data-vstd-simulation'));return c&&typeof c.name==='string'&&['checkpoints','speeds','cameras'].every(k=>Array.isArray(c[k]))?c:null;}catch(_){return null;}
+ };
+ const allowedHost=frame=>{
+  const hosts=frame.getAttribute('data-vstd-simulation-hosts');
+  return !hosts||hosts.split(',').map(s=>s.trim()).includes(window.location.hostname);
+ };
+ const active=slide=>current()===slide&&slide.classList.contains('active')&&!slide.classList.contains('mini')&&!document.hidden;
+ const launched=frame=>{
+  if(!frame.hasAttribute('srcdoc'))return true;
+  // A native launcher link navigates its document without changing srcdoc.
+  try{const href=frame.contentWindow.location?.href;return !!href&&href!=='about:srcdoc'&&new URL(href).origin===new URL(window.location.href).origin;}catch(_){return false;}
+ };
+ addEventListener('message',event=>{
+  const data=event.data;if(!data||!['vstd:simulation:accepted','vstd:simulation:result'].includes(data.type))return;
+  const p=pending.get(data.id);
+  if(!p||event.source!==p.frame.contentWindow||event.origin!==p.origin)return;
+  if(!window.VSTDPresenterControl()){p.finish(new Error('presenter auth required'));return;}
+  if(!active(p.slide)){p.finish(new Error('Simulation is no longer on the active slide'));return;}
+  if(data.type==='vstd:simulation:accepted'){p.accepted=true;return;}
+  if(data.ok===true&&data.state&&typeof data.state==='object')p.finish(null,data.state);
+  else p.finish(new Error(typeof data.error==='string'?data.error.slice(0,500):'Simulation rejected the command'));
+ });
+ window.VSTDSimulation={
+  context(){
+   const frame=frameFor(current()),config=frame&&configFor(frame);
+   return config?{...config,available:allowedHost(frame),launched:launched(frame)}:null;
+  },
+  async run(args){
+   if(!window.VSTDPresenterControl())throw new Error('presenter auth required');
+   const slide=current(),frame=frameFor(slide),config=frame&&configFor(frame);
+   if(!config||!active(slide))throw new Error('No controllable simulation on the active slide');
+   if(!allowedHost(frame))throw new Error('Simulation is unavailable on this host; the hosted runtime is required');
+   const action=args.action;
+   if(!['start','stop','checkpoint','speed','camera','status'].includes(action))throw new Error('Unsupported simulation action');
+   for(const [a,key,values] of [['checkpoint','checkpoint',config.checkpoints],['speed','speed',config.speeds],['camera','camera',config.cameras]]){
+    if(action===a&&!values.includes(args[key]))throw new Error('Unsupported '+key+'; choose from '+values.join(', '));
+   }
+   const url=new URL(frame.getAttribute('data-vstd-simulation-src')||frame.getAttribute('src')||'',window.location.href);
+   if(url.origin!==new URL(window.location.href).origin||!['http:','https:'].includes(url.protocol))throw new Error('Simulation launch must use a same-origin HTTP URL');
+   if(!launched(frame)){
+    if(action==='status')return {ready:false,playing:false,name:config.name};
+    if(action!=='start')throw new Error('Start the simulation before changing its controls');
+    frame.setAttribute('src',url.href);frame.removeAttribute('srcdoc');
+   }
+   const id='simulation-'+Date.now()+'-'+(++sequence);
+   const request={type:'vstd:simulation:command',id,action};
+   if(action==='checkpoint')request.checkpoint=args.checkpoint;
+   if(action==='speed')request.speed=args.speed;
+   if(action==='camera')request.camera=args.camera;
+   return new Promise((resolve,reject)=>{
+    const began=Date.now();let timer;
+    const p={slide,frame,origin:url.origin,accepted:false,finish(error,state){clearInterval(timer);pending.delete(id);error?reject(error):resolve(state);}};
+    pending.set(id,p);
+    const tick=()=>{
+     if(!window.VSTDPresenterControl()){p.finish(new Error('presenter auth required'));return;}
+     if(!active(slide)){p.finish(new Error('Simulation is no longer on the active slide'));return;}
+     if(Date.now()-began>40000){p.finish(new Error('Simulation did not confirm the command within 40 seconds'));return;}
+     if(!p.accepted)try{frame.contentWindow.postMessage(request,url.origin);}catch(e){p.finish(e);}
+    };
+    timer=setInterval(tick,200);tick();
+   });
+  }
+ };
+})();
+/* ================= End simulation control bridge ================= */
 
 /* ================= Video assets layer =================
    Slides stay declarative: <video class="vid" data-vstd-video="<asset-id>"
