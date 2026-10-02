@@ -28,7 +28,7 @@ func Init(root string) error {
 	}
 	writeIfAbsent(filepath.Join(root, "studio.yaml"), []byte(defaultStudioYAML))
 	writeIfAbsent(filepath.Join(root, "library", "manifest.json"), []byte(defaultManifest))
-	writeIfAbsent(filepath.Join(root, ".gitignore"), []byte("decks/*/build/\nrequests/done/\n.DS_Store\n"))
+	writeIfAbsent(filepath.Join(root, ".gitignore"), []byte("decks/*/build/\nlibrary/video/\nlibrary/bundle/\nrequests/done/\n.DS_Store\n"))
 
 	// embedded default theme
 	return fs.WalkDir(templates, "templates/default-theme", func(p string, d fs.DirEntry, err error) error {

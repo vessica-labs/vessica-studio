@@ -732,6 +732,50 @@ vstd asset find --family editorial
 Tag matching is “any of” the supplied tags. `find` prints a generation hint when
 no asset matches.
 
+### Interactive application bundles
+
+Use a self-contained ZIP for a simulator or other interactive slide application:
+
+```sh
+vstd asset add-bundle ./simulation.zip --slug simulation --entrypoint index.html --poster img/simulation.jpg
+vstd asset inspect-bundle ./simulation.zip --entrypoint index.html --json
+```
+
+The library manifest stores a `bundles` entry with `id`, content-addressed
+`file` (`bundle/<sha256>.zip`), `hash`, `bytes`, `entrypoint`, `expandedBytes`,
+and `fileCount`, plus optional `poster` and `created`. Keep `library/bundle/`
+out of Git. ZIPs stay outside the canonical Cloud snapshot; native sync uploads
+verified bytes separately, using the additive `asset.bundle.write` capability,
+before syncing their manifest. Import the original ZIP for local offline use;
+Cloud-only checkouts may retain references without the local archive.
+
+A slide launches a bundle explicitly:
+
+```html
+<div data-vstd-bundle="simulation" style="position:relative;width:100%;height:100%" aria-label="Simulation">
+  <button data-bundle-launch>Start simulation</button>
+  <span data-bundle-status role="status"></span>
+</div>
+```
+
+Version 1 supports inline application JavaScript and CSS with relative data and
+image files. Bundle module dependencies into inline code before importing;
+external scripts, import maps, embedded frames, network services, workers and
+parent-document access are unsupported. The app runs in an opaque-origin
+`allow-scripts` sandbox. Archives download only after launch, including in Cloud,
+and leaving the slide destroys the frame. Thumbnails and exports show the
+slide's authored static preview. Limits are 128 MiB compressed, 256 MiB expanded,
+512 files and an 8 MiB HTML entrypoint. Paths, entry types, collisions, CRCs,
+sizes and manifest integrity are validated without executing the app.
+
+Immutable releases include the ZIP and an engine-generated download shell
+marked `bundle-relay-v1`; the authored presentation remains sandboxed in
+`presentation.html`. Hosts may give only that verified entrypoint authority to
+fetch declared release assets and transfer bytes into its opaque child. Never
+give application frames cookies, delivery URLs or a credentialed `null`-origin
+CORS allowance. Serve ZIPs as binary attachments, never application HTML from a
+credentialed Studio origin.
+
 ### Video assets and object storage
 
 #### `vstd asset add-video <file>`

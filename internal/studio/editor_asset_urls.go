@@ -15,7 +15,7 @@ func ValidateEditorAssetURLs(urls map[string]string, keepalive string) error {
 		return fmt.Errorf("too many editor asset URLs")
 	}
 	for path, destination := range urls {
-		if !strings.HasPrefix(path, "/library/") && !strings.HasPrefix(path, "/assets/video/") {
+		if !strings.HasPrefix(path, "/library/") && !(strings.HasPrefix(path, "/assets/video/") || strings.HasPrefix(path, "/assets/bundle/")) {
 			return fmt.Errorf("invalid editor asset path")
 		}
 		if !validReleasePath(strings.TrimPrefix(path, "/")) {

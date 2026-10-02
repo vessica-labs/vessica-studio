@@ -208,6 +208,7 @@ func (s *Server) Routes() http.Handler {
 		lib.ServeHTTP(w, r)
 	}))
 
+	mux.HandleFunc("GET /assets/bundle/{id}", s.handleBundle)
 	mux.HandleFunc("GET /assets/video/{id}", s.handleVideo)
 	mux.HandleFunc("GET /assets/video/{id}/poster", s.handleVideoPoster)
 	mux.HandleFunc("POST /api/asset/video", s.editOnly(s.handleVideoUpload))

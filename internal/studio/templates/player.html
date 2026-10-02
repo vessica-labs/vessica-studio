@@ -2022,6 +2022,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const active=slides[cur]?.dataset.vstd;
       setSelection([]);
       slides.forEach(s=>s.remove());frame.prepend(...next);slides.splice(0,slides.length,...next);
+      renumberPills();
       slides.forEach(s=>{if(s.dataset.vstd)__baseline[s.dataset.vstd]=cleanSlideHTML(s);});
       cur=Math.max(0,slides.findIndex(s=>s.dataset.vstd===active));
       if(editMode)slides.forEach(s=>s.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable')));
@@ -3450,6 +3451,8 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   function start(){setTimeout(()=>{started=true;collect();},800);}
   if(document.readyState==='complete')start();else addEventListener('load',start,{once:true});
 })();
+
+/*VSTD:BUNDLES*/
 
 /* ================= Video assets layer =================
    Slides stay declarative: <video class="vid" data-vstd-video="<asset-id>"

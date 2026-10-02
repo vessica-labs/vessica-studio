@@ -143,7 +143,7 @@ func editorSessionRoute(method, p, deck string) bool {
 		if p == "/api/me" || p == "/api/events" || p == "/api/editor/snapshot" || p == "/d/"+deck+"/" {
 			return true
 		}
-		if strings.HasPrefix(p, "/library/") || strings.HasPrefix(p, "/assets/video/") {
+		if strings.HasPrefix(p, "/library/") || (strings.HasPrefix(p, "/assets/video/") || strings.HasPrefix(p, "/assets/bundle/")) {
 			return true
 		}
 	}
