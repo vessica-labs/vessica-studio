@@ -1,7 +1,12 @@
 package cloudworkspace
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"errors"
+	"github.com/vessica-labs/vessica-studio/internal/bundle"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 	"os"
 	"path/filepath"
 	"testing"
@@ -220,5 +225,56 @@ func TestOfflineSaveRetriedAutomatically(t *testing.T) {
 	a, err := LoadAssociation(root)
 	if err != nil || a.BaseRevisionID != "r2" || a.ConflictHeadRevisionID != "" {
 		t.Fatalf("%+v %v", a, err)
+	}
+}
+
+type bundleCloud struct {
+	*fakeCloud
+	uploads int
+	err     error
+}
+
+func (f *bundleCloud) EnsureBundle(_ context.Context, _ string, _ library.BundleAsset, _ []byte) error {
+	f.uploads++
+	return f.err
+}
+func TestSyncUploadsBundlesBeforeCanonicalAndCachesUnchangedReceipt(t *testing.T) {
+	ctx := context.Background()
+	root := localStudio(t)
+	api := &bundleCloud{fakeCloud: linkedCloud(t, root)}
+	m := Manager{Cloud: api, Endpoint: "https://cloud.example"}
+	if e := m.Connect(ctx, root, "ws1"); e != nil {
+		t.Fatal(e)
+	}
+	var b bytes.Buffer
+	w := zip.NewWriter(&b)
+	f, _ := w.Create("index.html")
+	f.Write([]byte("<p>App</p>"))
+	w.Close()
+	file := filepath.Join(t.TempDir(), "app.zip")
+	os.WriteFile(file, b.Bytes(), 0644)
+	if _, e := bundle.Ingest(filepath.Join(root, "library"), file, "demo", "index.html", ""); e != nil {
+		t.Fatal(e)
+	}
+	api.err = errors.New("upload unavailable")
+	if _, e := m.Sync(ctx, root, "bundle"); e == nil {
+		t.Fatal("ignored failed upload")
+	}
+	if api.synced.OperationID != "" {
+		t.Fatal("published canonical reference before upload")
+	}
+	api.err = nil
+	for i := 0; i < 2; i++ {
+		if _, e := m.Sync(ctx, root, "bundle"); e != nil {
+			t.Fatal(e)
+		}
+	}
+	if api.uploads != 2 {
+		t.Fatalf("uploads=%d (including failed attempt)", api.uploads)
+	}
+	for _, f := range api.synced.Files {
+		if f.Path == "library/bundle/archive.zip" || filepath.Ext(f.Path) == ".zip" {
+			t.Fatal("large archive in canonical snapshot")
+		}
 	}
 }
