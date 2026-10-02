@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(event.source!==parent||event.data?.type!=='vstd-bundle-init'||event.data.id!==id)return;
       removeEventListener('message',receive);
       const {files,entrypoint}=event.data,urls=new Map(),decoder=new TextDecoder();
+      window.VSTDSimulationHost={origin:event.origin};
       const mime=name=>({json:'application/json',jpg:'image/jpeg',jpeg:'image/jpeg',png:'image/png',svg:'image/svg+xml',webp:'image/webp',css:'text/css',woff:'font/woff',woff2:'font/woff2',txt:'text/plain'}[name.split('.').pop()]||'application/octet-stream');
       for(const f of files)urls.set(f.name,URL.createObjectURL(new Blob([f.data],{type:mime(f.name)})));
       const root=new URL(entrypoint,'https://bundle.invalid/');
@@ -99,5 +100,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     }catch(error){if(controller.signal.aborted)return;cleanup(host);if(status)status.textContent=error.message+' — try again';}
   }
   document.addEventListener('click',event=>{const button=event.target.closest('[data-bundle-launch]');if(button){event.preventDefault();launch(button.closest('[data-vstd-bundle]'));}});
+  // Presenter tools use the same validated loader and opaque application frame.
+  window.VSTDBundles={launch,frame:host=>running.get(host)?.frame||null};
   new MutationObserver(()=>{for(const host of running.keys())if(!host.isConnected||!host.closest('.slide.active'))cleanup(host);}).observe(document.getElementById('frame'),{subtree:true,attributes:true,attributeFilter:['class'],childList:true});
 });
