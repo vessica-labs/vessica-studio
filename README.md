@@ -1043,9 +1043,18 @@ to named hosts, useful while a runtime is local only. Thumbnails, hidden slides,
 and audience clients cannot issue commands. Launching requires `start`; subsequent
 commands return the simulator's confirmed state, or an error after a bounded wait.
 
+For cataloged applications, put `data-vstd-simulation` on the
+`data-vstd-bundle` container instead of an iframe. The tool uses the existing
+bundle loader, verifies the archive, and controls only that container's opaque
+application frame. The bootstrap supplies `window.VSTDSimulationHost.origin`
+for validating parent messages without accessing parent credentials or DOM.
+An opaque child replies with origin `null`; the player checks its exact window
+identity as well as that origin. Leaving the slide destroys this sandbox and
+returning starts a fresh session, as with manually launched bundles.
+
 The embedded application listens for parent `postMessage` requests with type
 `vstd:simulation:command`, a unique `id`, `action`, and its matching argument. It
-must validate the parent source/origin, permitted values, and slide visibility;
+must validate the parent source/origin and permitted values, and respect lifecycle;
 deduplicate by `id`; and pause rendering/playback when its slide is inactive.
 Reply to the exact parent origin with `vstd:simulation:accepted` while loading,
 then `vstd:simulation:result` with the same `id` and either `{ok:true,state:{...}}`

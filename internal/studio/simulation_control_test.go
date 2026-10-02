@@ -1,7 +1,12 @@
 package studio
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -78,6 +83,11 @@ global.setInterval=(fn)=>{ticks.set(++timer,fn);return timer};global.clearInterv
  delete frame.contentWindow.location;
  attrs['data-vstd-simulation-src']='https://untrusted.example/app';attrs.srcdoc='launcher';await assert.rejects(run({action:'start'}),/same-origin/);
  assert.equal(ticks.size,0);
+ attrs['data-vstd-bundle']='flight';delete attrs['data-vstd-simulation-hosts'];let launchedBundle=false;
+ window.VSTDBundles={frame:()=>launchedBundle?frame:null,launch:async()=>{launchedBundle=true}};
+ assert.equal((await run({action:'status'})).ready,false);
+ const opaque=run({action:'start'});await Promise.resolve();const opaqueReq=commands.at(-1).data;
+ assert.equal(commands.at(-1).origin,'*');reply(opaqueReq);assert.equal(ticks.size,1);reply(opaqueReq,{},frame.contentWindow,'null');await opaque;
 })().catch(error=>{console.error(error);process.exitCode=1});
 `
 	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
@@ -96,6 +106,30 @@ func TestVessicaSimulationToolDispatch(t *testing.T) {
 	writeFile(t, filepath.Join(root, "decks/demo/deck.yaml"), "title: Demo\ntheme: default\n")
 	writeFile(t, filepath.Join(root, "decks/demo/slides/0010-sim.html"), `<section class="slide"><iframe data-vstd-simulation='{"name":"Test flight","checkpoints":["Dzong"],"speeds":[1,2,4],"cameras":["director","cockpit"]}' data-vstd-simulation-src="/sim" srcdoc="Launch"></iframe></section>`)
 	writeFile(t, filepath.Join(root, "decks/demo/slides/0020-end.html"), `<section class="slide"><h1>End</h1></section>`)
+	app := `<script>
+const state={playing:true,checkpoint:'Dzong',speed:2,camera:'director'};
+addEventListener('message',e=>{const r=e.data;if(r.type!=='vstd:simulation:command'||e.source!==parent)return;
+if(r.action==='stop')state.playing=false;if(r.action==='start')state.playing=true;
+if(r.action==='checkpoint')state.checkpoint=r.checkpoint;if(r.action==='speed')state.speed=r.speed;if(r.action==='camera')state.camera=r.camera;
+parent.postMessage({type:'vstd:simulation:result',id:r.id,ok:true,state},e.origin);});
+</script>`
+	var archive bytes.Buffer
+	zw := zip.NewWriter(&archive)
+	entry, err := zw.CreateHeader(&zip.FileHeader{Name: "index.html", Method: zip.Store})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = entry.Write([]byte(app)); err != nil {
+		t.Fatal(err)
+	}
+	if err = zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256(archive.Bytes())
+	manifest, _ := json.Marshal(map[string]any{"version": 1, "bundles": []any{map[string]any{"id": "test-flight", "hash": hex.EncodeToString(digest[:]), "bytes": archive.Len(), "expandedBytes": len(app), "fileCount": 1, "entrypoint": "index.html"}}})
+	writeFile(t, filepath.Join(root, "library/manifest.json"), string(manifest))
+	writeFile(t, filepath.Join(root, "decks/demo/slides/0020-end.html"), `<section class="slide"><div data-vstd-bundle="test-flight" data-vstd-simulation='{"name":"Bundled flight","checkpoints":["Dzong"],"speeds":[1,2,4],"cameras":["director","cockpit"]}'><button data-bundle-launch>Start</button><span data-bundle-status></span></div></section>`)
+	writeFile(t, filepath.Join(root, "decks/demo/slides/0030-end.html"), `<section class="slide"><h1>End</h1></section>`)
 	st, err := Open(root)
 	if err != nil {
 		t.Fatal(err)
@@ -111,13 +145,12 @@ func TestVessicaSimulationToolDispatch(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		if r.URL.Path == "/sim" {
-			_, _ = w.Write([]byte(`<script>
-const state={playing:true,checkpoint:'Dzong',speed:2,camera:'director'};
-addEventListener('message',e=>{const r=e.data;if(r.type!=='vstd:simulation:command')return;
-if(r.action==='stop')state.playing=false;if(r.action==='start')state.playing=true;
-if(r.action==='checkpoint')state.checkpoint=r.checkpoint;if(r.action==='speed')state.speed=r.speed;if(r.action==='camera')state.camera=r.camera;
-parent.postMessage({type:'vstd:simulation:result',id:r.id,ok:true,state},e.origin);});
-</script>`))
+			_, _ = w.Write([]byte(app))
+			return
+		}
+		if r.URL.Path == "/assets/bundle/test-flight" {
+			w.Header().Set("Content-Type", "application/zip")
+			_, _ = w.Write(archive.Bytes())
 			return
 		}
 		if r.URL.Path == "/" {
@@ -137,6 +170,11 @@ const a=await run({action:'start'}),b=await run({action:'stop'}),c=await run({ac
 if(!a.playing||b.playing||c.checkpoint!=='Dzong'||d.speed!==4||e.camera!=='cockpit')throw Error('Incorrect dispatch result');
 window.__vaudience=true;let denied=false;try{await window.__vpres.run('control_simulation',{action:'start'})}catch(error){denied=/presenter/.test(error.message)}
 if(!denied)throw Error('Audience was able to control simulation');window.__vaudience=false;
+window.VSTDP.step(1);
+const bundled=await run({action:'start'});if(!bundled.playing)throw Error('Bundled start failed');
+const frame=document.querySelector('.slide.active [data-vstd-bundle] iframe');if(frame.getAttribute('sandbox')!=='allow-scripts')throw Error('Bundle sandbox weakened');
+const pause=await run({action:'stop'});if(pause.playing)throw Error('Bundled pause failed');
+const angle=await run({action:'camera',camera:'cockpit'});if(angle.camera!=='cockpit')throw Error('Bundled camera failed');
 window.VSTDP.step(1);const unavailable=await window.__vpres.run('control_simulation',{action:'start'});if(!unavailable.startsWith('FAILED:'))throw Error('Non-simulator slide accepted command');
 return 'passed';})()`)
 	if err != nil {

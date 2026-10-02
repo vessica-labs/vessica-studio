@@ -3466,7 +3466,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
 (()=>{
  const pending=new Map();let sequence=0;
  const current=()=>window.VSTDP?.slideEl();
- const frameFor=slide=>slide?.querySelector('iframe[data-vstd-simulation]');
+ const frameFor=slide=>slide?.querySelector('[data-vstd-simulation]');
  const configFor=frame=>{
   try{const c=JSON.parse(frame.getAttribute('data-vstd-simulation'));return c&&typeof c.name==='string'&&['checkpoints','speeds','cameras'].every(k=>Array.isArray(c[k]))?c:null;}catch(_){return null;}
  };
@@ -3476,6 +3476,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
  };
  const active=slide=>current()===slide&&slide.classList.contains('active')&&!slide.classList.contains('mini')&&!document.hidden;
  const launched=frame=>{
+  if(frame.hasAttribute('data-vstd-bundle'))return !!window.VSTDBundles?.frame(frame);
   if(!frame.hasAttribute('srcdoc'))return true;
   // A native launcher link navigates its document without changing srcdoc.
   try{const href=frame.contentWindow.location?.href;return !!href&&href!=='about:srcdoc'&&new URL(href).origin===new URL(window.location.href).origin;}catch(_){return false;}
@@ -3497,20 +3498,33 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   },
   async run(args){
    if(!window.VSTDPresenterControl())throw new Error('presenter auth required');
-   const slide=current(),frame=frameFor(slide),config=frame&&configFor(frame);
+   const slide=current(),host=frameFor(slide),config=host&&configFor(host);let frame=host,origin,targetOrigin;
    if(!config||!active(slide))throw new Error('No controllable simulation on the active slide');
-   if(!allowedHost(frame))throw new Error('Simulation is unavailable on this host; the hosted runtime is required');
+   if(!allowedHost(host))throw new Error('Simulation is unavailable on this host; the hosted runtime is required');
    const action=args.action;
    if(!['start','stop','checkpoint','speed','camera','status'].includes(action))throw new Error('Unsupported simulation action');
    for(const [a,key,values] of [['checkpoint','checkpoint',config.checkpoints],['speed','speed',config.speeds],['camera','camera',config.cameras]]){
     if(action===a&&!values.includes(args[key]))throw new Error('Unsupported '+key+'; choose from '+values.join(', '));
    }
+   if(host.hasAttribute('data-vstd-bundle')){
+    if(!window.VSTDBundles)throw new Error('Application bundle loader unavailable');
+    frame=window.VSTDBundles.frame(host);
+    if(!frame){
+     if(action==='status')return {ready:false,playing:false,name:config.name};
+     if(action!=='start')throw new Error('Start the simulation before changing its controls');
+     await window.VSTDBundles.launch(host);frame=window.VSTDBundles.frame(host);
+     if(!frame)throw new Error(host.querySelector('[data-bundle-status]')?.textContent||'Application launch failed');
+    }
+    origin='null';targetOrigin='*';
+   }else{
    const url=new URL(frame.getAttribute('data-vstd-simulation-src')||frame.getAttribute('src')||'',window.location.href);
    if(url.origin!==new URL(window.location.href).origin||!['http:','https:'].includes(url.protocol))throw new Error('Simulation launch must use a same-origin HTTP URL');
    if(!launched(frame)){
     if(action==='status')return {ready:false,playing:false,name:config.name};
     if(action!=='start')throw new Error('Start the simulation before changing its controls');
     frame.setAttribute('src',url.href);frame.removeAttribute('srcdoc');
+   }
+   origin=targetOrigin=url.origin;
    }
    const id='simulation-'+Date.now()+'-'+(++sequence);
    const request={type:'vstd:simulation:command',id,action};
@@ -3519,13 +3533,13 @@ If narration starts with no draft slide, call new_slide first (infer a working t
    if(action==='camera')request.camera=args.camera;
    return new Promise((resolve,reject)=>{
     const began=Date.now();let timer;
-    const p={slide,frame,origin:url.origin,accepted:false,finish(error,state){clearInterval(timer);pending.delete(id);error?reject(error):resolve(state);}};
+    const p={slide,frame,origin,accepted:false,finish(error,state){clearInterval(timer);pending.delete(id);error?reject(error):resolve(state);}};
     pending.set(id,p);
     const tick=()=>{
      if(!window.VSTDPresenterControl()){p.finish(new Error('presenter auth required'));return;}
      if(!active(slide)){p.finish(new Error('Simulation is no longer on the active slide'));return;}
      if(Date.now()-began>40000){p.finish(new Error('Simulation did not confirm the command within 40 seconds'));return;}
-     if(!p.accepted)try{frame.contentWindow.postMessage(request,url.origin);}catch(e){p.finish(e);}
+     if(!p.accepted)try{frame.contentWindow.postMessage(request,targetOrigin);}catch(e){p.finish(e);}
     };
     timer=setInterval(tick,200);tick();
    });
