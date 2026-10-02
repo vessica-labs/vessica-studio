@@ -83,6 +83,10 @@ func testBundleLifecycle(t *testing.T, published bool) {
 		w.Header().Set("Content-Security-Policy", "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data:; frame-src 'self' blob:")
 		if published {
 			if r.URL.Path == "/presentation.html" {
+				if r.URL.Query().Get("share") != "fixture-viewer" {
+					http.NotFound(w, r)
+					return
+				}
 				w.Header().Set("Content-Security-Policy", "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src blob: data:; frame-src 'self' blob:; sandbox allow-scripts")
 			}
 			http.FileServer(http.Dir(releaseRoot)).ServeHTTP(w, r)
@@ -103,7 +107,7 @@ func testBundleLifecycle(t *testing.T, published bool) {
   return JSON.stringify({...got,sandbox:window.__bundleSandbox,unloaded:!document.querySelector('[data-vstd-bundle] iframe')});
  })()`
 	if published {
-		target = srv.URL + "/"
+		target = srv.URL + "/?share=fixture-viewer#/1"
 		expression = `(()=>{if(!window.__fixtureListening){window.__fixtureListening=true;addEventListener('message',e=>{if(e.data?.type==='bundle-fixture')window.__fixture=e.data})}return window.__fixture?JSON.stringify(window.__fixture):''})()`
 	}
 	raw, e := chromium.Evaluate(ctx, browser, target, expression)
