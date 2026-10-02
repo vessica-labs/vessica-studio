@@ -212,3 +212,14 @@ personal hostname or `/follow` destination into Cloud presentation fragments.
 The host supplies a presentation-scoped audience URL and self-contained QR.
 An unconfigured Cloud link displays a sharing-unavailable state. Audience links
 open the latest published version; editing source does not publish it.
+
+## Interactive application assets
+
+For a simulator, prepare a self-contained ZIP and use `vstd asset add-bundle
+<zip> --slug <id> --entrypoint index.html`. The app must contain inline bundled
+code and CSS with relative data/images, without external dependencies. Reference
+it with a positioned `data-vstd-bundle` host, a `data-bundle-launch` button and
+optional `data-bundle-status` label. Supply a static preview for thumbnails and
+exports. Pair the slide with a companion documenting source and limitations.
+Keep `library/bundle/` out of Git: native sync transports the large archive
+separately. Verify launch and slide-exit cleanup in local and Cloud playback.

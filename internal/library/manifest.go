@@ -13,6 +13,7 @@ type Manifest struct {
 	Version       int                    `json:"version"`
 	StyleFamilies map[string]StyleFamily `json:"styleFamilies"`
 	Assets        []Asset                `json:"assets"`
+	Bundles       []BundleAsset          `json:"bundles,omitempty"`
 	Videos        []VideoAsset           `json:"videos,omitempty"`
 }
 
@@ -46,6 +47,19 @@ type VideoAsset struct {
 	Tags     []string `json:"tags,omitempty"`
 	Created  string   `json:"created"`
 	Usage    []string `json:"usage,omitempty"`
+}
+
+// BundleAsset is an immutable, self-contained HTML application plus local data.
+type BundleAsset struct {
+	ID            string `json:"id"`
+	File          string `json:"file"`
+	Hash          string `json:"hash"`
+	Bytes         int64  `json:"bytes"`
+	Entrypoint    string `json:"entrypoint"`
+	ExpandedBytes int64  `json:"expandedBytes"`
+	FileCount     int    `json:"fileCount"`
+	Poster        string `json:"poster,omitempty"`
+	Created       string `json:"created,omitempty"`
 }
 
 func Load(dir string) (*Manifest, error) {

@@ -12,13 +12,22 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 
 	"github.com/vessica-labs/vessica-studio/internal/cloud"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 	"github.com/vessica-labs/vessica-studio/internal/reconcile"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
 var ErrLocalChanges = errors.New("workspace has unsynced local changes; run status and reconcile before pulling")
+
+// Process-local acknowledgments avoid re-reading large immutable assets on every
+// background sync. A restarted client checks the Cloud receipt again.
+var bundleReceipts = struct {
+	sync.Mutex
+	values map[string]string
+}{values: map[string]string{}}
 var idRE = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$`)
 
 type Cloud interface {
@@ -277,6 +286,59 @@ func (m Manager) Sync(ctx context.Context, root, message string) (cloud.Revision
 	}
 	unlock()
 	locked = false
+	manifest, e := library.Load(filepath.Join(root, "library"))
+	if e != nil {
+		return cloud.Revision{}, e
+	}
+	if len(manifest.Bundles) > 0 {
+		uploader, ok := m.Cloud.(interface {
+			EnsureBundle(context.Context, string, library.BundleAsset, []byte) error
+		})
+		if !ok {
+			return cloud.Revision{}, fmt.Errorf("Cloud client does not support bundle assets")
+		}
+		for _, asset := range manifest.Bundles {
+			if asset.File != "bundle/"+asset.Hash+".zip" {
+				return cloud.Revision{}, fmt.Errorf("invalid bundle file")
+			}
+			p := filepath.Join(root, "library", filepath.FromSlash(asset.File))
+			// Cloud-only checkouts can retain a manifest without a local large archive.
+			if err := studio.CheckContentPath(root, "library/"+asset.File); err != nil {
+				return cloud.Revision{}, err
+			}
+			info, err := os.Stat(p)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return cloud.Revision{}, err
+			}
+			key := a.Endpoint + "\x00" + a.WorkspaceID + "\x00" + p
+			stamp := fmt.Sprintf("%s:%d:%d", asset.Hash, info.Size(), info.ModTime().UnixNano())
+			bundleReceipts.Lock()
+			cached := bundleReceipts.values[key] == stamp
+			bundleReceipts.Unlock()
+			if cached {
+				continue
+			}
+			data, err := os.ReadFile(p)
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				return cloud.Revision{}, err
+			}
+			if err = uploader.EnsureBundle(ctx, a.WorkspaceID, asset, data); err != nil {
+				return cloud.Revision{}, err
+			}
+			bundleReceipts.Lock()
+			if len(bundleReceipts.values) >= 1000 {
+				clear(bundleReceipts.values)
+			}
+			bundleReceipts.values[key] = stamp
+			bundleReceipts.Unlock()
+		}
+	}
 	var revision cloud.Revision
 	if s.Digest == a.BaseDigest {
 		w, e := m.Cloud.Workspace(ctx, a.WorkspaceID)

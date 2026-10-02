@@ -23,7 +23,7 @@ const defaultCloudEndpoint = "https://studio.vessica.ai"
 
 var (
 	cloudCredentialStore = func(endpoint string) cloudauth.Store { return cloudauth.NewKeyringStore(endpoint) }
-	cloudHTTPClient      = func() *http.Client { return &http.Client{Timeout: 30 * time.Second} }
+	cloudHTTPClient      = func() *http.Client { return &http.Client{Timeout: 120 * time.Second} }
 )
 
 func cmdCloud(args []string) error { return runCloud(args, os.Stdout) }

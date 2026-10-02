@@ -267,7 +267,7 @@ func copyEditorTransformVideos(sourceRoot, targetRoot string) error {
 }
 
 func transformRoute(method, p, deck string) bool {
-	if method == "GET" && (p == "/api/me" || p == "/d/"+deck+"/" || strings.HasPrefix(p, "/library/") || strings.HasPrefix(p, "/assets/video/")) {
+	if method == "GET" && (p == "/api/me" || p == "/d/"+deck+"/" || strings.HasPrefix(p, "/library/") || (strings.HasPrefix(p, "/assets/video/") || strings.HasPrefix(p, "/assets/bundle/"))) {
 		return true
 	}
 	prefix := "/api/deck/" + deck + "/"

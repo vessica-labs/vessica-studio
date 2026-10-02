@@ -72,7 +72,9 @@ func TestLiveRefreshAppliesSlideMarkupAndDeckStyles(t *testing.T) {
 		return '';
 	}
 	if(window.__liveRefreshStarted===2&&current&&filmCurrent&&current.textContent==='After'&&getComputedStyle(current).left==='480px'&&getComputedStyle(filmCurrent).left==='480px'){
-		return JSON.stringify({text:current.textContent,left:getComputedStyle(current).left,filmLeft:getComputedStyle(filmCurrent).left,sameDocument:document.body.dataset.liveRefreshDocument==='original'});
+		const pageNumber=document.querySelector('#frame > .slide .pgpill')?.textContent;
+		const filmPageNumber=document.querySelector('#filmList .fmini')?.shadowRoot?.querySelector('.pgpill')?.textContent;
+		return JSON.stringify({text:current.textContent,left:getComputedStyle(current).left,filmLeft:getComputedStyle(filmCurrent).left,pageNumber,filmPageNumber,sameDocument:document.body.dataset.liveRefreshDocument==='original'});
   }
   return '';
 })()`)
@@ -80,16 +82,18 @@ func TestLiveRefreshAppliesSlideMarkupAndDeckStyles(t *testing.T) {
 		t.Fatal(err)
 	}
 	var got struct {
-		Error        string `json:"error"`
-		Text         string `json:"text"`
-		Left         string `json:"left"`
-		FilmLeft     string `json:"filmLeft"`
-		SameDocument bool   `json:"sameDocument"`
+		Error          string `json:"error"`
+		Text           string `json:"text"`
+		Left           string `json:"left"`
+		FilmLeft       string `json:"filmLeft"`
+		PageNumber     string `json:"pageNumber"`
+		FilmPageNumber string `json:"filmPageNumber"`
+		SameDocument   bool   `json:"sameDocument"`
 	}
 	if err := json.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatal(err)
 	}
-	if got.Error != "" || got.Text != "After" || got.Left != "480px" || got.FilmLeft != "480px" || !got.SameDocument {
+	if got.Error != "" || got.Text != "After" || got.Left != "480px" || got.FilmLeft != "480px" || got.PageNumber != "1" || got.FilmPageNumber != "1" || !got.SameDocument {
 		t.Fatalf("live refresh did not apply complete revision without reload: %#v", got)
 	}
 }
