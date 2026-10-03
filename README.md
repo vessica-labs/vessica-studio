@@ -1451,3 +1451,14 @@ Git push. Its worker is instructed to edit that isolated snapshot directly and
 leave worktree creation, further agent dispatch and Cloud intake to the host.
 Ordinary local sweeps keep their independent worktrees and recovery
 checkpoints. The flag provides no isolation itself; its caller must supply it.
+
+Interactive simulation bundles use a bounded browser archive cache and a bounded
+cache of verified unpacked files. Returning to a simulator slide checks current
+asset access with HEAD and reuses prepared files; reloading the deck reuses the
+archive without another ZIP transfer. SHA-256 and inventory checks still apply.
+Cloud gateways can advertise 4 MiB archive parts; large bundles then download
+four parts concurrently, with each part independently cacheable by the CDN. The
+assembled archive must pass the same SHA-256 check. Other servers retain ordinary
+delivery. Storage denial falls back to ordinary downloads. Leaving the slide destroys the
+application frame, so inactive simulations stop using CPU/GPU. Existing published
+releases retain their loader; publish a new release with vstd 0.7.32 to upgrade.

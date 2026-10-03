@@ -27,7 +27,7 @@ func (s *Studio) wrapBundleRelease(root, html string, deliveryTemplate bool) (bo
 		if deliveryTemplate {
 			u = "vstd-asset:" + a.Hash + ":" + base64.RawURLEncoding.EncodeToString([]byte(file))
 		}
-		assets[a.ID] = map[string]any{"url": u, "bytes": a.Bytes}
+		assets[a.ID] = map[string]any{"url": u, "bytes": a.Bytes, "hash": a.Hash}
 	}
 	if len(assets) == 0 {
 		return false, nil
@@ -36,6 +36,11 @@ func (s *Studio) wrapBundleRelease(root, html string, deliveryTemplate bool) (bo
 	if err != nil {
 		return false, err
 	}
+	download, err := templates.ReadFile("templates/bundle-download.js")
+	if err != nil {
+		return false, err
+	}
+	script = append(append(download, '\n'), script...)
 	metadata, _ := json.Marshal(assets)
 	html = strings.Replace(html, "<script>", "<script>window.VSTDBundleRelay=true;</script><script>", 1)
 	if err = writeReleaseFile(root, "presentation.html", []byte(html)); err != nil {
