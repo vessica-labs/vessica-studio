@@ -676,7 +676,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       return res;
     });
   }
-  function show(i){
+  function show(i,notify=true){
     stopTextEdit();clearSel();
     cur=Math.max(0,Math.min(slides.length-1,i));
     const tgt=slides[cur];
@@ -688,7 +688,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     cnt.textContent=(vn||'·')+' / '+vt;
     const rc=document.getElementById('rcnt');if(rc)rc.textContent=cnt.textContent;
     filmSetCur();
-    document.dispatchEvent(new CustomEvent('vstd:slide',{detail:{index:cur}}));
+    if(notify)document.dispatchEvent(new CustomEvent('vstd:slide',{detail:{index:cur}}));
     progress.style.width=(vn?vn/vt*100:0)+'%';
     location.hash='#/'+(cur+1);
     const n=slides[cur].querySelector('.notes');
@@ -830,7 +830,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       }
       ovSel.clear();
       if(!stay)location.hash='#/grid';
-      await refreshPresentation();
+      await refreshPresentation(true);
     }catch(err){toast('Move failed: '+err.message);}
   }
   let ovCols=4;
@@ -1992,6 +1992,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   window.__vendRealtimeSession=()=>Promise.allSettled([...openAIUsageReports]).then(()=>fetch('/api/realtime/end',{method:'POST',keepalive:true})).catch(()=>{});
   let deferredReload=false;
   let refreshingPresentation=false;
+  let structuralRefreshPending=false;
   let presentationETag='';
   function syncPresentationStyles(doc){
     const current=document.getElementById('vstd-presentation-styles');
@@ -2003,13 +2004,19 @@ document.addEventListener('DOMContentLoaded',()=>{
     filmStyles=null;
     return true;
   }
-  async function refreshPresentation(){
+  async function refreshPresentation(structural=false){
+    // A completed Grid/filmstrip move must refresh even with companion notes
+    // open. Coalesce it behind an in-flight poll without losing the request.
+    if(structural)structuralRefreshPending=true;
     if(refreshingPresentation||selfMutations||autosaveInFlight||!window.VSTD||window.__dictating)return;
     if(slides.some(slideDirty)){scheduleAutosave(0);return;}
-    if(interactionSurfaceOpen()||frame.contains(document.activeElement))return;
+    if((interactionSurfaceOpen()&&!structuralRefreshPending)||frame.contains(document.activeElement))return;
     refreshingPresentation=true;
+    let requestedPresentation=false;
     try{
       if((await outbox('list')).length)return;
+      structuralRefreshPending=false;
+      requestedPresentation=true;
       const response=await fetch(location.pathname,{cache:'no-store',headers:presentationETag?{'If-None-Match':presentationETag}:{}});if(response.status===304||!response.ok)return;
       const doc=new DOMParser().parseFromString(await response.text(),'text/html');
       const next=[...doc.querySelectorAll('#frame > .slide')];if(!next.length)return;
@@ -2028,9 +2035,14 @@ document.addEventListener('DOMContentLoaded',()=>{
       slides.forEach(s=>{if(s.dataset.vstd)__baseline[s.dataset.vstd]=cleanSlideHTML(s);});
       cur=Math.max(0,slides.findIndex(s=>s.dataset.vstd===active));
       if(editMode)slides.forEach(s=>s.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable')));
-      buildAgenda();buildFilm();if(overview.classList.contains('open'))buildOv();show(cur);dirtyCheck();
+      const gridOpen=overview.classList.contains('open'),gridScroll=overview.scrollTop;
+      buildAgenda();buildFilm();if(gridOpen)buildOv();
+      // Reordering around the same selected slide is not navigation. Leave an
+      // open companion's draft alone rather than reloading it through show().
+      show(cur,!(gridOpen&&interactionSurfaceOpen()&&slides[cur]?.dataset.vstd===active));dirtyCheck();
+      if(gridOpen){overview.scrollTop=gridScroll;location.hash='#/grid@'+Math.round(gridScroll)+'@'+ovCols;}
     }catch{/* A network failure leaves the current canvas and durable outbox intact. */}
-    finally{refreshingPresentation=false;}
+    finally{refreshingPresentation=false;if(requestedPresentation&&structuralRefreshPending&&!selfMutations&&!autosaveInFlight&&!slides.some(slideDirty)&&!frame.contains(document.activeElement))void refreshPresentation();}
   }
   setInterval(()=>{if(canEditDeck())void refreshPresentation();},4000);
   function interactionSurfaceOpen(){
