@@ -120,7 +120,11 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 	if err != nil {
 		return "", err
 	}
-	out := strings.Replace(string(player), "/*VSTD:BUNDLES*/", string(bundleJS), 1)
+	bundleDownloadJS, err := templates.ReadFile("templates/bundle-download.js")
+	if err != nil {
+		return "", err
+	}
+	out := strings.Replace(string(player), "/*VSTD:BUNDLES*/", string(bundleDownloadJS)+"\n"+string(bundleJS), 1)
 	out = strings.ReplaceAll(out, "<!--VSTD:TITLE-->", htmlEscape(meta.Title))
 	out = strings.ReplaceAll(out, "<!--VSTD:THEME-->",
 		"<style id=\"vstd-presentation-styles\">\n"+string(themeCSS)+"\n/* deck overrides */\n"+string(deckCSS)+"\n</style>")

@@ -71,14 +71,28 @@ func testBundleLifecycle(t *testing.T, published bool) {
 		}
 		p := filepath.Join(releaseRoot, "presentation.html")
 		html, _ := os.ReadFile(p)
-		driver := `<script>addEventListener('DOMContentLoaded',()=>{addEventListener('message',event=>{if(event.data?.type!=='bundle-fixture')return;const sandbox=document.querySelector('[data-vstd-bundle] iframe')?.getAttribute('sandbox');window.VSTDP.step(1);setTimeout(()=>parent.postMessage({...event.data,sandbox,unloaded:!document.querySelector('[data-vstd-bundle] iframe')},'*'),30)});document.querySelector('[data-bundle-launch]').click()})</script>`
+		driver := bundleCacheDriver
 		os.WriteFile(p, []byte(strings.Replace(string(html), "</body>", driver+"</body>", 1)), 0644)
 	}
 
-	var downloads atomic.Int32
+	var downloads, checks atomic.Int32
+	var revoked atomic.Bool
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/__revoke" {
+			revoked.Store(true)
+			w.WriteHeader(204)
+			return
+		}
 		if r.URL.Path == "/assets/bundle/demo" || r.URL.Path == "/assets/bundle/demo.zip" {
-			downloads.Add(1)
+			if r.Method == "GET" {
+				downloads.Add(1)
+			} else if r.Method == "HEAD" {
+				checks.Add(1)
+			}
+			if revoked.Load() {
+				http.NotFound(w, r)
+				return
+			}
 		}
 		w.Header().Set("Content-Security-Policy", "default-src 'self' blob: data:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' blob: data:; frame-src 'self' blob:")
 		if published {
@@ -92,39 +106,68 @@ func testBundleLifecycle(t *testing.T, published bool) {
 			http.FileServer(http.Dir(releaseRoot)).ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/d/demo/" {
+			recorded := httptest.NewRecorder()
+			routes.ServeHTTP(recorded, r)
+			for k, values := range recorded.Header() {
+				if k != "Content-Length" {
+					w.Header()[k] = values
+				}
+			}
+			w.WriteHeader(recorded.Code)
+			w.Write([]byte(strings.Replace(recorded.Body.String(), "</body>", bundleCacheDriver+"</body>", 1)))
+			return
+		}
 		routes.ServeHTTP(w, r)
 	}))
 	defer srv.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	target := srv.URL + "/d/demo/"
-	expression := `(()=>{
-  if(document.readyState!=='complete'||!document.querySelector('[data-bundle-launch]')||!window.VSTDP)return '';
-  if(!window.__bundleTest){window.__bundleTest={};window.__bundleStarted=Date.now();addEventListener('message',e=>{if(e.data?.type==='bundle-fixture')window.__bundleTest=e.data});document.querySelector('[data-bundle-launch]').click();return '';}
-  const got=window.__bundleTest;if(!got.text){if(Date.now()-window.__bundleStarted>4000)return JSON.stringify({error:document.querySelector('[data-bundle-status]')?.textContent,frame:!!document.querySelector('[data-vstd-bundle] iframe'),active:!!document.querySelector('.slide.active'),bundles:window.VSTD?.bundles});return '';}
-  const sandbox=document.querySelector('[data-vstd-bundle] iframe')?.getAttribute('sandbox');
-  if(!window.__bundleLeft){window.__bundleLeft=true;window.__bundleSandbox=sandbox;window.VSTDP.step(1);return '';}
-  return JSON.stringify({...got,sandbox:window.__bundleSandbox,unloaded:!document.querySelector('[data-vstd-bundle] iframe')});
- })()`
+	expression := `window.__bundleLifecycle?JSON.stringify(window.__bundleLifecycle):''`
 	if published {
 		target = srv.URL + "/?share=fixture-viewer#/1"
-		expression = `(()=>{if(!window.__fixtureListening){window.__fixtureListening=true;addEventListener('message',e=>{if(e.data?.type==='bundle-fixture')window.__fixture=e.data})}return window.__fixture?JSON.stringify(window.__fixture):''})()`
+		expression = `(()=>{if(!window.__fixtureListening){window.__fixtureListening=true;addEventListener('message',async e=>{if(e.data?.type==='fixture-revoke'){await fetch('/__revoke',{method:'POST'});e.source.postMessage({type:'fixture-revoked'},'*');}if(e.data?.type==='bundle-fixture'&&e.data.relaunched)window.__fixture=e.data})}return window.__fixture?JSON.stringify(window.__fixture):''})()`
 	}
 	raw, e := chromium.Evaluate(ctx, browser, target, expression)
 	if e != nil {
 		t.Fatal(e)
 	}
 	var got struct {
-		Text     string
-		Isolated bool
-		Blocked  bool
-		Sandbox  string
-		Unloaded bool
+		Text       string
+		Isolated   bool
+		Blocked    bool
+		Sandbox    string
+		Unloaded   bool
+		Relaunched bool
+		Revoked    bool
 	}
 	if e = json.Unmarshal([]byte(raw), &got); e != nil {
 		t.Fatal(e)
 	}
-	if got.Text != "real bundled data" || !got.Isolated || !got.Blocked || got.Sandbox != "allow-scripts" || !got.Unloaded || downloads.Load() != 1 {
-		t.Fatalf("bundle behavior: %+v downloads=%d", got, downloads.Load())
+	if got.Text != "real bundled data" || !got.Isolated || !got.Blocked || got.Sandbox != "allow-scripts" || !got.Unloaded || !got.Relaunched || !got.Revoked || downloads.Load() != 1 || checks.Load() != 2 {
+		t.Fatalf("bundle behavior: %+v downloads=%d checks=%d", got, downloads.Load(), checks.Load())
 	}
 }
+
+// Real browser lifecycle: transfer copies must not detach the retained file cache;
+// returning to the slide uses HEAD only, and revoked access must block cached data.
+const bundleCacheDriver = `<script>addEventListener('DOMContentLoaded',()=>{
+ let launches=0;const wait=ms=>new Promise(r=>setTimeout(r,ms));
+ addEventListener('message',async event=>{
+  if(event.data?.type!=='bundle-fixture'||event.data.relaunched)return;
+  launches++;const sandbox=document.querySelector('[data-vstd-bundle] iframe')?.getAttribute('sandbox');
+  window.VSTDP.step(1);await wait(30);const unloaded=!document.querySelector('[data-vstd-bundle] iframe');
+  if(launches===1){window.VSTDP.step(-1);document.querySelector('[data-bundle-launch]').click();return;}
+  // The opaque published deck cannot call the origin. Ask the trusted fixture
+  // shell to revoke access; the editor fixture can do so itself.
+  if(parent===window)await fetch('/__revoke',{method:'POST'});
+  else{
+   await new Promise(resolve=>{const receive=e=>{if(e.source===parent&&e.data?.type==='fixture-revoked'){removeEventListener('message',receive);resolve();}};addEventListener('message',receive);parent.postMessage({type:'fixture-revoke'},'*');});
+  }
+  window.VSTDP.step(-1);document.querySelector('[data-bundle-launch]').click();
+  const until=Date.now()+3000;while(document.querySelector('[data-bundle-launch]').disabled&&Date.now()<until)await wait(25);
+  const result={...event.data,sandbox,unloaded,relaunched:launches===2,revoked:!document.querySelector('[data-vstd-bundle] iframe')&&document.querySelector('[data-bundle-status]').textContent.includes('try again')};
+  window.__bundleLifecycle=result;parent.postMessage(result,'*');
+ });document.querySelector('[data-bundle-launch]').click();
+})</script>`
