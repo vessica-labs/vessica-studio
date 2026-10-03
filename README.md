@@ -228,8 +228,10 @@ the same operation ID. Compatible HTML properties, Markdown sections, and deck
 ordering changes merge automatically. Overlapping agent changes yield to direct
 human edits; original submitted checkpoints are retained rather than discarded.
 Device-draft recovery shares the original operation ID with the outbox, including
-across tabs and reloads. Slide reordering updates the canvas without reloading the
-page. The synchronized file contract includes the scaffold's root `.gitignore`;
+across tabs and reloads. Slide reordering refreshes the open Grid immediately,
+preserving its scroll and zoom and an open companion draft. A move that finishes
+during a background refresh queues another refresh instead of leaving stale
+thumbnails. The synchronized file contract includes the scaffold's root `.gitignore`;
 credentials, `.git/`, and `.vstd/` remain excluded.
 
 Isolated `editor-session` workers can read the selected deck's cached raster at
