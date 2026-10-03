@@ -461,9 +461,18 @@ func (w *agentWorker) runPass(deck, id string) {
 		return
 	}
 	log.Printf("agent: pass starting — %s/%s", deck, id)
+	companion, err := os.ReadFile(w.s.St.SlidePath(deck, id, ".md"))
+	if err != nil {
+		log.Printf("agent: selected companion unavailable — %s/%s", deck, id)
+		return
+	}
+	checkpoint := sha256.Sum256(companion)
 	preexisting := w.dirtyPaths() // human edits present before the pass — never revert these
 	w.mark(deck, id, "- (in progress — cloud agent — 40%)")
 	prompt := fmt.Sprintf(`You are the Vessica Studio cloud redesign worker, running headless in a studio content repo.
+
+Selected companion checkpoint: sha256:%x
+This identifies the current file state, including the transition from image planning to placement.
 
 TASK: run the redesign pass for deck %q, slide %q — and ONLY that slide.
 
@@ -501,7 +510,10 @@ approve anything. If the Edit/Write tools return a permission error, apply
 the same change through the Bash tool instead (e.g. a python3 heredoc doing
 exact-string replacement asserted against the current file content). Never
 end the pass waiting for permission or asking a question; a pass that ends
-without resolving its bullets is recorded as a failure.`, deck, id, deck, id, deck)
+without resolving its bullets is recorded as a failure.`, checkpoint, deck, id, deck, id, deck)
+	if w.isolatedWorkspace {
+		prompt += "\n\nEXECUTION CONTEXT: This job workspace is already isolated. Edit the selected files directly here; do not create another worktree, start another agent, push Git, or synchronize Cloud. The host owns canonical result intake."
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), agentPassTimeout())
 	defer cancel()
