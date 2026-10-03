@@ -1412,3 +1412,10 @@ Hosted coordinators can read `redesignRequests` from the deck status endpoint. E
 item contains an engine-owned slide ID and fingerprint of actionable companion
 requests. `vstd agent --deck NAME --slide ID` executes only that slide; it does not
 start other queued edits. Cloud dispatch and billing remain control-plane owned.
+
+Hosted callers may add `--image-api https://BROKER/v1 --image-model gpt-image-1`
+to a selected sweep. The engine processes at most one matching image request,
+registers its returned bytes in the normal library, and runs the landing pass.
+The host supplies a scoped image capability through `VSTD_OPENAI_KEY`; no provider
+key is required inside an isolated guest. Other slides' requests stay queued,
+and failed generation is never retried inside the same sweep.
