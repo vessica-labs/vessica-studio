@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -98,5 +99,41 @@ func TestPPTXCaptureRealBrowserGeometry(t *testing.T) {
 	}
 	if !bold || !normal || !bullet || !background || !border || !path || !video || !gradient || !circle || !cropped {
 		t.Fatalf("captured contracts: bold=%v padding=%v bullet=%v bg=%v border=%v bezier=%v video=%v gradient=%v circle=%v crop=%v", bold, normal, bullet, background, border, path, video, gradient, circle, cropped)
+	}
+}
+
+func TestPPTXCaptureRealBrowserEditorSession(t *testing.T) {
+	if os.Getenv("VSTD_TEST_BROWSER_RENDER") != "1" {
+		t.Skip("opt-in real Chromium capture")
+	}
+	st := testStudio(t)
+	if err := os.WriteFile(st.SlidePath("demo", "0010-a", ".html"), []byte(`<section class="slide"><h1>Authorized editable capture</h1><div style="background:linear-gradient(90deg,red,blue);box-shadow:0 4px 12px #888;width:300px;height:200px"></div></section>`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Repeat("a", 64)
+	handler, err := NewEditorSession(st, EditorSessionOptions{Deck: "demo", Token: token, ExpiresAt: time.Now().Add(time.Hour)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(handler)
+	defer server.Close()
+	req, _ := http.NewRequest("GET", server.URL+"/api/deck/demo/export.pptx?mode=editable&media=plan", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	response, err := (&http.Client{Timeout: 45 * time.Second}).Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	bytes, _ := io.ReadAll(response.Body)
+	if response.StatusCode != 200 || !strings.Contains(string(bytes), `"videos":[]`) {
+		t.Fatalf("isolated capture %d: %s", response.StatusCode, bytes)
+	}
+	denied, err := http.Get(server.URL + "/api/deck/demo/export.pptx?mode=editable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	denied.Body.Close()
+	if denied.StatusCode != 401 {
+		t.Fatal("missing credential accepted")
 	}
 }

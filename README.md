@@ -639,6 +639,8 @@ the Download menu, and then choose PDF, visual-exact PowerPoint, or editable
 PowerPoint. Presenters receive all three formats; audience sessions receive PDF
 only. Browser-backed export requires Chrome or Chromium on the machine running
 `vstd`; visual-exact PowerPoint rasterization also requires Poppler.
+Editable capture uses a disposable loopback DevTools connection and waits for the
+object model to finish, including asynchronous image and CSS background decoding.
 
 The HTTP routes accept an optional non-parked slide ID, for example
 `/api/deck/operating-model/export.pdf?slide=0030-economics` and

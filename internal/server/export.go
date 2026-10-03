@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/chromium"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
@@ -374,73 +375,18 @@ func (s *Server) capturePPTXDeckForSlides(r *http.Request, deck string, selected
 	defer s.dropPrintJob(key)
 	pageURL := fmt.Sprintf("http://127.0.0.1:%s/api/deck/%s/print.html?key=%s", port, deck, key)
 
-	tmp, err := os.MkdirTemp("", "vstd-pptx-capture-*")
-	if err != nil {
-		return studio.PPTXDeck{}, err
-	}
-	defer os.RemoveAll(tmp)
 	ctx, cancel := context.WithTimeout(r.Context(), 180*time.Second)
 	defer cancel()
-	cmd := exec.CommandContext(ctx, chrome, pptxChromeArgs(tmp, pageURL)...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-	dumpPath := filepath.Join(tmp, "capture.html")
-	dumpFile, err := os.Create(dumpPath)
+	// Virtual-time dump-dom can finish while asynchronous image decoding is
+	// still pending. Poll the capture's completion marker over DevTools instead.
+	dump, err := chromium.EvaluateWithViewport(ctx, chrome, pageURL, `(()=>{
+ const result=document.getElementById('vstd-pptx-json')||document.getElementById('vstd-pptx-error');
+ return result?document.documentElement.outerHTML:'';
+})()`, 1280, 720)
 	if err != nil {
-		return studio.PPTXDeck{}, err
+		return studio.PPTXDeck{}, fmt.Errorf("chrome object capture: %w", err)
 	}
-	defer dumpFile.Close()
-	cmd.Stdout = dumpFile
-	if err := cmd.Start(); err != nil {
-		return studio.PPTXDeck{}, fmt.Errorf("chrome object capture failed to start: %v", err)
-	}
-	exited := make(chan error, 1)
-	go func() { exited <- cmd.Wait() }()
-	var dump []byte
-	for dump == nil {
-		select {
-		case runErr := <-exited:
-			dumpFile.Sync()
-			dump, _ = os.ReadFile(dumpPath)
-			if runErr != nil && len(dump) == 0 {
-				err = runErr
-			}
-		case <-ctx.Done():
-			cmd.Process.Kill()
-			err = ctx.Err()
-			dump = []byte{}
-		case <-time.After(250 * time.Millisecond):
-			dumpFile.Sync()
-			candidate, _ := os.ReadFile(dumpPath)
-			if bytes.Contains(candidate, []byte(`<pre id="vstd-pptx-json">`)) && bytes.Contains(candidate, []byte(`</pre>`)) && bytes.Contains(candidate, []byte(`</html>`)) {
-				dump = candidate
-				cmd.Process.Kill() // Chrome can linger after --dump-dom on macOS.
-			}
-		}
-	}
-	if err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if len(msg) > 500 {
-			msg = msg[len(msg)-500:]
-		}
-		return studio.PPTXDeck{}, fmt.Errorf("chrome object capture failed: %v — %s", err, msg)
-	}
-	return parsePPTXCapture(dump)
-}
-
-func pptxChromeArgs(tmp, pageURL string) []string {
-	return []string{
-		"--headless", "--disable-gpu", "--no-sandbox", "--disable-dev-shm-usage",
-		"--no-first-run", "--no-default-browser-check", "--disable-component-update",
-		"--disable-background-networking", "--disable-sync", "--hide-scrollbars",
-		// Object capture awaits image decoding and canvas encoding across the
-		// entire deck. A 20s virtual-time budget can expire mid-script and leave
-		// Chrome alive with an unresolved promise until the HTTP timeout. Give
-		// the capture script the same budget as the request-level guard.
-		"--window-size=1280,720", "--virtual-time-budget=180000",
-		"--run-all-compositor-stages-before-draw", "--user-data-dir=" + filepath.Join(tmp, "profile"),
-		"--dump-dom", pageURL,
-	}
+	return parsePPTXCapture([]byte(dump))
 }
 
 // handleExportPPTX defaults to the visual-exact path: the browser renders the

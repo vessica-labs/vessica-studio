@@ -1,13 +1,13 @@
 package server
 
 import (
-	"slices"
+	"strings"
 	"testing"
 )
 
-func TestPPTXChromeBudgetCoversDeckWideCapture(t *testing.T) {
-	args := pptxChromeArgs(t.TempDir(), "http://127.0.0.1:4400/print")
-	if !slices.Contains(args, "--virtual-time-budget=180000") {
-		t.Fatalf("PPTX Chrome args use a shorter virtual-time budget: %#v", args)
+func TestPPTXCaptureReportsBrowserScriptErrors(t *testing.T) {
+	_, err := parsePPTXCapture([]byte(`<html><body><pre id="vstd-pptx-error">image decode &amp; capture failed</pre></body></html>`))
+	if err == nil || !strings.Contains(err.Error(), "image decode & capture failed") {
+		t.Fatalf("capture error: %v", err)
 	}
 }
