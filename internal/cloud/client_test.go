@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func testClient(t *testing.T, handler http.Handler, opts ...Option) *Client {
@@ -20,6 +21,101 @@ func testClient(t *testing.T, handler http.Handler, opts ...Option) *Client {
 		t.Fatal(err)
 	}
 	return c
+}
+
+func TestRevisionDownloadHasSeparateBoundedDeadline(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		revisionTimeout time.Duration
+		callerTimeout   time.Duration
+		account         bool
+		wantTimeout     bool
+	}{
+		{name: "large revision", revisionTimeout: time.Second},
+		{name: "default client", wantTimeout: true},
+		{name: "ordinary request", revisionTimeout: time.Second, account: true, wantTimeout: true},
+		{name: "caller cancellation", revisionTimeout: time.Second, callerTimeout: 25 * time.Millisecond, wantTimeout: true},
+		{name: "revision deadline", revisionTimeout: 25 * time.Millisecond, wantTimeout: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/v1/capabilities" {
+					writeJSON(w, `{"protocol":"1","capabilities":["workspace.read"]}`)
+					return
+				}
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusOK)
+				w.(http.Flusher).Flush()
+				select {
+				case <-r.Context().Done():
+					return
+				case <-time.After(150 * time.Millisecond):
+				}
+				_, _ = w.Write([]byte(`{"id":"r1","files":[{"path":"studio.yaml","content":"YWJj"}]}`))
+			}))
+			defer server.Close()
+			httpClient := server.Client()
+			httpClient.Timeout = 50 * time.Millisecond
+			opts := []Option{WithEndpoint(server.URL), WithClientVersion("1.0.0"), WithHTTPClient(httpClient)}
+			if tc.revisionTimeout > 0 {
+				opts = append(opts, WithRevisionTimeout(tc.revisionTimeout))
+			}
+			client, err := NewClient(opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			ctx := context.Background()
+			if tc.callerTimeout > 0 {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, tc.callerTimeout)
+				defer cancel()
+			}
+			if tc.account {
+				_, err = client.Account(ctx)
+			} else {
+				var revision Revision
+				revision, err = client.Revision(ctx, "ws", "r1")
+				if !tc.wantTimeout && (revision.ID != "r1" || len(revision.Files) != 1 || string(revision.Files[0].Content) != "abc") {
+					t.Fatalf("incomplete revision: %#v", revision)
+				}
+			}
+			if tc.wantTimeout {
+				var cloudErr *Error
+				if !errors.As(err, &cloudErr) || cloudErr.Kind != ErrorOffline || cloudErr.Code != "response_timeout" {
+					t.Fatalf("error=%v", err)
+				}
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if calls.Load() != 1 {
+				t.Fatalf("request replayed: %d", calls.Load())
+			}
+			if httpClient.Timeout != 50*time.Millisecond {
+				t.Fatal("changed caller HTTP client")
+			}
+		})
+	}
+}
+
+func TestInterruptedRevisionIsOfflineAndNotReplayed(t *testing.T) {
+	var calls atomic.Int32
+	client := testClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/v1/capabilities" {
+			writeJSON(w, `{"protocol":"1","capabilities":["workspace.read"]}`)
+			return
+		}
+		calls.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", "1000")
+		_, _ = w.Write([]byte(`{"id":"partial"`))
+	}), WithRevisionTimeout(time.Second))
+	_, err := client.Revision(context.Background(), "ws", "r1")
+	var cloudErr *Error
+	if !errors.As(err, &cloudErr) || cloudErr.Kind != ErrorOffline || cloudErr.Code != "response_read_failed" || calls.Load() != 1 {
+		t.Fatalf("error=%v calls=%d", err, calls.Load())
+	}
 }
 
 func TestCapabilityFailurePreventsMutation(t *testing.T) {
