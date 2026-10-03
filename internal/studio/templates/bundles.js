@@ -58,7 +58,15 @@ document.addEventListener('DOMContentLoaded',()=>{
     });
     parent.postMessage({type:'vstd-bundle-ready',id},'*');
   }
-  const running=new Map();
+  const running=new Map(),prepared=new Map();let preparedBytes=0;
+  function remember(key,value){
+    if(value.total>maxExpanded)return;
+    if(prepared.has(key)){preparedBytes-=prepared.get(key).total;prepared.delete(key);}
+    while(prepared.size && (preparedBytes+value.total>maxExpanded||prepared.size>=4)){
+      const oldest=prepared.keys().next().value;preparedBytes-=prepared.get(oldest).total;prepared.delete(oldest);
+    }
+    prepared.set(key,value);preparedBytes+=value.total;
+  }
   function cleanup(host){const state=running.get(host);if(!state)return;state.controller.abort();state.frame?.remove();if(state.listener)removeEventListener('message',state.listener);running.delete(host);host.querySelector('[data-bundle-launch]')?.removeAttribute('disabled');const label=host.querySelector('[data-bundle-status]');if(label)label.textContent='';}
   async function launch(host){
     if(running.has(host)||!host.closest('.slide.active')||host.closest('.mini'))return;
@@ -69,33 +77,37 @@ document.addEventListener('DOMContentLoaded',()=>{
       const logical='/assets/bundle/'+asset.id;
       const url=location.protocol==='file:'?'assets/bundle/'+asset.id+'.zip':window.VSTDAssetURL?window.VSTDAssetURL(logical):logical;
       if(status)status.textContent='Loading simulation…';
-      let bytes;
-      if(window.VSTDBundleRelay){
-        bytes=await new Promise((resolve,reject)=>{
+      if(asset.bytes>maxZip)throw Error('Bundle exceeds download limit');
+      const key=[asset.hash,asset.entrypoint,asset.expandedBytes,asset.fileCount].join(':');
+      let cached=prepared.get(key);
+      const relay=authorizeOnly=>new Promise((resolve,reject)=>{
           const request=crypto.randomUUID(),timeout=setTimeout(()=>done(Error('Application download timed out')),120000);
           const done=(error,value)=>{clearTimeout(timeout);removeEventListener('message',receive);controller.signal.removeEventListener('abort',abort);error?reject(error):resolve(value);};
           const abort=()=>{parent.postMessage({type:'vstd-bundle-cancel',request},'*');done(Error('Application download canceled'));};
           const receive=event=>{if(event.source!==parent||event.data?.request!==request)return;
-            if(event.data.type==='vstd-bundle-bytes' && event.data.bytes instanceof Uint8Array)done(null,event.data.bytes);
+            if(authorizeOnly && event.data.type==='vstd-bundle-authorized')done();
+            else if(!authorizeOnly && event.data.type==='vstd-bundle-bytes' && event.data.bytes instanceof Uint8Array)done(null,event.data.bytes);
             else if(event.data.type==='vstd-bundle-error')done(Error('Application download failed'));
             else if(event.data.type==='vstd-bundle-progress' && status)status.textContent='Loading simulation… '+Math.min(100,Math.round(event.data.size/asset.bytes*100))+'%';
           };
-          addEventListener('message',receive);controller.signal.addEventListener('abort',abort,{once:true});parent.postMessage({type:'vstd-bundle-fetch',id:asset.id,request},'*');
+          addEventListener('message',receive);controller.signal.addEventListener('abort',abort,{once:true});parent.postMessage({type:authorizeOnly?'vstd-bundle-authorize':'vstd-bundle-fetch',id:asset.id,request},'*');
         });
+      if(cached){
+        if(window.VSTDBundleRelay)await relay(true);
+        else await window.VSTDBundleDownload.authorize(url,controller.signal);
+        prepared.delete(key);prepared.set(key,cached);
       }else{
-      const response=await fetch(url,{credentials:'include',signal:controller.signal});if(!response.ok)throw Error('Application download failed');
-      if(Number(response.headers.get('content-length')||0)>maxZip||asset.bytes>maxZip)throw Error('Bundle exceeds download limit');
-      const reader=response.body.getReader(),parts=[];let size=0;
-      for(;;){const r=await reader.read();if(r.done)break;size+=r.value.length;if(size>asset.bytes||size>maxZip){await reader.cancel();throw Error('Bundle download exceeds manifest');}parts.push(r.value);if(status)status.textContent='Loading simulation… '+Math.round(size/asset.bytes*100)+'%';}
-      bytes=new Uint8Array(size);let offset=0;for(const p of parts){bytes.set(p,offset);offset+=p.length;}
+        const bytes=window.VSTDBundleRelay?await relay(false):await window.VSTDBundleDownload.download(url,asset,controller.signal,size=>{if(status)status.textContent='Loading simulation… '+Math.min(100,Math.round(size/asset.bytes*100))+'%';});
+        const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
+        if(bytes.length!==asset.bytes||digest!==asset.hash)throw Error('Application integrity check failed');
+        if(status)status.textContent='Preparing simulation…';
+        cached=await unzip(bytes);
+        if(cached.total!==asset.expandedBytes||cached.files.length!==asset.fileCount||!cached.files.some(f=>f.name===asset.entrypoint))throw Error('Application inventory mismatch');
+        if(!controller.signal.aborted)remember(key,cached);
       }
-      const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),n=>n.toString(16).padStart(2,'0')).join('');
-      if(bytes.length!==asset.bytes||digest!==asset.hash)throw Error('Application integrity check failed');
-      const {files,total}=await unzip(bytes);
-      if(total!==asset.expandedBytes||files.length!==asset.fileCount||!files.some(f=>f.name===asset.entrypoint))throw Error('Application inventory mismatch');
       if(controller.signal.aborted||!host.closest('.slide.active'))return;
       const frame=document.createElement('iframe'),id=crypto.randomUUID();state.frame=frame;frame.title=host.getAttribute('aria-label')||'Interactive application';frame.setAttribute('sandbox','allow-scripts');frame.setAttribute('referrerpolicy','no-referrer');frame.style.cssText='position:absolute;inset:0;width:100%;height:100%;border:0;background:#0b1016';
-      state.listener=event=>{if(event.source!==frame.contentWindow||event.origin!=='null'||event.data?.type!=='vstd-bundle-ready'||event.data.id!==id)return;removeEventListener('message',state.listener);frame.contentWindow.postMessage({type:'vstd-bundle-init',id,files,entrypoint:asset.entrypoint},'*',files.map(f=>f.data.buffer));if(status)status.textContent='';};
+      state.listener=event=>{if(event.source!==frame.contentWindow||event.origin!=='null'||event.data?.type!=='vstd-bundle-ready'||event.data.id!==id)return;removeEventListener('message',state.listener);const files=cached.files.map(f=>({name:f.name,data:f.data.slice()}));frame.contentWindow.postMessage({type:'vstd-bundle-init',id,files,entrypoint:asset.entrypoint},'*',files.map(f=>f.data.buffer));if(status)status.textContent='';};
       addEventListener('message',state.listener);frame.srcdoc='<script>('+boot.toString()+')('+JSON.stringify(id)+');<'+ '/script>';host.append(frame);
     }catch(error){if(controller.signal.aborted)return;cleanup(host);if(status)status.textContent=error.message+' — try again';}
   }
