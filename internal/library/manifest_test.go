@@ -1,8 +1,10 @@
 package library
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -99,5 +101,50 @@ func TestManifestSaveProducesReadableRoundTrip(t *testing.T) {
 	}
 	if got.Assets[0].ID != "diagram" || got.Videos[0].ID != "demo" || got.StyleFamilies["line"].PromptPrefix != "single line" {
 		t.Fatalf("round trip = %#v, want saved catalog", got)
+	}
+}
+
+func TestImageRegistrationPreservesExistingSourceMetadata(t *testing.T) {
+	dir := t.TempDir()
+	input := `{"version":1,"styleFamilies":{},"assets":[{"id":"source","file":"img/source.png","prompt":"reference","model":"manual","size":"1280x720","created":"2026-10-03","hash":"abc","tags":["reference"],"source_url":"https://example.com/reference","attribution":{"creator":"Example","license":"CC BY"}}]}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(input), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Assets = append(manifest.Assets, Asset{ID: "new", File: "img/new.png", Model: "gpt-image-1"})
+	if err := manifest.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after struct {
+		Assets []map[string]any `json:"assets"`
+	}
+	if err := json.Unmarshal([]byte(input), &before); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal(raw, &after); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(before.Assets[0], after.Assets[0]) {
+		t.Fatalf("registration changed existing metadata: before=%v after=%v", before.Assets[0], after.Assets[0])
+	}
+	// Typed edits must win over the original wire representation, including removals.
+	manifest.Assets[0].File = "img/replaced.png"
+	manifest.Assets[0].Tags = nil
+	if err := manifest.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Assets[0].File != "img/replaced.png" || len(loaded.Assets[0].Tags) != 0 {
+		t.Fatalf("typed changes lost: %#v", loaded.Assets[0])
 	}
 }

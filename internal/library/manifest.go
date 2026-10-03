@@ -22,6 +22,9 @@ type StyleFamily struct {
 }
 
 type Asset struct {
+	// Preserve source attribution and future metadata when registering new images.
+	extra map[string]json.RawMessage
+
 	ID      string   `json:"id"`
 	File    string   `json:"file"`
 	Prompt  string   `json:"prompt"`
@@ -32,6 +35,47 @@ type Asset struct {
 	Created string   `json:"created"`
 	Hash    string   `json:"hash"`
 	Usage   []string `json:"usage,omitempty"`
+}
+
+// assetFields excludes unknown metadata from the typed overlay so removing a known
+// optional field cannot resurrect its previous wire value.
+var assetFields = []string{"id", "file", "prompt", "family", "tags", "model", "size", "created", "hash", "usage"}
+
+type assetWire Asset
+
+func (a *Asset) UnmarshalJSON(data []byte) error {
+	var typed assetWire
+	if err := json.Unmarshal(data, &typed); err != nil {
+		return err
+	}
+	var extra map[string]json.RawMessage
+	if err := json.Unmarshal(data, &extra); err != nil {
+		return err
+	}
+	for _, key := range assetFields {
+		delete(extra, key)
+	}
+	*a = Asset(typed)
+	a.extra = extra
+	return nil
+}
+
+func (a Asset) MarshalJSON() ([]byte, error) {
+	raw, err := json.Marshal(assetWire(a))
+	if err != nil {
+		return nil, err
+	}
+	if len(a.extra) == 0 {
+		return raw, nil
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, err
+	}
+	for key, value := range a.extra {
+		fields[key] = value
+	}
+	return json.Marshal(fields)
 }
 
 type VideoAsset struct {
