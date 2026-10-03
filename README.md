@@ -1407,3 +1407,8 @@ backgrounds, and video posters after the visible slide's initial load. Backgroun
 work uses two low-priority requests at a time and follows the current navigation
 position; visible images become eager/high priority immediately. Video streams
 retain their separate playback policy.
+
+Hosted coordinators can read `redesignRequests` from the deck status endpoint. Each
+item contains an engine-owned slide ID and fingerprint of actionable companion
+requests. `vstd agent --deck NAME --slide ID` executes only that slide; it does not
+start other queued edits. Cloud dispatch and billing remain control-plane owned.

@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.7.26"
+const version = "0.7.27"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -116,7 +116,7 @@ Usage:
   vstd image-delivery --input FILE --output FILE
                                       create a source-preserving display WebP + JSON receipt
   vstd delivery-resources --output DIR export trusted shared engine/theme resources
-  vstd agent                          run one headless redesign-queue sweep
+  vstd agent                          run a redesign sweep (--deck NAME --slide ID to scope)
   vstd editor-session [flags]       isolated gateway-authenticated editor transport
   vstd editor-transform             bounded snapshot/render/visual-edit JSON transform
   vstd serve [deck] [flags]           serve studio (watch, live reload, edit API)
@@ -445,13 +445,18 @@ func moduleVersionMatchesRevision(moduleVersion, revision string) bool {
 func cmdAgent(args []string) error {
 	fs := flag.NewFlagSet("agent", flag.ExitOnError)
 	root := rootFlag(fs)
+	deck := fs.String("deck", "", "limit sweep to this deck")
+	slide := fs.String("slide", "", "limit sweep to this slide (requires --deck)")
 	fs.Parse(args)
+	if (*deck != "" && !studio.ValidDeckName(*deck)) || (*slide != "" && (*deck == "" || !studio.ValidSlideID(*slide))) {
+		return fmt.Errorf("invalid agent deck/slide selector")
+	}
 	st, err := openStudio(*root)
 	if err != nil {
 		return err
 	}
 	srv := server.New(st, server.ModeStudio)
-	n := srv.RunAgentOnce()
+	n := srv.RunAgentSelected(*deck, *slide)
 	log.Printf("agent: sweep complete — %d pass(es) run", n)
 	return nil
 }
