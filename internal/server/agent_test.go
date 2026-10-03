@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"os"
 	"path/filepath"
@@ -198,6 +199,44 @@ func TestSelectedAgentSweepNeverStartsOtherSlides(t *testing.T) {
 	got, _ = os.ReadFile(selected)
 	if !strings.Contains(string(got), "worker error") {
 		t.Fatal("selected slide not executed")
+	}
+}
+
+func TestIsolatedAgentDoesNotDuplicateLargeSnapshot(t *testing.T) {
+	for _, isolated := range []bool{false, true} {
+		t.Run(fmt.Sprintf("isolated=%v", isolated), func(t *testing.T) {
+			st := testStudio(t)
+			canonicalRoot, err := filepath.EvalSymlinks(st.Root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Join(st.Root, "library", "img"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(st.Root, "library", "img", "large.png"), make([]byte, 6<<20), 0644); err != nil {
+				t.Fatal(err)
+			}
+			bin := filepath.Join(t.TempDir(), "claude")
+			if err := os.WriteFile(bin, []byte("#!/bin/sh\npwd\n"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			w := &agentWorker{s: New(st, ModeStudio), bin: bin, isolatedWorkspace: isolated}
+			result := w.executeAgent(context.Background(), "demo", "0010-a", "agent", "Inspect this slide", nil)
+			if result.Err != nil {
+				t.Fatal(result.Err)
+			}
+			cwd := strings.TrimSpace(string(result.Output))
+			if isolated {
+				if cwd != canonicalRoot {
+					t.Fatalf("unexpected workspace: %s", cwd)
+				}
+				if _, err := os.Stat(filepath.Join(st.Root, ".vstd", "worktrees")); !os.IsNotExist(err) {
+					t.Fatal("isolated job created a second worktree")
+				}
+			} else if !strings.HasPrefix(cwd, filepath.Join(canonicalRoot, ".vstd", "worktrees")+string(os.PathSeparator)) {
+				t.Fatalf("local worker did not use its independent branch: %s", cwd)
+			}
+		})
 	}
 }
 func TestEditorTransformExposesCompanionDispatchDescriptors(t *testing.T) {

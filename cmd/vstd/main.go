@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.7.28"
+const version = "0.7.29"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -449,6 +449,7 @@ func cmdAgent(args []string) error {
 	slide := fs.String("slide", "", "limit sweep to this slide (requires --deck)")
 	imageAPI := fs.String("image-api", "", "process one selected-slide image through this bounded image API base URL")
 	imageModel := fs.String("image-model", "gpt-image-1", "model for the bounded selected-slide image pass")
+	isolated := fs.Bool("isolated-workspace", false, "edit an ephemeral externally isolated snapshot; caller owns revision integration")
 	fs.Parse(args)
 	if (*deck != "" && !studio.ValidDeckName(*deck)) || (*slide != "" && (*deck == "" || !studio.ValidSlideID(*slide))) {
 		return fmt.Errorf("invalid agent deck/slide selector")
@@ -456,12 +457,19 @@ func cmdAgent(args []string) error {
 	if *imageAPI != "" && (*deck == "" || *slide == "") {
 		return fmt.Errorf("image pass requires --deck and --slide")
 	}
+	if *isolated && (*deck == "" || *slide == "") {
+		return fmt.Errorf("isolated workspace requires --deck and --slide")
+	}
 	st, err := openStudio(*root)
 	if err != nil {
 		return err
 	}
 	srv := server.New(st, server.ModeStudio)
-	n := srv.RunAgentSelected(*deck, *slide)
+	run := srv.RunAgentSelected
+	if *isolated {
+		run = srv.RunAgentSelectedIsolated
+	}
+	n := run(*deck, *slide)
 	if *imageAPI != "" {
 		if *deck == "" || *slide == "" {
 			return fmt.Errorf("image pass requires --deck and --slide")
@@ -471,7 +479,7 @@ func cmdAgent(args []string) error {
 			return err
 		}
 		if generated {
-			n += srv.RunAgentSelected(*deck, *slide)
+			n += run(*deck, *slide)
 		}
 	}
 	log.Printf("agent: sweep complete — %d pass(es) run", n)
