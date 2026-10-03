@@ -123,6 +123,11 @@ func (s *Server) slidePowerPointFingerprint(deck, id, mode string) (string, erro
 	deckCSS, _ := os.ReadFile(filepath.Join(s.St.DeckDir(deck), "deck.css"))
 	h := sha256.New()
 	fmt.Fprintf(h, "vstd-powerpoint-cache:%d:%s:%s\n", powerpointCacheVersion, mode, id)
+	// Captured models must be regenerated when conversion geometry changes.
+	if mode == "editable" {
+		h.Write([]byte(pptxCaptureJS))
+		h.Write([]byte("editable-geometry:2"))
+	}
 	h.Write([]byte(fragment))
 	h.Write(themeCSS)
 	h.Write(deckCSS)
