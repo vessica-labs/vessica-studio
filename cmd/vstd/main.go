@@ -30,7 +30,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/plugin"
 )
 
-const version = "0.7.27"
+const version = "0.7.28"
 
 func main() {
 	if len(os.Args) < 2 {
@@ -447,9 +447,14 @@ func cmdAgent(args []string) error {
 	root := rootFlag(fs)
 	deck := fs.String("deck", "", "limit sweep to this deck")
 	slide := fs.String("slide", "", "limit sweep to this slide (requires --deck)")
+	imageAPI := fs.String("image-api", "", "process one selected-slide image through this bounded image API base URL")
+	imageModel := fs.String("image-model", "gpt-image-1", "model for the bounded selected-slide image pass")
 	fs.Parse(args)
 	if (*deck != "" && !studio.ValidDeckName(*deck)) || (*slide != "" && (*deck == "" || !studio.ValidSlideID(*slide))) {
 		return fmt.Errorf("invalid agent deck/slide selector")
+	}
+	if *imageAPI != "" && (*deck == "" || *slide == "") {
+		return fmt.Errorf("image pass requires --deck and --slide")
 	}
 	st, err := openStudio(*root)
 	if err != nil {
@@ -457,6 +462,18 @@ func cmdAgent(args []string) error {
 	}
 	srv := server.New(st, server.ModeStudio)
 	n := srv.RunAgentSelected(*deck, *slide)
+	if *imageAPI != "" {
+		if *deck == "" || *slide == "" {
+			return fmt.Errorf("image pass requires --deck and --slide")
+		}
+		generated, err := srv.ProcessSelectedImage(*deck, *slide, *imageAPI, *imageModel)
+		if err != nil {
+			return err
+		}
+		if generated {
+			n += srv.RunAgentSelected(*deck, *slide)
+		}
+	}
 	log.Printf("agent: sweep complete — %d pass(es) run", n)
 	return nil
 }
