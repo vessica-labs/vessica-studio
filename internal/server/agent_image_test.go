@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -43,6 +44,89 @@ func TestSelectedImageProcessesOneOwnedRequestAndRegistersAsset(t *testing.T) {
 	generated, err = s.ProcessSelectedImage("demo", "0010-a", api.URL, "gpt-image-1")
 	if err != nil || generated || calls != 1 {
 		t.Fatal("replayed paid generation")
+	}
+}
+
+func TestImagePlanningAndLandingHaveDistinctOpeningRequests(t *testing.T) {
+	st := testStudio(t)
+	companion := st.SlidePath("demo", "0010-a", ".md")
+	if err := os.WriteFile(companion, []byte("# Cover\n\n## Edit requests\n- create a new background\n\n## Log\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	bin := filepath.Join(t.TempDir(), "claude")
+	script := `#!/bin/sh
+for arg do last="$arg"; done
+printf '%s' "$last" > "$VSTD_TEST_OPENING_REQUEST"
+if [ "$VSTD_TEST_IMAGE_STAGE" = planning ]; then
+cat > decks/demo/slides/0010-a.md <<'EOF'
+# Cover
+
+## Edit requests
+- awaiting imagery: place the new background
+
+## Log
+EOF
+cat > requests/cover.yaml <<'EOF'
+deck: demo
+slide: 0010-a
+prompt: colorful cover
+slug: cover
+EOF
+else
+cat > decks/demo/slides/0010-a.md <<'EOF'
+# Cover
+
+## Edit requests
+
+## Log
+- resolved: placed the generated background
+EOF
+fi
+`
+	if err := os.WriteFile(bin, []byte(script), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VSTD_AGENT_CMD", bin)
+	t.Setenv("VSTD_AGENT_SANDBOX", "")
+	t.Setenv("VSTD_OPENAI_KEY", "fixture-capability")
+	s := New(st, ModeStudio)
+	opening := filepath.Join(t.TempDir(), "opening.txt")
+	t.Setenv("VSTD_TEST_OPENING_REQUEST", opening)
+	t.Setenv("VSTD_TEST_IMAGE_STAGE", "planning")
+	if s.RunAgentSelectedIsolated("demo", "0010-a") != 1 {
+		t.Fatal("planning pass did not run")
+	}
+	planning, err := os.ReadFile(opening)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		fmt.Fprintf(w, `{"data":[{"b64_json":"%s"}]}`, base64.StdEncoding.EncodeToString([]byte("image fixture")))
+	}))
+	defer api.Close()
+	if generated, err := s.ProcessSelectedImage("demo", "0010-a", api.URL, "gpt-image-1"); err != nil || !generated {
+		t.Fatalf("image generation: %v %v", generated, err)
+	}
+	t.Setenv("VSTD_TEST_IMAGE_STAGE", "landing")
+	if s.RunAgentSelectedIsolated("demo", "0010-a") != 1 {
+		t.Fatal("landing pass did not run")
+	}
+	landing, err := os.ReadFile(opening)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(planning) == string(landing) {
+		t.Fatal("landing opening request repeats the planning request")
+	}
+	for _, request := range []string{string(planning), string(landing)} {
+		if !strings.Contains(request, "Selected companion checkpoint: sha256:") || !strings.Contains(request, `deck "demo", slide "0010-a"`) || !strings.Contains(request, "This job workspace is already isolated") {
+			t.Fatal("request lost its companion checkpoint or selected scope")
+		}
+	}
+	if calls != 1 || s.RunAgentSelectedIsolated("demo", "0010-a") != 0 {
+		t.Fatal("completed image work was replayed")
 	}
 }
 
