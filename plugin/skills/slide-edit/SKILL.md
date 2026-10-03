@@ -26,6 +26,9 @@ login and must not be presented as a successful sync.
 2. **Edit the fragment** at the formatting standard. Prefer the edit API when the engine
    runs (`PUT .../fragment`, `PUT .../title`); files directly otherwise. Keep the single
    `<section>` structure and theme classes.
+   For an image or background swap, replace the actual image URL in the HTML
+   fragment as well as the companion `visuals:` reference. `vstd build` assembles
+   existing fragments; it does not rewrite HTML from companion frontmatter.
    When adding or rebuilding a chart, use the conventions' hybrid chart contract.
    When an existing inline SVG chart contains `<text>`, use
    `vstd chart promote-text <deck> <slide> --dry-run` and then the write command
