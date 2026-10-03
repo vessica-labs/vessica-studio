@@ -25,13 +25,15 @@ func (f TokenSourceFunc) Token(ctx context.Context) (string, error) { return f(c
 
 type Option func(*Client) error
 type Client struct {
-	endpoint      *url.URL
-	http          *http.Client
-	token         TokenSource
-	clientVersion string
-	responseLimit int64
-	clock         func() time.Time
-	operationID   func() string
+	endpoint        *url.URL
+	http            *http.Client
+	revisionHTTP    *http.Client
+	revisionTimeout time.Duration
+	token           TokenSource
+	clientVersion   string
+	responseLimit   int64
+	clock           func() time.Time
+	operationID     func() string
 }
 
 func NewClient(opts ...Option) (*Client, error) {
@@ -48,6 +50,12 @@ func NewClient(opts ...Option) (*Client, error) {
 		return nil, fmt.Errorf("client version is required")
 	}
 	c.http = secureHTTPClient(c.http, c.endpoint)
+	c.revisionHTTP = c.http
+	if c.revisionTimeout > 0 {
+		client := *c.http
+		client.Timeout = c.revisionTimeout
+		c.revisionHTTP = &client
+	}
 	return c, nil
 }
 func WithEndpoint(raw string) Option {
@@ -81,6 +89,18 @@ func WithHTTPClient(h *http.Client) Option {
 func WithTokenSource(t TokenSource) Option { return func(c *Client) error { c.token = t; return nil } }
 func WithClientVersion(v string) Option {
 	return func(c *Client) error { c.clientVersion = v; return nil }
+}
+
+// WithRevisionTimeout sets a separate deadline for complete snapshot downloads.
+// Caller cancellation still applies; other requests retain the HTTP client timeout.
+func WithRevisionTimeout(timeout time.Duration) Option {
+	return func(c *Client) error {
+		if timeout <= 0 {
+			return fmt.Errorf("revision timeout must be positive")
+		}
+		c.revisionTimeout = timeout
+		return nil
+	}
 }
 func WithResponseLimit(n int64) Option {
 	return func(c *Client) error {
@@ -201,7 +221,7 @@ func (c *Client) Revision(ctx context.Context, workspace, id string) (Revision, 
 	if err := c.negotiate(ctx, CapabilityWorkspaceRead); err != nil {
 		return out, err
 	}
-	err := c.do(ctx, http.MethodGet, "/v1/workspaces/"+url.PathEscape(workspace)+"/revisions/"+url.PathEscape(id), nil, &out, true)
+	err := c.doWithHTTP(ctx, c.revisionHTTP, http.MethodGet, "/v1/workspaces/"+url.PathEscape(workspace)+"/revisions/"+url.PathEscape(id), nil, &out, true)
 	return out, err
 }
 func (c *Client) Sync(ctx context.Context, workspace string, in SyncRequest) (Revision, error) {
@@ -233,6 +253,10 @@ func (c *Client) Publication(ctx context.Context, workspace, id string) (Publica
 }
 
 func (c *Client) do(ctx context.Context, method, path string, input, output any, auth bool) error {
+	return c.doWithHTTP(ctx, c.http, method, path, input, output, auth)
+}
+
+func (c *Client) doWithHTTP(ctx context.Context, client *http.Client, method, path string, input, output any, auth bool) error {
 	var body io.Reader
 	if input != nil {
 		encoded, err := json.Marshal(input)
@@ -260,7 +284,7 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any,
 			req.Header.Set("Authorization", "Bearer "+token)
 		}
 	}
-	resp, err := c.http.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return &Error{Kind: ErrorOffline, Cause: err}
 	}
@@ -268,7 +292,11 @@ func (c *Client) do(ctx context.Context, method, path string, input, output any,
 	limited := io.LimitReader(resp.Body, c.responseLimit+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
-		return &Error{Kind: ErrorMalformedResponse, Cause: err}
+		code := "response_read_failed"
+		if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+			code = "response_timeout"
+		}
+		return &Error{Kind: ErrorOffline, Code: code, Cause: err}
 	}
 	if int64(len(data)) > c.responseLimit {
 		return &Error{Kind: ErrorMalformedResponse, Code: "response_too_large"}

@@ -214,6 +214,11 @@ update the local files directly. No GitHub repository or Git credentials are
 needed for presentation storage. Cloud uses Postgres for durable writer journals
 and revision heads, and private object storage for immutable source checkpoints.
 
+Complete revision downloads have a five-minute deadline so large presentations
+can refresh over slower connections. Other native API requests retain their
+two-minute deadline. An interrupted or timed-out transfer reports an offline
+read error, preserves local work, and does not replay a mutation automatically.
+
 Publish the current synchronized revision, or select a revision explicitly:
 
 ```sh
