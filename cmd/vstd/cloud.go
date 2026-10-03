@@ -20,6 +20,7 @@ import (
 )
 
 const defaultCloudEndpoint = "https://studio.vessica.ai"
+const nativeCloudSyncTimeout = 5 * time.Minute
 
 var (
 	cloudCredentialStore = func(endpoint string) cloudauth.Store { return cloudauth.NewKeyringStore(endpoint) }
@@ -59,7 +60,7 @@ func runCloud(args []string, out io.Writer) error {
 	endpoint = raw.Endpoint()
 	store := cloudCredentialStore(endpoint)
 	auth := cloudauth.New(raw, store)
-	client, err := cloud.NewClient(cloud.WithEndpoint(endpoint), cloud.WithHTTPClient(cloudHTTPClient()), cloud.WithRevisionTimeout(5*time.Minute), cloud.WithClientVersion(version), cloud.WithTokenSource(auth))
+	client, err := cloud.NewClient(cloud.WithEndpoint(endpoint), cloud.WithHTTPClient(cloudHTTPClient()), cloud.WithRevisionTimeout(nativeCloudSyncTimeout), cloud.WithClientVersion(version), cloud.WithTokenSource(auth))
 	if err != nil {
 		return err
 	}

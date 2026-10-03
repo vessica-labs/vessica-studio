@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/vessica-labs/vessica-studio/internal/cloud"
 	"github.com/vessica-labs/vessica-studio/internal/cloudauth"
@@ -69,7 +71,11 @@ func TestCloudWorkspaceSyncPublishAndAccount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	var slowRevision atomic.Bool
 	mux.HandleFunc("/v1/workspaces/ws-1/revisions/rev-1", func(w http.ResponseWriter, _ *http.Request) {
+		if slowRevision.Load() {
+			time.Sleep(150 * time.Millisecond)
+		}
 		files := make([]cloud.File, len(snapshot.Files))
 		for i, f := range snapshot.Files {
 			files[i] = cloud.File{Path: f.Path, Content: f.Content, Mode: f.Mode}
@@ -89,6 +95,17 @@ func TestCloudWorkspaceSyncPublishAndAccount(t *testing.T) {
 	if strings.Contains(got, secret) || strings.Contains(got, "sentinel-access-secret") || strings.Contains(got, "device-secret") {
 		t.Fatalf("output leaked secret: %s", got)
 	}
+	t.Run("authoring sync exceeds ordinary request deadline", func(t *testing.T) {
+		slowRevision.Store(true)
+		cloudHTTPClient = func() *http.Client {
+			client := server.Client()
+			client.Timeout = 50 * time.Millisecond
+			return client
+		}
+		if err := syncConnected(root, false); err != nil {
+			t.Fatalf("authoring sync: %v", err)
+		}
+	})
 }
 
 func TestCloudProtocolRedaction(t *testing.T) {

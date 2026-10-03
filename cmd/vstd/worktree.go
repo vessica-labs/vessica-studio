@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/vessica-labs/vessica-studio/internal/cloud"
 	"github.com/vessica-labs/vessica-studio/internal/cloudauth"
@@ -27,7 +26,7 @@ func connectedManager(root string) (*cloudworkspace.Manager, error) {
 		return nil, err
 	}
 	auth := cloudauth.New(raw, cloudCredentialStore(association.Endpoint))
-	client, err := cloud.NewClient(cloud.WithEndpoint(association.Endpoint), cloud.WithHTTPClient(cloudHTTPClient()), cloud.WithClientVersion(version), cloud.WithTokenSource(auth))
+	client, err := cloud.NewClient(cloud.WithEndpoint(association.Endpoint), cloud.WithHTTPClient(cloudHTTPClient()), cloud.WithRevisionTimeout(nativeCloudSyncTimeout), cloud.WithClientVersion(version), cloud.WithTokenSource(auth))
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +39,7 @@ func syncConnected(root string, agent bool) error {
 		return err
 	}
 	manager.PreferCurrent = agent
-	ctx, cancel := context.WithTimeout(context.Background(), 45*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), nativeCloudSyncTimeout)
 	defer cancel()
 	_, err = manager.Sync(ctx, root, "Synced authoring changes")
 	return err
