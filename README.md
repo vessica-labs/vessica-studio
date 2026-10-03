@@ -653,8 +653,26 @@ invalidates only the affected entries (theme/deck CSS naturally affect the
 whole deck). The cache is excluded from Git, content sync, file-watcher reloads,
 bundles, and source-asset manifests. Delete that directory at any time to force
 a clean rebuild. Editable PowerPoint converts supported rendered elements into
-native PresentationML objects; complex browser effects may not translate
-exactly, so review the downloaded deck before delivery.
+native PresentationML objects. Text retains browser wrapping, padding and inline
+styles; SVG paths retain editable subpaths, Bézier controls, gradient stops and
+dash patterns. Generated CSS bullets and arrows are included. Complex CSS
+backgrounds, masks and shadows become individual pictures, while text and
+ordinary shapes remain editable. The installed font that Chromium actually
+uses is recorded; the same font should be available on the PowerPoint machine.
+
+Registered MP4 assets are embedded with their posters in editable exports.
+In PowerPoint slide show, the first advance on a video slide starts playback
+using the native click sequence; the media remains a selectable video object.
+Source bytes must exist under `library/video/` or in the configured storage
+bucket and match the manifest digest and size. Missing or corrupt media fails
+export explicitly. The unique video budget is 512 MiB; repeated media is
+packaged once. Hosts with isolated execution can first request the same editable
+export URL with `media=plan` to get `{ "videos": ["registered-id"] }` for the
+browser-measured selection. Materialize those manifest-verified MP4 files into
+the same content root, then request the ordinary editable export. The plan uses
+the same presenter authorization and cached DOM capture. Simulator bundles
+retain their static backdrop only. Complex
+browser effects may still differ, so review the downloaded deck before delivery.
 
 #### `vstd bundle <deck> [--root DIR]`
 
