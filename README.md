@@ -740,6 +740,7 @@ Flags:
 Generated files are cataloged in `library/manifest.json` and referenced from
 slides as `/library/<file>`. Reuse an existing asset before generating a near
 duplicate.
+Image registration preserves existing image source attribution and unknown asset metadata in `library/manifest.json`. Adding a generated image does not discard metadata on existing references.
 
 #### `vstd asset list` and `vstd asset find`
 
