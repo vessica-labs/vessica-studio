@@ -1419,3 +1419,10 @@ registers its returned bytes in the normal library, and runs the landing pass.
 The host supplies a scoped image capability through `VSTD_OPENAI_KEY`; no provider
 key is required inside an isolated guest. Other slides' requests stay queued,
 and failed generation is never retried inside the same sweep.
+
+An ephemeral host job that already owns sandbox isolation and canonical result
+integration may add `--isolated-workspace` to its selected sweep. Both agent
+passes edit that job snapshot directly, avoiding redundant worktree/checkpoint
+copies of its image library. This requires `--deck` and `--slide` and disables
+Git push. Ordinary local sweeps keep their independent worktrees and recovery
+checkpoints. The flag provides no isolation itself; its caller must supply it.

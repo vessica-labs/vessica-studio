@@ -40,19 +40,20 @@ import (
 )
 
 type agentWorker struct {
-	s          *Server
-	runs       []time.Time
-	maxPerHour int
-	push       bool
-	bin        string
-	sandbox    string
-	branch     string
-	conc       int
-	mu         sync.Mutex
-	inflight   map[string]bool
-	pushMu     sync.Mutex
-	queuedN    int
-	capped     bool
+	s                 *Server
+	runs              []time.Time
+	maxPerHour        int
+	push              bool
+	bin               string
+	sandbox           string
+	branch            string
+	conc              int
+	mu                sync.Mutex
+	inflight          map[string]bool
+	pushMu            sync.Mutex
+	queuedN           int
+	capped            bool
+	isolatedWorkspace bool
 }
 
 // Info reports worker state for the status endpoint.
@@ -196,8 +197,22 @@ func (s *Server) RunAgentOnce() int { return s.RunAgentSelected("", "") }
 
 // RunAgentSelected confines a hosted sweep to one engine-owned slide selector.
 func (s *Server) RunAgentSelected(deckFilter, slideFilter string) int {
+	return s.runAgentSelected(deckFilter, slideFilter, false)
+}
+
+// RunAgentSelectedIsolated is for an ephemeral, externally isolated job snapshot.
+// Its caller owns canonical revision integration and rejects out-of-scope results.
+func (s *Server) RunAgentSelectedIsolated(deckFilter, slideFilter string) int {
+	if deckFilter == "" || slideFilter == "" {
+		log.Printf("agent: isolated workspace requires one selected slide")
+		return 0
+	}
+	return s.runAgentSelected(deckFilter, slideFilter, true)
+}
+
+func (s *Server) runAgentSelected(deckFilter, slideFilter string, isolated bool) int {
 	w := &agentWorker{s: s, maxPerHour: 1 << 30, bin: "claude", branch: "main",
-		push: os.Getenv("VSTD_GIT_PUSH") == "1"}
+		push: !isolated && os.Getenv("VSTD_GIT_PUSH") == "1", isolatedWorkspace: isolated}
 	if v := os.Getenv("VSTD_AGENT_CMD"); v != "" {
 		w.bin = v
 	}

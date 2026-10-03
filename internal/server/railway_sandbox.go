@@ -101,20 +101,24 @@ func (w *agentWorker) validateExecutionBackend() error {
 }
 
 func (w *agentWorker) executeAgent(ctx context.Context, deck, slide, phase, prompt string, images []string) agentExecution {
-	branch, err := cloudworkspace.BeginBranch(w.s.St.Root)
-	if err != nil {
-		return agentExecution{Err: err}
+	root := w.s.St.Root
+	if !w.isolatedWorkspace {
+		branch, err := cloudworkspace.BeginBranch(root)
+		if err != nil {
+			return agentExecution{Err: err}
+		}
+		root = branch.Root
 	}
-	prompt = strings.ReplaceAll(prompt, w.s.St.Root, branch.Root)
+	prompt = strings.ReplaceAll(prompt, w.s.St.Root, root)
 	var result agentExecution
 	if w.sandbox == "railway" && filepath.Base(w.bin) == "codex" {
-		result = w.executeRailwaySandbox(ctx, branch.Root, deck, slide, phase, prompt, images)
+		result = w.executeRailwaySandbox(ctx, root, deck, slide, phase, prompt, images)
 	} else {
-		cmd := agentCommandWithImages(ctx, w.bin, branch.Root, prompt, images)
+		cmd := agentCommandWithImages(ctx, w.bin, root, prompt, images)
 		result.Output, result.Err = cmd.CombinedOutput()
 	}
-	if result.Err == nil {
-		result.Err = cloudworkspace.FinishBranch(branch.Root)
+	if result.Err == nil && !w.isolatedWorkspace {
+		result.Err = cloudworkspace.FinishBranch(root)
 	}
 	return result
 }
