@@ -218,6 +218,8 @@ Complete revision downloads have a five-minute deadline so large presentations
 can refresh over slower connections. Other native API requests retain their
 two-minute deadline. An interrupted or timed-out transfer reports an offline
 read error, preserves local work, and does not replay a mutation automatically.
+Automatic Cloud synchronization during authoring worktree begin/finish shares
+the five-minute allowance for the whole sync operation.
 
 Publish the current synchronized revision, or select a revision explicitly:
 
