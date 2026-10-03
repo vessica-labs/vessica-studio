@@ -22,16 +22,33 @@ import (
 // instead of --dump-dom because some macOS Chrome builds keep dump-dom alive
 // indefinitely after the DOM is ready.
 func Evaluate(ctx context.Context, binary, target, expression string) (string, error) {
+	return evaluate(ctx, binary, target, expression)
+}
+
+// EvaluateWithViewport uses a fixed browser viewport while retaining the same
+// completion polling and disposable DevTools connection as Evaluate.
+func EvaluateWithViewport(ctx context.Context, binary, target, expression string, width, height int) (string, error) {
+	if width <= 0 || height <= 0 {
+		return "", fmt.Errorf("invalid browser viewport")
+	}
+	return evaluate(ctx, binary, target, expression, fmt.Sprintf("--window-size=%d,%d", width, height))
+}
+
+func evaluate(ctx context.Context, binary, target, expression string, extraArgs ...string) (string, error) {
 	profile, err := os.MkdirTemp("", "vstd-chrome-profile-*")
 	if err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(profile)
 	var diagnostics bytes.Buffer
-	cmd := exec.CommandContext(ctx, binary,
-		"--headless=new", "--no-sandbox", "--disable-gpu", "--disable-background-networking",
-		"--no-first-run", "--no-default-browser-check", "--remote-debugging-port=0",
-		"--user-data-dir="+profile, target)
+	args := []string{
+		"--headless=new", "--no-sandbox", "--disable-gpu", "--disable-background-networking", "--disable-dev-shm-usage",
+		"--no-first-run", "--no-default-browser-check", "--remote-debugging-address=127.0.0.1", "--remote-debugging-port=0",
+		"--user-data-dir=" + profile,
+	}
+	args = append(args, extraArgs...)
+	args = append(args, target)
+	cmd := exec.CommandContext(ctx, binary, args...)
 	cmd.Stdout = &diagnostics
 	cmd.Stderr = &diagnostics
 	if err := cmd.Start(); err != nil {
