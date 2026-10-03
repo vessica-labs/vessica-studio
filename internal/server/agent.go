@@ -20,6 +20,7 @@ package server
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log"
 	"net/url"
@@ -191,7 +192,10 @@ func (w *agentWorker) recoverInterruptedPasses() int {
 }
 
 // RunOnce sweeps the queue synchronously (vstd agent --once).
-func (s *Server) RunAgentOnce() int {
+func (s *Server) RunAgentOnce() int { return s.RunAgentSelected("", "") }
+
+// RunAgentSelected confines a hosted sweep to one engine-owned slide selector.
+func (s *Server) RunAgentSelected(deckFilter, slideFilter string) int {
 	w := &agentWorker{s: s, maxPerHour: 1 << 30, bin: "claude", branch: "main",
 		push: os.Getenv("VSTD_GIT_PUSH") == "1"}
 	if v := os.Getenv("VSTD_AGENT_CMD"); v != "" {
@@ -206,7 +210,13 @@ func (s *Server) RunAgentOnce() int {
 	n := 0
 	seen := map[string]bool{}
 	for {
-		deck, slide := w.next()
+		deck, slide := "", ""
+		for _, candidate := range w.nextAll() {
+			if (deckFilter == "" || candidate[0] == deckFilter) && (slideFilter == "" || candidate[1] == slideFilter) {
+				deck, slide = candidate[0], candidate[1]
+				break
+			}
+		}
 		if deck == "" || seen[deck+"/"+slide] {
 			return n
 		}
@@ -851,4 +861,30 @@ func (w *agentWorker) git(args ...string) (string, error) {
 		return string(out), fmt.Errorf("git %s: %v — %s", strings.Join(args, " "), err, strings.TrimSpace(string(out)))
 	}
 	return string(out), nil
+}
+
+// RedesignRequest describes actionable companion work without exposing prompt text.
+// Hosted coordinators use the fingerprint to deduplicate dispatch across revisions.
+type RedesignRequest struct {
+	Slide string `json:"slide"`
+	Hash  string `json:"hash"`
+}
+
+func (s *Server) RedesignRequests(deck string) []RedesignRequest {
+	out := []RedesignRequest{}
+	for _, candidate := range (&agentWorker{s: s}).nextAll() {
+		if candidate[0] != deck {
+			continue
+		}
+		b, err := os.ReadFile(s.St.SlidePath(deck, candidate[1], ".md"))
+		if err != nil {
+			continue
+		}
+		match := editReqRe.FindStringSubmatch(string(b))
+		if match == nil {
+			continue
+		}
+		out = append(out, RedesignRequest{candidate[1], fmt.Sprintf("%x", sha256.Sum256([]byte(strings.TrimSpace(match[1]))))})
+	}
+	return out
 }

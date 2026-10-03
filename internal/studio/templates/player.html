@@ -2314,6 +2314,12 @@ document.addEventListener('DOMContentLoaded',()=>{
   function applyCap(){
     if(!capbar)return;
     const a=st.agent;
+    const foot=document.querySelector('#companionDrawer .cfoot');
+    let badge=document.getElementById('companionAgentState');
+    if(a&&a.backend==='hosted'&&foot){
+      if(!badge){badge=document.createElement('span');badge.id='companionAgentState';badge.setAttribute('role','status');badge.style.cssText='font-size:11px;color:var(--vstd-accent-deep)';foot.insertBefore(badge,foot.querySelector('button'));}
+      badge.textContent=a.enabled?'Cloud agent enabled':'Cloud agent disabled';
+    }else if(badge)badge.remove();
     const canEdit=!window.__vme||window.__vme.editable===true;
     if(a&&a.capped&&a.queued>0&&canEdit&&!window.__presenting){
       capbar.querySelector('span').textContent='Agent rate cap reached ('+a.used+'/'+a.maxPerHour+' per hr) — '+a.queued+' slide'+(a.queued>1?'s':'')+' waiting';
@@ -2324,7 +2330,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   function summarize(list){
     let pct=0,kinds={};
     (list||[]).forEach(e=>{const k=e.kind||e,p=e.pct||15;kinds[k]=1;if(p>pct)pct=p;});
-    if(kinds.error)return {pct:15,txt:'redesign needs attention — see slide companion'};
+    if(kinds.error)return {pct:15,txt:(st.agent&&st.agent.message)||'redesign needs attention — see slide companion'};
     if(kinds.redesign&&(!st.agent||st.agent.enabled!==true))return {pct:0,txt:'redesign waiting — cloud agent is disabled'};
     const what=kinds.image&&kinds.redesign?'imagery + redesign':(kinds.image?'generating imagery':'redesign');
     return {pct,txt:what+(kinds.image&&!kinds.redesign?'':' pass')+(pct>15?' in progress':' queued')+' — ~'+pct+'%'};
