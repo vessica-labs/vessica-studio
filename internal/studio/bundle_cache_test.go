@@ -102,7 +102,7 @@ func TestBundleCacheStorageFailureAndDownloadBounds(t *testing.T) {
 	script := `const assert=require('node:assert/strict'),vm=require('node:vm'),{webcrypto,createHash}=require('node:crypto');
 const bytes=Buffer.from('validated'),asset={bytes:bytes.length,hash:createHash('sha256').update(bytes).digest('hex')};
 let deleted=0,gets=0;const cache={match:async key=>String(key).includes('old')?new Response('',{headers:{'content-length':String(128*1024*1024)}}):undefined,keys:async()=>[new Request('https://example.test/old')],delete:async()=>{deleted++;return true},put:async()=>{throw Error('quota')}};
-const window={},scope={window,location:{href:'https://example.test/'},URL,Response,DOMException,Uint8Array,Number,Array,crypto:webcrypto,caches:{open:async()=>cache},fetch:async()=>{gets++;return new Response(bytes)}};
+const window={},scope={window,location:{href:'https://example.test/'},URL,Response,DOMException,AbortController,Uint8Array,Number,Array,crypto:webcrypto,caches:{open:async()=>cache},fetch:async()=>{gets++;return new Response(bytes)}};
 vm.runInNewContext(` + string(encoded) + `,scope);
 (async()=>{
  assert.deepEqual(Buffer.from(await window.VSTDBundleDownload.download('/bundle',asset)),bytes,'quota denial must allow a verified launch');assert.equal(deleted,1,'evict before exceeding persistent budget');
@@ -114,6 +114,19 @@ vm.runInNewContext(` + string(encoded) + `,scope);
  await assert.rejects(window.VSTDBundleDownload.download('/bundle',asset),/integrity|incomplete/);
  scope.caches.open=async()=>{throw Error('storage disabled')};scope.fetch=async()=>new Response(bytes);
  assert.deepEqual(Buffer.from(await window.VSTDBundleDownload.download('/bundle',asset)),bytes);
+ const large=Buffer.alloc(9*1024*1024+17,23),largeAsset={bytes:large.length,hash:createHash('sha256').update(large).digest('hex')};
+ let active=0,maximum=0;const indices=[],progress=[];
+ scope.fetch=async(url,options)=>{
+  if(options.method==='HEAD')return new Response('',{headers:{'x-vstd-bundle-part-size':String(4*1024*1024)}});
+  const index=Number(new URL(url).searchParams.get('vstd_part'));indices.push(index);active++;maximum=Math.max(maximum,active);
+  await new Promise(resolve=>setTimeout(resolve,(3-index)*10));active--;
+  return new Response(large.subarray(index*4*1024*1024,Math.min((index+1)*4*1024*1024,large.length)),{headers:{'x-vstd-bundle-part':String(index)}});
+ };
+ assert.deepEqual(Buffer.from(await window.VSTDBundleDownload.download('/large',largeAsset,undefined,size=>progress.push(size))),large,'out-of-order parallel parts must reconstruct the declared archive');
+ assert.deepEqual(indices,[0,1,2]);assert.equal(maximum,3);assert.equal(progress.at(-1),large.length);
+ assert(progress.every((size,index)=>index===0||size>=progress[index-1]));
+ scope.fetch=async(url,options)=>options.method==='HEAD'?new Response('',{headers:{'x-vstd-bundle-part-size':String(4*1024*1024)}}):new Response('wrong',{headers:{'x-vstd-bundle-part':'99'}});
+ await assert.rejects(window.VSTDBundleDownload.download('/large',largeAsset),/Invalid application part/);
 })().catch(e=>{console.error(e);process.exitCode=1});`
 	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
 		t.Fatalf("%s: %v", output, err)

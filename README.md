@@ -1438,6 +1438,9 @@ Interactive simulation bundles use a bounded browser archive cache and a bounded
 cache of verified unpacked files. Returning to a simulator slide checks current
 asset access with HEAD and reuses prepared files; reloading the deck reuses the
 archive without another ZIP transfer. SHA-256 and inventory checks still apply.
-Storage denial falls back to ordinary downloads. Leaving the slide destroys the
+Cloud gateways can advertise 4 MiB archive parts; large bundles then download
+four parts concurrently, with each part independently cacheable by the CDN. The
+assembled archive must pass the same SHA-256 check. Other servers retain ordinary
+delivery. Storage denial falls back to ordinary downloads. Leaving the slide destroys the
 application frame, so inactive simulations stop using CPU/GPU. Existing published
 releases retain their loader; publish a new release with vstd 0.7.32 to upgrade.
