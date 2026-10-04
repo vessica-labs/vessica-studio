@@ -37,3 +37,35 @@ func TestLiveTransportDelegationAndGracefulClose(t *testing.T) {
 		t.Fatalf("%v: %s", err, output)
 	}
 }
+
+func TestLiveTransportAuthenticatedRelay(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	source, err := templates.ReadFile("templates/live.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `global.window=global;` + string(source) + `
+(async()=>{
+ const assert=require('node:assert/strict');
+ const requests=[],sent=[];let delivered=false;
+ const dc=new EventTarget();dc.readyState='open';dc.send=x=>sent.push(JSON.parse(x));
+ global.fetch=async(path,options)=>{
+   requests.push([path,options]);
+   return {ok:true,json:async()=>({events:delivered?[]:(delivered=true,[{type:'response.event',event:{type:'response.output_item.done',item:{type:'function_call',name:'next_slide',call_id:'call_relay',arguments:'{}'}}}])})};
+ };
+ const adapter=VSTDLive.adapter(dc,true);let calls=0;
+ dc.addEventListener('message',event=>{const translated=adapter.event(JSON.parse(event.data));if(translated?.type==='response.function_call_arguments.done')calls++;});
+ adapter.event({type:'session.started'});
+ adapter.send({type:'session.update',session:{instructions:'current slide',tools:[]}});
+ await new Promise(r=>setTimeout(r,30));
+ assert.equal(calls,1);assert(requests.some(([path])=>path==='/api/live/context'));
+ assert(!sent.some(event=>event.type==='session.update'));
+ adapter.event({type:'session.closed'});await adapter.close();
+})().catch(err=>{console.error(err);process.exitCode=1;});`
+	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, output)
+	}
+}
