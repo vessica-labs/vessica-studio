@@ -2763,6 +2763,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
     if(S.live){const started=m.type==='session.started';m=S.live.event(m);if(started)configure();if(!m)return;}
+    if(m.type==='live.closed'){S.intentional=true;S.on=false;cleanup();setState('','Vessica session ended · press V to start again');return;}
     if(!/delta|buffer|transcript|\.added|\.created|rate_limits/.test(m.type))console.log('vessica evt:',m.type,m.name||'',(m.response&&m.response.status)||'');
     if(m.type==='response.done'&&m.response&&m.response.status==='failed')console.warn('vessica response FAILED:',JSON.stringify(m.response.status_details||m.response).slice(0,400));
     if(m.type==='session.updated')console.log('vessica session updated ok — tools registered:',(m.session&&m.session.tools&&m.session.tools.length)||0);
@@ -3295,6 +3296,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
     if(D.live){const started=m.type==='session.started';m=D.live.event(m);if(started)configure();if(!m)return;}
+    if(m.type==='live.closed'){flush(true);D.on=false;window.__dictating=false;cleanup();dtrans.textContent='Session ended · dictation saved';return;}
     if(m.type==='response.done'&&window.__vreportOpenAIUsage)window.__vreportOpenAIUsage(m.response,'dictation');
     if(m.type==='conversation.item.input_audio_transcription.completed'&&m.transcript)
       trans('“'+m.transcript.trim().slice(-90)+'”');

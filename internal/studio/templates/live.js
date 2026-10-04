@@ -37,7 +37,7 @@
       return {send,
         event(message){
           if(message.type==='session.started'){ready=true;queue.splice(0).forEach(send);return {type:'session.updated'};}
-          if(message.type==='session.closed'){closed=true;finished();return null;}
+          if(message.type==='session.closed'){closed=true;finished();return {type:'live.closed'};}
           if(message.type==='response.event'){
             const event=message.event;
             if(event.type==='response.created'){active=true;return {type:'response.created'};}
