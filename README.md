@@ -1491,3 +1491,7 @@ only after the engine security and compatibility workflow passes. Existing
 versions are never overwritten. Cloud consumes a released version and its exact
 revision/checksums through `engine.lock.json`; a Cloud pin update deploys through
 its own CI and GitHub-linked Railway services.
+
+Hosted Live Responses lifecycle/function events are relayed through authenticated
+`GET /api/live/events`; context updates use `POST /api/live/context`. Browser audio
+continues directly over WebRTC. Cloud owns the backend model pin and billing.
