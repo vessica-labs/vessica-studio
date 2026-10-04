@@ -1446,6 +1446,10 @@ start other queued edits. Cloud dispatch and billing remain control-plane owned.
 Hosted callers may add `--image-api https://BROKER/v1 --image-model gpt-image-1`
 to a selected sweep. The engine processes at most one matching image request,
 registers its returned bytes in the normal library, and runs the landing pass.
+Placement receives the exact generated asset ID, URL, and hash from the engine.
+A sweep fails if the selected HTML still uses the previous image, only mentions
+the new URL in a comment, or leaves the placement request unresolved; clearing
+the companion alone cannot report successful image delivery.
 Each pass includes the selected companion's content checkpoint in its opening
 request. Planning and placement therefore have distinct request identities,
 while repeating the same file state retains a stable identity for host replay checks.
