@@ -610,6 +610,7 @@ func agentCommandWithImages(ctx context.Context, bin, root, prompt string, image
 	// then stall on approvals nobody can grant. An explicit allow-list is
 	// honored in default permission mode under any policy, so pass both.
 	cmd := exec.CommandContext(ctx, bin,
+		"--model", "claude-opus-5-5",
 		"--dangerously-skip-permissions",
 		"--allowedTools", "Edit,Write,MultiEdit,NotebookEdit,Read,Glob,Grep,Bash",
 		"-p", prompt)

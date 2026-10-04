@@ -89,7 +89,7 @@ func TestAgentCriticTimeoutAllowsVisualReview(t *testing.T) {
 func TestAgentCommandKeepsClaudeInvocation(t *testing.T) {
 	cmd := agentCommand(context.Background(), "claude", "/studio", "do the edit")
 	want := []string{
-		"claude", "--dangerously-skip-permissions", "--allowedTools",
+		"claude", "--model", "claude-opus-5-5", "--dangerously-skip-permissions", "--allowedTools",
 		"Edit,Write,MultiEdit,NotebookEdit,Read,Glob,Grep,Bash", "-p", "do the edit",
 	}
 	if !reflect.DeepEqual(cmd.Args, want) {

@@ -2495,6 +2495,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   setTimeout(ui,600);
 })();
 
+/*VSTD:LIVE*/
+
 /* ================= Vessica realtime layer (Phase 3 spike) =================
    Wake word: "Vessica". Always-listening once started (V key / status pill).
    The model can ONLY act through tools while muted; audio is unmuted
@@ -2537,8 +2539,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       if(!tr.ok){const problem=await tr.json().catch(()=>({}));throw new Error(problem.message||('token request failed: HTTP '+tr.status));}
       const tj=await tr.json();
       const secret=(tj.client_secret&&tj.client_secret.value)||tj.value||tj.client_secret;
-      if(!secret||typeof secret!=='string')throw new Error('no client secret in token response: '+JSON.stringify(tj).slice(0,120));
-      S.minted=true;
+      if(tj.protocol!=='live'&&(!secret||typeof secret!=='string'))throw new Error('no client secret');
+      S.live=null;S.minted=tj.protocol!=='live';
 
       stage('requesting microphone…');
       S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
@@ -2563,7 +2565,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           }
         }
       };
-      S.dc.onopen=()=>{clearTimeout(S.watchdog);S.retries=0;S.intentional=false;configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
+      S.dc.onopen=()=>{clearTimeout(S.watchdog);S.retries=0;S.intentional=false;if(!S.live)configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
       S.pc.oniceconnectionstatechange=()=>{
         const st=S.pc?S.pc.iceConnectionState:'?';
         console.log('vessica ice:',st);
@@ -2578,11 +2580,17 @@ document.addEventListener('DOMContentLoaded',()=>{
       const rt=(window.VSTD.realtime)||{};
       const base=(rt.base||'https://api.openai.com/v1');
       const model=(rt.model||'gpt-realtime-2');
-      const sr=await fetchT(base+'/realtime/calls?model='+encodeURIComponent(model),{
-        method:'POST',headers:{'Authorization':'Bearer '+secret,'Content-Type':'application/sdp'},
-        body:offer.sdp},25000,'SDP negotiation (browser → OpenAI)');
-      if(!sr.ok)throw new Error('webrtc offer rejected: HTTP '+sr.status+' '+(await sr.text()).slice(0,160));
-      const answerSdp=await sr.text();
+      let answerSdp;
+      if(tj.protocol==='live'){
+        const connection=await window.VSTDLive.negotiate(S.pc,S.dc,{instructions:baseInstructions(),tools:TOOLS});
+        S.live=connection.adapter;S.minted=true;answerSdp=connection.answer;
+      }else{
+        const sr=await fetchT(base+'/realtime/calls?model='+encodeURIComponent(model),{
+          method:'POST',headers:{'Authorization':'Bearer '+secret,'Content-Type':'application/sdp'},
+          body:offer.sdp},25000,'SDP negotiation (browser → OpenAI)');
+        if(!sr.ok)throw new Error('webrtc offer rejected: HTTP '+sr.status);
+        answerSdp=await sr.text();
+      }
       await S.pc.setRemoteDescription({type:'answer',sdp:answerSdp});
       S.on=true;
       stage('establishing audio path (ICE)…');
@@ -2611,11 +2619,10 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(msg)P().toast(msg);
   }
   function cleanup(){
-    if(S.minted){S.minted=false;window.__vendRealtimeSession&&window.__vendRealtimeSession();}
-    try{S.dc&&S.dc.close();}catch(_){}
-    try{S.pc&&S.pc.close();}catch(_){}
-    try{S.mic&&S.mic.getTracks().forEach(t=>t.stop());}catch(_){}
-    S.pc=S.dc=S.mic=null;
+    const pc=S.pc,dc=S.dc,mic=S.mic,live=S.live;
+    const destroy=()=>{try{dc&&dc.close();pc&&pc.close();mic&&mic.getTracks().forEach(t=>t.stop());}catch(_){}if(S.pc===pc)S.pc=S.dc=S.mic=null;};
+    if(live){S.minted=false;live.close().finally(()=>{if(S.live===live)S.live=null;destroy();});}
+    else{if(S.minted){S.minted=false;window.__vendRealtimeSession&&window.__vendRealtimeSession();}destroy();}
     clearGlow();
   }
 
@@ -2743,7 +2750,7 @@ KNOWLEDGE BASE (this presentation's company + audience notes, may include contac
 ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents uploaded for this deck)'}`;
   }
 
-  function send(o){if(S.dc&&S.dc.readyState==='open')S.dc.send(JSON.stringify(o));}
+  function send(o){if(S.live){S.live.send(o);return;}if(S.dc&&S.dc.readyState==='open')S.dc.send(JSON.stringify(o));}
   function configure(){
     send({type:'session.update',session:{
       type:'realtime',
@@ -2755,6 +2762,8 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
 
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
+    if(S.live){const started=m.type==='session.started';m=S.live.event(m);if(started)configure();if(!m)return;}
+    if(m.type==='live.closed'){S.intentional=true;S.on=false;cleanup();setState('','Vessica session ended · press V to start again');return;}
     if(!/delta|buffer|transcript|\.added|\.created|rate_limits/.test(m.type))console.log('vessica evt:',m.type,m.name||'',(m.response&&m.response.status)||'');
     if(m.type==='response.done'&&m.response&&m.response.status==='failed')console.warn('vessica response FAILED:',JSON.stringify(m.response.status_details||m.response).slice(0,400));
     if(m.type==='session.updated')console.log('vessica session updated ok — tools registered:',(m.session&&m.session.tools&&m.session.tools.length)||0);
@@ -3210,8 +3219,8 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
       if(!tr.ok){const problem=await tr.json().catch(()=>({}));throw new Error(problem.message||('token request failed: HTTP '+tr.status));}
       const tj=await tr.json();
       const secret=(tj.client_secret&&tj.client_secret.value)||tj.value||tj.client_secret;
-      if(!secret||typeof secret!=='string')throw new Error('no client secret');
-      D.minted=true;
+      if(tj.protocol!=='live'&&(!secret||typeof secret!=='string'))throw new Error('no client secret');
+      D.live=null;D.minted=tj.protocol!=='live';
       D.mic=await navigator.mediaDevices.getUserMedia({audio:true});
       D.pc=new RTCPeerConnection();
       const sink=new Audio();sink.autoplay=true;sink.muted=true; // scribe never speaks
@@ -3219,14 +3228,20 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
       D.mic.getTracks().forEach(t=>D.pc.addTrack(t,D.mic));
       D.dc=D.pc.createDataChannel('oai-events');
       D.dc.onmessage=onEvent;
-      D.dc.onopen=()=>{configure();dtrans.textContent='listening — talk, or say "new slide titled …"';};
+      D.dc.onopen=()=>{if(!D.live)configure();dtrans.textContent='listening — talk, or say "new slide titled …"';};
       const offer=await D.pc.createOffer();
       await D.pc.setLocalDescription(offer);
       const rt=(window.VSTD.realtime)||{};
-      const sr=await fetch((rt.base||'https://api.openai.com/v1')+'/realtime/calls?model='+encodeURIComponent(rt.model||'gpt-realtime-2'),{
-        method:'POST',headers:{'Authorization':'Bearer '+secret,'Content-Type':'application/sdp'},body:offer.sdp});
-      if(!sr.ok)throw new Error('webrtc '+sr.status);
-      await D.pc.setRemoteDescription({type:'answer',sdp:await sr.text()});
+      let answer;
+      if(tj.protocol==='live'){
+        const connection=await window.VSTDLive.negotiate(D.pc,D.dc,{instructions:INSTR,tools:TOOLS,dictation:true});
+        D.live=connection.adapter;D.minted=true;answer=connection.answer;
+      }else{
+        const sr=await fetch((rt.base||'https://api.openai.com/v1')+'/realtime/calls?model='+encodeURIComponent(rt.model||'gpt-realtime-2'),{
+          method:'POST',headers:{'Authorization':'Bearer '+secret,'Content-Type':'application/sdp'},body:offer.sdp});
+        if(!sr.ok)throw new Error('webrtc '+sr.status);answer=await sr.text();
+      }
+      await D.pc.setRemoteDescription({type:'answer',sdp:answer});
       D.on=true;window.__dictating=true;
     }catch(err){
       dtrans.textContent='failed: '+err.message;
@@ -3244,11 +3259,10 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     setTimeout(()=>location.reload(),1200);
   }
   function cleanup(){
-    if(D.minted){D.minted=false;window.__vendRealtimeSession&&window.__vendRealtimeSession();}
-    try{D.dc&&D.dc.close();}catch(_){}
-    try{D.pc&&D.pc.close();}catch(_){}
-    try{D.mic&&D.mic.getTracks().forEach(t=>t.stop());}catch(_){}
-    D.pc=D.dc=D.mic=null;
+    const pc=D.pc,dc=D.dc,mic=D.mic,live=D.live;
+    const destroy=()=>{try{dc&&dc.close();pc&&pc.close();mic&&mic.getTracks().forEach(t=>t.stop());}catch(_){}if(D.pc===pc)D.pc=D.dc=D.mic=null;};
+    if(live){D.minted=false;live.close().finally(()=>{if(D.live===live)D.live=null;destroy();});}
+    else{if(D.minted){D.minted=false;window.__vendRealtimeSession&&window.__vendRealtimeSession();}destroy();}
   }
 
   const TOOLS=[
@@ -3270,7 +3284,7 @@ Distinguish two kinds of speech:
 2. DIRECTIVES: explicit commands — "new slide", "new slide titled X", "call this slide X", "change the title", "the lead-in is X", "scratch that", "note the source: X", "the intent here is X", "go to slide N", "that's it / end dictation". Execute immediately with the matching tool. Directives are NEVER talk track.
 If narration starts with no draft slide, call new_slide first (infer a working title). Tool results return the current draft state — use it to stay consistent.`;
 
-  function send(o){if(D.dc&&D.dc.readyState==='open')D.dc.send(JSON.stringify(o));}
+  function send(o){if(D.live){D.live.send(o);return;}if(D.dc&&D.dc.readyState==='open')D.dc.send(JSON.stringify(o));}
   function configure(){
     send({type:'session.update',session:{
       type:'realtime',
@@ -3281,6 +3295,8 @@ If narration starts with no draft slide, call new_slide first (infer a working t
 
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
+    if(D.live){const started=m.type==='session.started';m=D.live.event(m);if(started)configure();if(!m)return;}
+    if(m.type==='live.closed'){flush(true);D.on=false;window.__dictating=false;cleanup();dtrans.textContent='Session ended · dictation saved';return;}
     if(m.type==='response.done'&&window.__vreportOpenAIUsage)window.__vreportOpenAIUsage(m.response,'dictation');
     if(m.type==='conversation.item.input_audio_transcription.completed'&&m.transcript)
       trans('“'+m.transcript.trim().slice(-90)+'”');

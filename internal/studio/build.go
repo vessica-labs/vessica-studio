@@ -124,6 +124,11 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 	if err != nil {
 		return "", err
 	}
+	liveJS, err := templates.ReadFile("templates/live.js")
+	if err != nil {
+		return "", err
+	}
+	player = []byte(strings.Replace(string(player), "/*VSTD:LIVE*/", string(liveJS), 1))
 	out := strings.Replace(string(player), "/*VSTD:BUNDLES*/", string(bundleDownloadJS)+"\n"+string(bundleJS), 1)
 	out = strings.ReplaceAll(out, "<!--VSTD:TITLE-->", htmlEscape(meta.Title))
 	out = strings.ReplaceAll(out, "<!--VSTD:THEME-->",

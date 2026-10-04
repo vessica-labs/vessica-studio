@@ -892,7 +892,7 @@ VSTD_AGENT=1 vstd agent
 ```
 
 Use `vstd serve --agent` or `VSTD_AGENT=1 vstd serve` for a continuous background
-worker. The default coding agent is Claude; set `VSTD_AGENT_CMD` or the related
+worker. The default coding agent is Claude pinned to `claude-opus-5-5`; set `VSTD_AGENT_CMD` or the related
 agent environment variables to use another command and tune limits. Hosted
 Codex workers must set `VSTD_AGENT_SANDBOX=railway`: the API service dispatches
 each pass to a disposable, network-isolated Railway Sandbox and refuses to run
@@ -1476,3 +1476,18 @@ assembled archive must pass the same SHA-256 check. Other servers retain ordinar
 delivery. Storage denial falls back to ordinary downloads. Leaving the slide destroys the
 application frame, so inactive simulations stop using CPU/GPU. Existing published
 releases retain their loader; publish a new release with vstd 0.7.32 to upgrade.
+
+### Cloud voice and release consumption
+
+The engine player supports an authenticated host returning a GPT-Live transport
+descriptor from `POST /api/realtime/token`. It then exchanges an ICE-complete SDP
+offer plus the selected presenter context and local tool definitions through
+`POST /api/live/session`. The host owns admission, model selection, provider
+credentials and usage accounting. Both presenter voice and silent dictation use
+Responses delegation; local Realtime sessions retain their existing protocol.
+
+A version bump merged to `main` publishes four immutable binaries and `SHA256SUMS`
+only after the engine security and compatibility workflow passes. Existing
+versions are never overwritten. Cloud consumes a released version and its exact
+revision/checksums through `engine.lock.json`; a Cloud pin update deploys through
+its own CI and GitHub-linked Railway services.
