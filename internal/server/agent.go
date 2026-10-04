@@ -35,6 +35,7 @@ import (
 
 	"github.com/vessica-labs/vessica-studio/internal/chromium"
 	"github.com/vessica-labs/vessica-studio/internal/collab"
+	"github.com/vessica-labs/vessica-studio/internal/library"
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 	"gopkg.in/yaml.v3"
 )
@@ -54,6 +55,7 @@ type agentWorker struct {
 	queuedN           int
 	capped            bool
 	isolatedWorkspace bool
+	generatedImage    *library.Asset
 }
 
 // Info reports worker state for the status endpoint.
@@ -197,7 +199,7 @@ func (s *Server) RunAgentOnce() int { return s.RunAgentSelected("", "") }
 
 // RunAgentSelected confines a hosted sweep to one engine-owned slide selector.
 func (s *Server) RunAgentSelected(deckFilter, slideFilter string) int {
-	return s.runAgentSelected(deckFilter, slideFilter, false)
+	return s.runAgentSelected(deckFilter, slideFilter, false, nil)
 }
 
 // RunAgentSelectedIsolated is for an ephemeral, externally isolated job snapshot.
@@ -207,12 +209,12 @@ func (s *Server) RunAgentSelectedIsolated(deckFilter, slideFilter string) int {
 		log.Printf("agent: isolated workspace requires one selected slide")
 		return 0
 	}
-	return s.runAgentSelected(deckFilter, slideFilter, true)
+	return s.runAgentSelected(deckFilter, slideFilter, true, nil)
 }
 
-func (s *Server) runAgentSelected(deckFilter, slideFilter string, isolated bool) int {
+func (s *Server) runAgentSelected(deckFilter, slideFilter string, isolated bool, generatedImage *library.Asset) int {
 	w := &agentWorker{s: s, maxPerHour: 1 << 30, bin: "claude", branch: "main",
-		push: !isolated && os.Getenv("VSTD_GIT_PUSH") == "1", isolatedWorkspace: isolated}
+		push: !isolated && os.Getenv("VSTD_GIT_PUSH") == "1", isolatedWorkspace: isolated, generatedImage: generatedImage}
 	if v := os.Getenv("VSTD_AGENT_CMD"); v != "" {
 		w.bin = v
 	}
@@ -511,6 +513,9 @@ the same change through the Bash tool instead (e.g. a python3 heredoc doing
 exact-string replacement asserted against the current file content). Never
 end the pass waiting for permission or asking a question; a pass that ends
 without resolving its bullets is recorded as a failure.`, checkpoint, deck, id, deck, id, deck)
+	if w.generatedImage != nil {
+		prompt += generatedImageReceipt(w.generatedImage)
+	}
 	if w.isolatedWorkspace {
 		prompt += "\n\nEXECUTION CONTEXT: This job workspace is already isolated. Edit the selected files directly here; do not create another worktree, start another agent, push Git, or synchronize Cloud. The host owns canonical result intake."
 	}
@@ -547,6 +552,13 @@ without resolving its bullets is recorded as a failure.`, checkpoint, deck, id, 
 		if m := editReqRe.FindStringSubmatch(string(b)); m != nil && actionable(m[1]) {
 			log.Printf("agent: pass left unresolved requests — flagging %s/%s", deck, id)
 			w.mark(deck, id, "- (worker error: pass finished without resolving all requests — clear this line to retry)")
+			return
+		}
+	}
+	if w.generatedImage != nil {
+		if err := w.s.validateGeneratedImageLanding(deck, id, w.generatedImage); err != nil {
+			log.Printf("agent: image landing FAILED %s/%s: %v", deck, id, err)
+			w.mark(deck, id, "- (worker error: generated image landing failed — clear this line to retry)")
 			return
 		}
 	}

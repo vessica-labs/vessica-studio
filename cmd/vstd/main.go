@@ -478,8 +478,12 @@ func cmdAgent(args []string) error {
 		if err != nil {
 			return err
 		}
-		if generated {
-			n += run(*deck, *slide)
+		if generated != nil {
+			landed, err := srv.RunAgentSelectedImageLanding(*deck, *slide, generated, *isolated)
+			if err != nil {
+				return err
+			}
+			n += landed
 		}
 	}
 	log.Printf("agent: sweep complete — %d pass(es) run", n)

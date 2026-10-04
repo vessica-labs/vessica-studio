@@ -31,7 +31,7 @@ func TestSelectedImageProcessesOneOwnedRequestAndRegistersAsset(t *testing.T) {
 		}
 	}
 	generated, err := s.ProcessSelectedImage("demo", "0010-a", api.URL, "gpt-image-1")
-	if err != nil || !generated || calls != 1 {
+	if err != nil || generated == nil || calls != 1 {
 		t.Fatalf("generated=%v calls=%d err=%v", generated, calls, err)
 	}
 	manifest, err := library.Load(filepath.Join(st.Root, "library"))
@@ -42,7 +42,7 @@ func TestSelectedImageProcessesOneOwnedRequestAndRegistersAsset(t *testing.T) {
 		t.Fatal("foreign request altered")
 	}
 	generated, err = s.ProcessSelectedImage("demo", "0010-a", api.URL, "gpt-image-1")
-	if err != nil || generated || calls != 1 {
+	if err != nil || generated != nil || calls != 1 {
 		t.Fatal("replayed paid generation")
 	}
 }
@@ -73,6 +73,7 @@ prompt: colorful cover
 slug: cover
 EOF
 else
+printf '<section class="slide" style="background:url(%s)"></section>\n' "$VSTD_TEST_IMAGE_URL" > decks/demo/slides/0010-a.html
 cat > decks/demo/slides/0010-a.md <<'EOF'
 # Cover
 
@@ -106,12 +107,14 @@ fi
 		fmt.Fprintf(w, `{"data":[{"b64_json":"%s"}]}`, base64.StdEncoding.EncodeToString([]byte("image fixture")))
 	}))
 	defer api.Close()
-	if generated, err := s.ProcessSelectedImage("demo", "0010-a", api.URL, "gpt-image-1"); err != nil || !generated {
+	generated, err := s.ProcessSelectedImage("demo", "0010-a", api.URL, "gpt-image-1")
+	if err != nil || generated == nil {
 		t.Fatalf("image generation: %v %v", generated, err)
 	}
 	t.Setenv("VSTD_TEST_IMAGE_STAGE", "landing")
-	if s.RunAgentSelectedIsolated("demo", "0010-a") != 1 {
-		t.Fatal("landing pass did not run")
+	t.Setenv("VSTD_TEST_IMAGE_URL", "/library/"+generated.File)
+	if n, err := s.RunAgentSelectedImageLanding("demo", "0010-a", generated, true); n != 1 || err != nil {
+		t.Fatalf("landing pass: n=%d err=%v", n, err)
 	}
 	landing, err := os.ReadFile(opening)
 	if err != nil {
@@ -124,6 +127,9 @@ fi
 		if !strings.Contains(request, "Selected companion checkpoint: sha256:") || !strings.Contains(request, `deck "demo", slide "0010-a"`) || !strings.Contains(request, "This job workspace is already isolated") {
 			t.Fatal("request lost its companion checkpoint or selected scope")
 		}
+	}
+	if !strings.Contains(string(landing), generated.ID) || !strings.Contains(string(landing), "/library/"+generated.File) || !strings.Contains(string(landing), generated.Hash) || strings.Contains(string(planning), "GENERATED IMAGE RECEIPT") {
+		t.Fatal("landing did not receive the exact generated asset identity")
 	}
 	if calls != 1 || s.RunAgentSelectedIsolated("demo", "0010-a") != 0 {
 		t.Fatal("completed image work was replayed")
@@ -141,5 +147,47 @@ func TestSelectedImageRefusesMultipleRequestsBeforeProviderDispatch(t *testing.T
 	}
 	if _, err := s.ProcessSelectedImage("demo", "0010-a", "http://127.0.0.1:1", "gpt-image-1"); err == nil {
 		t.Fatal("accepted multiple images")
+	}
+}
+
+func TestImageLandingRejectsReusedAssetWithoutRegenerating(t *testing.T) {
+	st := testStudio(t)
+	s := New(st, ModeStudio)
+	t.Setenv("VSTD_OPENAI_KEY", "fixture-capability")
+	calls := 0
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		fmt.Fprintf(w, `{"data":[{"b64_json":"%s"}]}`, base64.StdEncoding.EncodeToString([]byte("new image")))
+	}))
+	defer api.Close()
+	writeTestFile(t, filepath.Join(st.Root, "requests/new.yaml"), "deck: demo\nslide: 0010-a\nprompt: new ensemble\n")
+	asset, err := s.ProcessSelectedImage("demo", "0010-a", api.URL, "gpt-image-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeTestFile(t, st.SlidePath("demo", "0010-a", ".md"), "# Cover\n\n## Edit requests\n- awaiting imagery: place new ensemble\n\n## Log\n")
+	bin := filepath.Join(t.TempDir(), "claude")
+	writeTestFile(t, bin, `#!/bin/sh
+cat > decks/demo/slides/0010-a.md <<'EOF'
+# Cover
+
+## Edit requests
+
+## Log
+- resolved: claimed new image placement
+EOF
+`)
+	if err := os.Chmod(bin, 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VSTD_AGENT_CMD", bin)
+	t.Setenv("VSTD_AGENT_SANDBOX", "")
+	// A mention in a comment cannot stand in for a rendered image reference.
+	writeTestFile(t, st.SlidePath("demo", "0010-a", ".html"), `<section class="slide" style="background:url(/library/img/old.png)"></section><!-- `+"/library/"+asset.File+` -->`)
+	if _, err := s.RunAgentSelectedImageLanding("demo", "0010-a", asset, true); err == nil {
+		t.Fatal("accepted a cleared request with the previous image still on the slide")
+	}
+	if calls != 1 {
+		t.Fatal("landing replayed image generation")
 	}
 }
