@@ -13,25 +13,42 @@
       const result=await response.json();
       if(!response.ok)throw new Error(result.message||'Live session could not start');
       if(!result.session?.id||!result.transport?.sdp)throw new Error('Invalid Live connection receipt');
-      return {answer:result.transport.sdp,adapter:this.adapter(dc)};
+      return {answer:result.transport.sdp,adapter:this.adapter(dc,true)};
     },
-    adapter(dc){
+    adapter(dc,relay=false){
       let ready=false,closed=false,closing=false,active=false,wanted=false,finished;
       const queue=[],calls=new Set(),done=new Promise(r=>finished=r);
+      let pollTimer,failures=0,configuration=Promise.resolve();
+      const dispatch=event=>dc.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(event)}));
+      async function poll(){
+        if(closing)return;
+        try{
+          const response=await fetch('/api/live/events',{signal:AbortSignal.timeout(5000)});
+          if(!response.ok)throw new Error('Live event relay unavailable');
+          const result=await response.json();failures=0;
+          (result.events||[]).forEach(dispatch);
+        }catch(_){if(++failures>=3){dispatch({type:'error',error:{message:'Live connection lost'}});raw({type:'session.close'});closing=true;return;}}
+        if(!closing)pollTimer=setTimeout(poll,300);
+      }
+      if(relay)pollTimer=setTimeout(poll,0);
       function raw(event){if(dc.readyState==='open')dc.send(JSON.stringify(event));}
       function send(event){
         if(closing)return;
         if(!ready){queue.push(event);return;}
         if(event.type==='session.update'){
           const session=event.session;
-          raw({type:'session.update',session:{delegation:{responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
+          if(relay){configuration=configuration.then(async()=>{
+            const response=await fetch('/api/live/context',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools}),signal:AbortSignal.timeout(5000)});
+            if(!response.ok)throw new Error('Live context update failed');
+          }).catch(()=>{dispatch({type:'error',error:{message:'Live context update failed'}});raw({type:'session.close'});});}
+          else raw({type:'session.update',session:{delegation:{responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
         }
         if(event.type==='conversation.item.create'){
           if(event.item.type==='function_call_output')raw({type:'response.item.create',item:event.item});
           else raw({type:'session.thinking.append',delegation_id:null,content:(event.item.content||[]).map(x=>x.text||'').join('\n').slice(0,1400)});
           return;
         }
-        if(event.type==='response.create'){if(active){wanted=true;return;}raw({type:'response.create'});return;}
+        if(event.type==='response.create'){if(active){wanted=true;return;}if(relay)configuration.then(()=>raw({type:'response.create'}));else raw({type:'response.create'});return;}
         raw(event);
       }
       return {send,
@@ -53,7 +70,7 @@
           return message;
         },
         close(){
-          if(!closing){closing=true;if(ready&&!closed)raw({type:'session.close'});}
+          clearTimeout(pollTimer);if(!closing){closing=true;if(ready&&!closed)raw({type:'session.close'});}
           finalizing=(async()=>{let timer;await Promise.race([done,new Promise(r=>timer=setTimeout(r,10000))]);clearTimeout(timer);await window.__vendRealtimeSession?.();return closed;})();return finalizing;
         }
       };
