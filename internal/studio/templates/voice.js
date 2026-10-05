@@ -5,7 +5,7 @@
     create(audio,callbacks){
       let talking=false,blocked=false,closed=false,attempt=0,input='',lastInput=0;
       audio.autoplay=true;audio.muted=true;
-      function state(){callbacks.state('listening',talking?'Vessica in conversation · listening':'Vessica listening · say "Vessica" to talk');}
+      function state(){callbacks.state('listening',talking?'Vessica in conversation · listening':'Vessica listening · say "Vessica" or Shift+V to talk');}
       function play(){
         if(closed||!audio.srcObject)return;
         const token=++attempt;

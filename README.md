@@ -1489,6 +1489,14 @@ Responses delegation; local Realtime sessions retain their existing protocol.
 Hosted GPT-Live input transcripts open the speaker on the wake word independently
 of backend tool execution. The speaker starts muted, returns to mute on a
 stop-speaking request, and ignores assistant output transcripts for wake detection.
+Press **V** to start or stop Vessica's voice session; it starts listening silently.
+While connected, **Shift+V** toggles between conversation and silent listening,
+equivalent to saying “Vessica” and “that's all.” The spoken commands continue to
+work alongside the shortcut. In Logi Options+, configure the Spotlight 2 Action
+button's **Single click → Keyboard shortcut → Shift+V**. Keep the presenter player
+focused; voice shortcuts are ignored while typing in text fields. Shift+V does
+not start a microphone session when Vessica is off.
+
 Playback is checked explicitly. If the browser blocks sound, click the Vessica
 status pill to enable audio without ending the session. Hosts embedding the
 presenter across origins must delegate `autoplay` alongside `microphone` permission.

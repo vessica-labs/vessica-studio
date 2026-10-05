@@ -1179,7 +1179,11 @@ document.addEventListener('DOMContentLoaded',()=>{
     else if(e.key==='g'||e.key==='G'){buildOv();overview.classList.toggle('open');if(window.__vprogApply)window.__vprogApply();}
     else if(e.key==='e'||e.key==='E')toggleEdit();
     else if(e.key==='p'||e.key==='P')enterPresent();
-    else if(e.key==='v'||e.key==='V')document.dispatchEvent(new Event('vstd:vtoggle'));
+    else if(e.key==='v'||e.key==='V'){
+      if(e.repeat||e.ctrlKey||e.metaKey||e.altKey)return;
+      e.preventDefault();
+      document.dispatchEvent(new Event(e.shiftKey?'vstd:conversation-toggle':'vstd:vtoggle'));
+    }
     else if(e.key==='d'||e.key==='D')document.dispatchEvent(new Event('vstd:dtoggle'));
     else if(e.key==='Escape'){
       const dl=document.getElementById('downloadMenu');
@@ -2502,7 +2506,7 @@ document.addEventListener('DOMContentLoaded',()=>{
    The speaker stays muted until begin_conversation or a GPT-Live input
    transcript contains the wake word. Model speech never opens the speaker. */
 (function(){
-  const S={pc:null,dc:null,audio:null,mic:null,on:false,talking:false,minted:false};
+  const S={pc:null,dc:null,audio:null,mic:null,on:false,talking:false,minted:false,buttonConversation:null};
   const status=document.getElementById('vstatus');
   const label=document.getElementById('vlabel');
   const P=()=>window.VSTDP;
@@ -2516,6 +2520,19 @@ document.addEventListener('DOMContentLoaded',()=>{
   function hideState(){status.style.display='none';}
 
   document.addEventListener('vstd:vtoggle',()=>{if(window.VSTDPresenterControl())S.on?stop('Vessica off'):start();});
+  document.addEventListener('vstd:conversation-toggle',()=>{
+    if(!window.VSTDPresenterControl())return;
+    if(!(S.on&&S.voice&&S.dc?.readyState==='open')){
+      P().toast(S.on?'Vessica is connecting — try again when listening':'Press V to start Vessica first');
+      return;
+    }
+    const wake=!S.voice.talking();
+    if(wake)S.voice.begin();else S.voice.end();
+    S.buttonConversation=S.live?wake:null;
+    window.__vpush('[PRESENTER VOICE CONTROL] '+(wake?
+      'wake: The presenter pressed the conversation button, equivalent to saying "Vessica". Begin conversation and respond briefly.':
+      'sleep: The presenter pressed the conversation button, equivalent to saying "that is all". End conversation and remain silent.'));
+  });
   status.addEventListener('click',()=>{if(window.VSTDPresenterControl()){if(S.on&&S.voice?.blocked())S.voice.retry();else S.on?stop('Vessica off'):start();}});
   status.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();status.click();}});
 
@@ -2546,7 +2563,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
       S.pc=new RTCPeerConnection();
       S.audio=new Audio();
-      const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;}});
+      const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;S.buttonConversation=null;}});
       S.talking=false;
       S.pc.ontrack=e=>{voice.attach(e.streams[0]||new MediaStream([e.track]));};
       S.mic.getTracks().forEach(t=>S.pc.addTrack(t,S.mic));
@@ -2567,7 +2584,7 @@ document.addEventListener('DOMContentLoaded',()=>{
           }
         }
       };
-      S.dc.onopen=()=>{clearTimeout(S.watchdog);S.retries=0;S.intentional=false;if(!S.live)configure();setState('listening','Vessica listening · rehearsal · say "Vessica" to talk');};
+      S.dc.onopen=()=>{clearTimeout(S.watchdog);S.retries=0;S.intentional=false;if(!S.live)configure();setState('listening','Vessica listening · rehearsal · say "Vessica" or Shift+V to talk');};
       S.pc.oniceconnectionstatechange=()=>{
         const st=S.pc?S.pc.iceConnectionState:'?';
         console.log('vessica ice:',st);
@@ -2636,7 +2653,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     {type:'function',name:'goto_slide',description:'Jump to a slide by its 1-based number.',parameters:{type:'object',properties:{number:{type:'integer'}},required:['number']}},
     {type:'function',name:'highlight',description:'Softly glow one non-title element on the current slide. Charts can be selected by an accessible description or any chart label. phrase MUST be copied verbatim (or a distinctive fragment) from the HIGHLIGHTABLE ELEMENTS list in your instructions — never paraphrase. Never highlight the slide title. Use sparingly — one at a time, only when the speaker dwells on that point.',parameters:{type:'object',properties:{phrase:{type:'string'}},required:['phrase']}},
     {type:'function',name:'clear_highlight',description:'Remove any highlight.',parameters:{type:'object',properties:{}}},
-    {type:'function',name:'begin_conversation',description:'Call ONLY when the speaker says the wake word "Vessica" and wants you to respond aloud. After calling, you may speak.',parameters:{type:'object',properties:{}}},
+    {type:'function',name:'begin_conversation',description:'Call ONLY when the speaker says the wake word "Vessica" or explicitly wakes you with the presenter conversation button, and wants you to respond aloud. After calling, you may speak.',parameters:{type:'object',properties:{}}},
     {type:'function',name:'edit_text',description:'IN CONVERSATION ONLY: replace text on the current slide. find = the exact visible text (or a distinctive fragment of it); replace = the new text.',parameters:{type:'object',properties:{find:{type:'string'},replace:{type:'string'}},required:['find','replace']}},
     {type:'function',name:'set_slide_title',description:'IN CONVERSATION ONLY: replace the current slide title.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
     {type:'function',name:'add_bullet',description:'IN CONVERSATION ONLY: add a bullet/point to the current slide.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text']}},
@@ -2733,11 +2750,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     const nextCue=next?((next.querySelector('.notes')||{}).textContent||'').slice(0,300):'';
     return `You are Vessica, a silent presentation co-pilot for the deck "${window.VSTD.title}". REHEARSAL MODE.
 RULES:
-- Stay COMPLETELY SILENT unless the speaker says the wake word "Vessica" — then call begin_conversation and respond briefly and helpfully, drawing on the slide context. When told to stop speaking / be quiet / thanked, call end_conversation and go silent again. A command to stop the simulation controls the flight instead.
+- Stay COMPLETELY SILENT unless the speaker says the wake word "Vessica" or explicitly wakes you with the conversation button — then call begin_conversation and respond briefly and helpfully, drawing on the slide context. When told to stop speaking / be quiet / thanked, call end_conversation and go silent again. A command to stop the simulation controls the flight instead.
+- A [PRESENTER VOICE CONTROL] wake or sleep message is an explicit presenter button press, equivalent to "Vessica" or "that's all" respectively. Call begin_conversation on wake and end_conversation on sleep. On sleep, do not give a spoken acknowledgement.
 - While silent, your ONLY actions are tool calls. Never produce audio without begin_conversation.
 - Advance slides with next_slide when the speaker finishes the current slide's material and begins the next slide's opening idea. Be conservative — never advance mid-thought. Obey explicit commands ("next slide", "go back", "go to slide 12") immediately via tools.
 - Use highlight(phrase) when the speaker dwells on a specific non-title element visible on the slide; clear_highlight when they move on. Never highlight the slide title. A chart is highlightable when the speaker's topic relates to its accessible description or one of its labels; use the corresponding verbatim highlightable phrase and the whole chart will glow.
-- LIVE EDITING (only after the wake word, in conversation): the speaker may ask you to change the slide — "change X to Y" → edit_text; "retitle this…" → set_slide_title; "add a bullet…" → add_bullet; "remove …" → remove_element. Confirm briefly aloud. For big asks (redesign, new image, restructure) use note_edit_request and say it's queued for the redesign pass.
+- LIVE EDITING (only after the wake word or conversation button, in conversation): the speaker may ask you to change the slide — "change X to Y" → edit_text; "retitle this…" → set_slide_title; "add a bullet…" → add_bullet; "remove …" → remove_element. Confirm briefly aloud. For big asks (redesign, new image, restructure) use note_edit_request and say it's queued for the redesign pass.
 - COMPANION NARRATIVE EDITING: "open/edit the companion/narrative/talk track" → open_companion. While the speaker dictates narrative changes, use edit_companion for exact replacements, set_companion_section for a complete rewrite, or append_companion_section for additional prose. Each call saves immediately and visibly updates the drawer. Source attachments shown above the Markdown are part of the companion contract and may be referenced in edit requests.
 - BLANK-SLIDE AUTHORING (in conversation): "give me a blank slide (titled X)" → new_blank_slide. Then the speaker talks the slide into existence: distill each distinct point with author_point, stream narration with author_talk, set the lead with author_lead. When they say they're done / back to the presentation, call done_authoring and fall silent again on end_conversation if asked.
 NAVIGATION: "go to slide 12" -> goto_slide(12). "go to the slide about X" -> find the best match in the DECK MAP below and goto_slide its number. Use next_slide ONLY for natural forward progression, never for jump requests.
@@ -2779,7 +2797,7 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
       let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
       runTool(m.name,args,m.call_id);
     }
-    if(m.type==='output_audio_buffer.started'&&S.talking&&!S.voice?.blocked())setState('speaking','Vessica speaking — say "that\'s all" to end');
+    if(m.type==='output_audio_buffer.started'&&S.talking&&!S.voice?.blocked())setState('speaking','Vessica speaking — say "that\'s all" or Shift+V to end');
     if(m.type==='output_audio_buffer.stopped'&&S.on&&S.talking&&!S.voice?.blocked())setState('listening','Vessica in conversation · listening');
     if(m.type==='error')console.warn('vessica ERROR:',JSON.stringify(m.error||m).slice(0,500));
   }
@@ -2994,8 +3012,13 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
         });}
       out='chat QR shown';}
     else if(name==='hide_chat_qr'){const q=document.getElementById('vchatqr');if(q)q.remove();out='chat QR hidden';}
-    else if(name==='begin_conversation'){S.voice?.begin();}
-    else if(name==='end_conversation'){S.voice?.end();}
+    else if(name==='begin_conversation'||name==='end_conversation'){
+      // GPT-Live transcripts detect subsequent spoken wake/sleep. Until then,
+      // the button already changed playback and delayed model tools cannot undo
+      // that choice; a subsequent spoken wake/sleep clears this override.
+      if(S.buttonConversation!==null)out=S.buttonConversation?'presenter conversation button: awake':'presenter conversation button: silent';
+      else if(name==='begin_conversation')S.voice?.begin();else S.voice?.end();
+    }
     else if(name==='edit_text')out=editText(args.find,args.replace);
     else if(name==='set_slide_title')out=editText((activeSec().querySelector('.s-title,.serif')||{textContent:''}).textContent.trim(),args.text);
     else if(name==='add_bullet')out=addBullet(args.text);
