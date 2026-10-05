@@ -9,7 +9,7 @@ import Callout from "../components/Callout.astro";
 
 # Present and edit with Vessica
 
-Vessica is a realtime voice copilot inside the presenter player. It listens silently, follows the talk track, navigates conservatively, highlights the idea you are discussing, and speaks only after the wake word.
+Vessica is a realtime voice copilot inside the presenter player. It listens silently, follows the talk track, navigates conservatively, highlights the idea you are discussing, and speaks only after the wake word or conversation shortcut.
 
 ![Vessica Studio presenter with the Vessica control visible in the HUD](/screenshots/vessica-presenter.png)
 <span class="caption">The Vessica control is presenter-only. Audience sessions remain read-only and do not receive the copilot controls.</span>
@@ -37,7 +37,19 @@ On Railway, store the key as a service variable. Never include it in a studio fi
   <li><h3>Say “Vessica” to begin a conversation</h3><p>Ask a short question, request a navigation jump, or make an edit. Tell Vessica “that's all,” “be quiet,” or thank it to return to silent copilot mode.</p></li>
 </ol>
 
-<Callout title="Vessica is silent by default">Starting the copilot does not start a conversation. It stays silent until it hears the wake word, but it can still use tools for navigation and highlighting while you present.</Callout>
+<Callout title="Vessica is silent by default">Starting the copilot does not start a conversation. It stays silent until it hears the wake word or you press Shift+V, but it can still use tools for navigation and highlighting while you present.</Callout>
+
+### Use a clicker instead of the wake and sleep words
+
+After starting Vessica with **V**, press **Shift+V** to wake it; press again to
+return to silent listening. You can mix the shortcut with “Vessica” and “that's
+all.” Plain **V** still starts and stops the entire session, and **Shift+V** while
+Vessica is off asks you to start it first.
+
+For a Logitech Spotlight 2, open **Logi Options+ → Spotlight 2 → Action button →
+Single click**, choose **Keyboard shortcut**, and record **Shift+V**. Keep the
+presenter player focused so it receives the clicker's keystroke. Voice shortcuts
+are ignored in text fields and audience sessions.
 
 If the status says **“Vessica audio blocked”**, click the status pill to enable
 sound. The session stays connected while you enable playback. In Cloud,
