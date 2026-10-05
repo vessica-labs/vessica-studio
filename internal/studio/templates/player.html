@@ -526,7 +526,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 <div id="vtip" role="tooltip"></div>
 <div id="menu"><div class="sheet"><h2>Jump to</h2><div id="menulist"></div></div></div>
 <div id="notesPanel"><div class="lbl">Speaker notes</div><div id="notesBody"></div></div>
-<div id="vstatus"><span class="dot"></span><span id="vlabel">Vessica off</span></div>
+<div id="vstatus" role="button" tabindex="0"><span class="dot"></span><span id="vlabel">Vessica off</span></div>
 <div id="overview"><div class="gridwrap" id="ovgrid"></div></div>
 <aside id="companionDrawer" aria-label="Slide companion">
   <div class="chead"><div class="ctitle">Slide companion</div><button class="cclose" title="Close">&#10005;</button></div>
@@ -2499,9 +2499,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 
 /* ================= Vessica realtime layer (Phase 3 spike) =================
    Wake word: "Vessica". Always-listening once started (V key / status pill).
-   The model can ONLY act through tools while muted; audio is unmuted
-   client-side exclusively by a begin_conversation tool call — that mute is
-   the guarantee, not the prompt. */
+   The speaker stays muted until begin_conversation or a GPT-Live input
+   transcript contains the wake word. Model speech never opens the speaker. */
 (function(){
   const S={pc:null,dc:null,audio:null,mic:null,on:false,talking:false,minted:false};
   const status=document.getElementById('vstatus');
@@ -2517,7 +2516,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   function hideState(){status.style.display='none';}
 
   document.addEventListener('vstd:vtoggle',()=>{if(window.VSTDPresenterControl())S.on?stop('Vessica off'):start();});
-  status.addEventListener('click',()=>{if(window.VSTDPresenterControl())S.on?stop('Vessica off'):start();});
+  status.addEventListener('click',()=>{if(window.VSTDPresenterControl()){if(S.on&&S.voice?.blocked())S.voice.retry();else S.on?stop('Vessica off'):start();}});
+  status.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();status.click();}});
 
   function fetchT(url,opts,ms,label){
     const ctl=new AbortController();
@@ -2545,8 +2545,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       stage('requesting microphone…');
       S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
       S.pc=new RTCPeerConnection();
-      S.audio=new Audio();S.audio.autoplay=true;S.audio.muted=true; // THE mute guarantee
-      S.pc.ontrack=e=>{S.audio.srcObject=e.streams[0];};
+      S.audio=new Audio();
+      const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;}});
+      S.talking=false;
+      S.pc.ontrack=e=>{voice.attach(e.streams[0]||new MediaStream([e.track]));};
       S.mic.getTracks().forEach(t=>S.pc.addTrack(t,S.mic));
       S.dc=S.pc.createDataChannel('oai-events');
       S.dc.onmessage=onEvent;
@@ -2619,6 +2621,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(msg)P().toast(msg);
   }
   function cleanup(){
+    S.voice?.close();S.voice=null;
     const pc=S.pc,dc=S.dc,mic=S.mic,live=S.live;
     const destroy=()=>{try{dc&&dc.close();pc&&pc.close();mic&&mic.getTracks().forEach(t=>t.stop());}catch(_){}if(S.pc===pc)S.pc=S.dc=S.mic=null;};
     if(live){S.minted=false;live.close().finally(()=>{if(S.live===live)S.live=null;destroy();});}
@@ -2762,6 +2765,9 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
 
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
+    // GPT-Live can answer without delegating. Its input transcript, never its
+    // output transcript, opens the speaker independently of backend tools.
+    if(S.live&&m.type==='session.input_transcript.delta')S.voice?.input(m.delta);
     if(S.live){const started=m.type==='session.started';m=S.live.event(m);if(started)configure();if(!m)return;}
     if(m.type==='live.closed'){S.intentional=true;S.on=false;cleanup();setState('','Vessica session ended · press V to start again');return;}
     if(!/delta|buffer|transcript|\.added|\.created|rate_limits/.test(m.type))console.log('vessica evt:',m.type,m.name||'',(m.response&&m.response.status)||'');
@@ -2773,8 +2779,8 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
       let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
       runTool(m.name,args,m.call_id);
     }
-    if(m.type==='output_audio_buffer.started'&&S.talking)setState('speaking','Vessica speaking — say "that\'s all" to end');
-    if(m.type==='output_audio_buffer.stopped'&&S.on&&S.talking)setState('listening','Vessica in conversation · listening');
+    if(m.type==='output_audio_buffer.started'&&S.talking&&!S.voice?.blocked())setState('speaking','Vessica speaking — say "that\'s all" to end');
+    if(m.type==='output_audio_buffer.stopped'&&S.on&&S.talking&&!S.voice?.blocked())setState('listening','Vessica in conversation · listening');
     if(m.type==='error')console.warn('vessica ERROR:',JSON.stringify(m.error||m).slice(0,500));
   }
 
@@ -2988,8 +2994,8 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
         });}
       out='chat QR shown';}
     else if(name==='hide_chat_qr'){const q=document.getElementById('vchatqr');if(q)q.remove();out='chat QR hidden';}
-    else if(name==='begin_conversation'){S.talking=true;S.audio.muted=false;setState('speaking','Vessica speaking');}
-    else if(name==='end_conversation'){S.talking=false;S.audio.muted=true;setState('listening','Vessica listening · say "Vessica" to talk');}
+    else if(name==='begin_conversation'){S.voice?.begin();}
+    else if(name==='end_conversation'){S.voice?.end();}
     else if(name==='edit_text')out=editText(args.find,args.replace);
     else if(name==='set_slide_title')out=editText((activeSec().querySelector('.s-title,.serif')||{textContent:''}).textContent.trim(),args.text);
     else if(name==='add_bullet')out=addBullet(args.text);

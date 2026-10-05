@@ -1486,6 +1486,13 @@ offer plus the selected presenter context and local tool definitions through
 credentials and usage accounting. Both presenter voice and silent dictation use
 Responses delegation; local Realtime sessions retain their existing protocol.
 
+Hosted GPT-Live input transcripts open the speaker on the wake word independently
+of backend tool execution. The speaker starts muted, returns to mute on a
+stop-speaking request, and ignores assistant output transcripts for wake detection.
+Playback is checked explicitly. If the browser blocks sound, click the Vessica
+status pill to enable audio without ending the session. Hosts embedding the
+presenter across origins must delegate `autoplay` alongside `microphone` permission.
+
 A version bump merged to `main` publishes four immutable binaries and `SHA256SUMS`
 only after the engine security and compatibility workflow passes. Existing
 versions are never overwritten. Cloud consumes a released version and its exact
