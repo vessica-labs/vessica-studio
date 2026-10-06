@@ -1497,6 +1497,9 @@ button's **Single click → Keyboard shortcut → Shift+V**. Keep the presenter 
 focused; voice shortcuts are ignored while typing in text fields. Shift+V does
 not start a microphone session when Vessica is off.
 
+Wake and sleep control speech only: explicit navigation and highlighting commands
+execute while Vessica is connected, whether awake or silently listening.
+
 Playback is checked explicitly. If the browser blocks sound, click the Vessica
 status pill to enable audio without ending the session. Hosts embedding the
 presenter across origins must delegate `autoplay` alongside `microphone` permission.
