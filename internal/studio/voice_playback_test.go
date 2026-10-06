@@ -73,12 +73,12 @@ func TestPlayerLiveVoiceWithoutBackendWakeTool(t *testing.T) {
 	}
 	script := `
 const assert=require('node:assert/strict');global.window=global;
-global.location={protocol:'https:'};const listeners={},clicks={},audio=[],pcs=[],sent=[],toasts=[];let presenter=true;
+global.location={protocol:'https:'};const listeners={},clicks={},audio=[],pcs=[],sent=[],toasts=[],navigation=[];let presenter=true;
 const label={textContent:''},status={style:{},className:'',classList:{add(){}},addEventListener:(name,fn)=>clicks[name]=fn};
 const slide={querySelector:()=>({textContent:'Demo'}),querySelectorAll:()=>[],hasAttribute:()=>false};
 global.document={getElementById:id=>id==='vstatus'?status:label,addEventListener:(name,fn)=>listeners[name]=fn,querySelectorAll:()=>[slide]};
 global.VSTD={deck:'demo',title:'Demo'};global.VSTDPresenterControl=()=>presenter;
-global.VSTDP={slideEl:()=>slide,cur:()=>0,count:1,toast:t=>toasts.push(t)};
+global.VSTDP={slideEl:()=>slide,cur:()=>0,count:1,toast:t=>toasts.push(t),gotoNum:n=>navigation.push(n),step:n=>navigation.push(n)};
 Object.defineProperty(global,'navigator',{value:{mediaDevices:{getUserMedia:async()=>({getTracks:()=>[{stop(){}}]})}},configurable:true});
 let blocked=false;
 global.Audio=class {constructor(){audio.push(this);}play(){return blocked?Promise.reject(new Error('NotAllowedError')):Promise.resolve();}pause(){this.paused=true;}};
@@ -93,10 +93,22 @@ global.fetch=async(path)=>({ok:true,text:async()=>'answer',json:async()=>path===
  listeners['vstd:vtoggle']();await tick();const first=audio.at(-1),dc=pcs.at(-1).dc;
  dc.readyState='open';dc.send=s=>sent.push(JSON.parse(s));dc.onopen();emit({type:'session.started'});
  assert.equal(first.muted,true);
+ const creates=()=>sent.filter(m=>m.type==='response.create').length;
+ const backend=(type,extra={})=>emit({type:'response.event',event:{type,...extra}});
+ const navigate=number=>{backend('response.created');backend('response.output_item.done',{item:{type:'function_call',name:'goto_slide',call_id:'nav_'+number,arguments:JSON.stringify({number})}});};
+ let before=creates();navigate(2);await tick();
+ assert.deepEqual(navigation,[2],'silent listening executes navigation immediately');assert.equal(first.muted,true);
+ assert.equal(creates(),before+1,'silent navigation result continues before backend completion');
+ backend('response.completed');
+ before=creates();
  listeners['vstd:conversation-toggle']();await tick();assert.equal(first.muted,false);assert.equal(global.__vlive(),true);
+ assert.equal(creates(),before,'button wake must not start an empty backend response');
+ navigate(3);await tick();assert.deepEqual(navigation,[2,3]);assert.equal(creates(),before+1,'awake navigation continues without sleep and re-wake');
+ backend('response.completed');
  await global.__vpres.run('end_conversation',{});assert.equal(first.muted,false,'late sleep tool cannot undo button wake');
  assert(sent.some(m=>m.type==='session.thinking.append'&&m.content.includes('[PRESENTER VOICE CONTROL] wake')),'Live must receive explicit wake intent');
  emit({type:'session.input_transcript.delta',delta:"That's all."});assert.equal(first.muted,true,'spoken sleep after button wake');
+ before=creates();navigate(4);await tick();assert.deepEqual(navigation,[2,3,4]);assert.equal(creates(),before+1);backend('response.completed');
  listeners['vstd:conversation-toggle']();assert.equal(first.muted,false);
  listeners['vstd:conversation-toggle']();assert.equal(first.muted,true);
  await global.__vpres.run('begin_conversation',{});assert.equal(first.muted,true,'late wake tool cannot undo button sleep');
@@ -117,12 +129,15 @@ global.fetch=async(path)=>({ok:true,text:async()=>'answer',json:async()=>path===
  listeners['vstd:vtoggle']();await tick();const second=audio.at(-1),dc2=pcs.at(-1).dc;
  dc2.readyState='open';dc2.send=s=>sent.push(JSON.parse(s));dc2.onopen();
  assert.notEqual(second,first);assert.equal(second.muted,true);
- listeners['vstd:conversation-toggle']();assert.equal(second.muted,false);assert(sent.some(m=>m.type==='conversation.item.create'&&m.item.type==='message'&&m.item.content[0].text.includes('[PRESENTER VOICE CONTROL] wake')));
+ before=creates();listeners['vstd:conversation-toggle']();assert.equal(creates(),before+1,'a fresh local session must not inherit an active response');assert.equal(second.muted,false);assert(sent.some(m=>m.type==='conversation.item.create'&&m.item.type==='message'&&m.item.content[0].text.includes('[PRESENTER VOICE CONTROL] wake')));
  listeners['vstd:conversation-toggle']();assert.equal(second.muted,true);
  emit({type:'session.input_transcript.delta',delta:'Vessica'});assert.equal(second.muted,true);
  await global.__vpres.run('begin_conversation',{});await tick();assert.equal(second.muted,false);
  await global.__vpres.run('end_conversation',{});assert.equal(second.muted,true);
  global.__vstopVessica();await tick();assert.equal(second.paused,true);
+ listeners['vstd:vtoggle']();await tick();const dc3=pcs.at(-1).dc;dc3.readyState='open';dc3.send=s=>sent.push(JSON.parse(s));dc3.onopen();
+ before=creates();listeners['vstd:conversation-toggle']();assert.equal(creates(),before+1,'stopping a busy Realtime session clears its queued response state');
+ global.__vstopVessica();await tick();
 })().catch(err=>{console.error(err);process.exit(1);});`
 	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
 		t.Fatalf("%v: %s", err, output)

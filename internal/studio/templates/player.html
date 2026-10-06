@@ -2529,9 +2529,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     const wake=!S.voice.talking();
     if(wake)S.voice.begin();else S.voice.end();
     S.buttonConversation=S.live?wake:null;
-    window.__vpush('[PRESENTER VOICE CONTROL] '+(wake?
+    const text='[PRESENTER VOICE CONTROL] '+(wake?
       'wake: The presenter pressed the conversation button, equivalent to saying "Vessica". Begin conversation and respond briefly.':
-      'sleep: The presenter pressed the conversation button, equivalent to saying "that is all". End conversation and remain silent.'));
+      'sleep: The presenter pressed the conversation button, equivalent to saying "that is all". End conversation and remain silent.');
+    send({type:'conversation.item.create',item:{type:'message',role:'user',content:[{type:'input_text',text}]}});
+    // Live handles this as conversation context, without an empty backend turn.
+    if(!S.live)requestResponse();
   });
   status.addEventListener('click',()=>{if(window.VSTDPresenterControl()){if(S.on&&S.voice?.blocked())S.voice.retry();else S.on?stop('Vessica off'):start();}});
   status.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();status.click();}});
@@ -2638,6 +2641,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(msg)P().toast(msg);
   }
   function cleanup(){
+    clearTimeout(respTimer);respActive=false;respWanted=false;
     S.voice?.close();S.voice=null;
     const pc=S.pc,dc=S.dc,mic=S.mic,live=S.live;
     const destroy=()=>{try{dc&&dc.close();pc&&pc.close();mic&&mic.getTracks().forEach(t=>t.stop());}catch(_){}if(S.pc===pc)S.pc=S.dc=S.mic=null;};
@@ -2752,7 +2756,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 RULES:
 - Stay COMPLETELY SILENT unless the speaker says the wake word "Vessica" or explicitly wakes you with the conversation button — then call begin_conversation and respond briefly and helpfully, drawing on the slide context. When told to stop speaking / be quiet / thanked, call end_conversation and go silent again. A command to stop the simulation controls the flight instead.
 - A [PRESENTER VOICE CONTROL] wake or sleep message is an explicit presenter button press, equivalent to "Vessica" or "that's all" respectively. Call begin_conversation on wake and end_conversation on sleep. On sleep, do not give a spoken acknowledgement.
-- While silent, your ONLY actions are tool calls. Never produce audio without begin_conversation.
+- Wake and sleep control speech only. While the session is started, execute explicit navigation and highlighting commands immediately whether awake or silently listening. Never wait for a wake word, button toggle, or spoken acknowledgement to execute them. While silent, your ONLY actions are tool calls. Never produce audio without begin_conversation.
 - Advance slides with next_slide when the speaker finishes the current slide's material and begins the next slide's opening idea. Be conservative — never advance mid-thought. Obey explicit commands ("next slide", "go back", "go to slide 12") immediately via tools.
 - Use highlight(phrase) when the speaker dwells on a specific non-title element visible on the slide; clear_highlight when they move on. Never highlight the slide title. A chart is highlightable when the speaker's topic relates to its accessible description or one of its labels; use the corresponding verbatim highlightable phrase and the whole chart will glow.
 - LIVE EDITING (only after the wake word or conversation button, in conversation): the speaker may ask you to change the slide — "change X to Y" → edit_text; "retitle this…" → set_slide_title; "add a bullet…" → add_bullet; "remove …" → remove_element. Confirm briefly aloud. For big asks (redesign, new image, restructure) use note_edit_request and say it's queued for the redesign pass.
@@ -2791,8 +2795,8 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
     if(!/delta|buffer|transcript|\.added|\.created|rate_limits/.test(m.type))console.log('vessica evt:',m.type,m.name||'',(m.response&&m.response.status)||'');
     if(m.type==='response.done'&&m.response&&m.response.status==='failed')console.warn('vessica response FAILED:',JSON.stringify(m.response.status_details||m.response).slice(0,400));
     if(m.type==='session.updated')console.log('vessica session updated ok — tools registered:',(m.session&&m.session.tools&&m.session.tools.length)||0);
-    if(m.type==='response.created')respActive=true;
-    if(m.type==='response.done'){if(window.__vreportOpenAIUsage)window.__vreportOpenAIUsage(m.response,'realtime');respDone();}
+    if(!S.live&&m.type==='response.created')respActive=true;
+    if(m.type==='response.done'){if(window.__vreportOpenAIUsage)window.__vreportOpenAIUsage(m.response,'realtime');if(!S.live)respDone();}
     if(m.type==='response.function_call_arguments.done'){
       let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
       runTool(m.name,args,m.call_id);
@@ -2877,19 +2881,20 @@ ${(window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents upl
       return 'noted for the agent redesign pass';
     }catch(e){return 'failed to note: '+e.message;}
   }
-  /* single-flight response scheduler: the realtime API rejects
+  /* Local Realtime single-flight response scheduler: the realtime API rejects
      response.create while another response is active — with async tools,
-     inbound pushes and VAD all racing, collisions wedge the session. Every
-     response request goes through here instead. */
-  let respActive=false,respWanted=false;
+     inbound pushes and VAD all racing, collisions wedge the session. Live continuations
+     bypass this queue because delegated work is independent of speech. */
+  let respActive=false,respWanted=false,respTimer;
   function requestResponse(){
+    if(S.live){send({type:'response.create'});return;}
     if(respActive){respWanted=true;return;}
     respActive=true;
     send({type:'response.create'});
   }
   function respDone(){
     respActive=false;
-    if(respWanted){respWanted=false;setTimeout(requestResponse,300);}
+    if(respWanted){respWanted=false;respTimer=setTimeout(requestResponse,300);}
   }
     const VTOOLS={audience_ask:1,call_person:1,send_sms:1,send_email:1,web_search:1,run_code:1,kb_read:1,tasks_create:1,tasks_add:1,tasks_check:1,tasks_list:1,check_inbox:1,display_render:1,display_append:1,display_clear:1};
   const CTOOLS={open_companion:1,edit_companion:1,set_companion_section:1,append_companion_section:1};

@@ -16,7 +16,7 @@
       return {answer:result.transport.sdp,adapter:this.adapter(dc,true)};
     },
     adapter(dc,relay=false){
-      let ready=false,closed=false,closing=false,active=false,wanted=false,finished;
+      let ready=false,closed=false,closing=false,finished;
       const queue=[],calls=new Set(),done=new Promise(r=>finished=r);
       let pollTimer,failures=0,configuration=Promise.resolve();
       const dispatch=event=>dc.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(event)}));
@@ -48,7 +48,11 @@
           else raw({type:'session.thinking.append',delegation_id:null,content:(event.item.content||[]).map(x=>x.text||'').join('\n').slice(0,1400)});
           return;
         }
-        if(event.type==='response.create'){if(active){wanted=true;return;}if(relay)configuration.then(()=>raw({type:'response.create'}));else raw({type:'response.create'});return;}
+        // Live manages delegation independently of speech. Return tool results
+        // and continue immediately; a Realtime-style busy queue can deadlock
+        // waiting for the very continuation it has held back. Context updates
+        // are serialized separately and must not hold completed tool results.
+        if(event.type==='response.create'){raw({type:'response.create'});return;}
         raw(event);
       }
       return {send,
@@ -57,12 +61,12 @@
           if(message.type==='session.closed'){closed=true;finished();return {type:'live.closed'};}
           if(message.type==='response.event'){
             const event=message.event;
-            if(event.type==='response.created'){active=true;return {type:'response.created'};}
+            if(event.type==='response.created')return {type:'response.created'};
             if(event.type==='response.output_item.done'&&event.item?.type==='function_call'&&!calls.has(event.item.call_id)){
               calls.add(event.item.call_id);return {...event.item,type:'response.function_call_arguments.done'};
             }
             if(event.type==='response.completed'||event.type==='response.failed'||event.type==='response.incomplete'){
-              active=false;if(wanted){wanted=false;raw({type:'response.create'});}return {type:'response.done',response:{status:event.type==='response.completed'?'completed':'failed'}};
+              return {type:'response.done',response:{status:event.type==='response.completed'?'completed':'failed'}};
             }
             return null;
           }
