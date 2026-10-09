@@ -68,6 +68,12 @@ func TestLiveTransportAuthenticatedRelay(t *testing.T) {
  adapter.send({type:'conversation.item.create',item:{type:'function_call_output',call_id:'call_relay',output:'advanced'}});
  adapter.send({type:'response.create'});
  assert.deepEqual(sent.slice(-2).map(event=>event.type),['response.item.create','response.create'],'pending slide context must not block a completed action result');
+ adapter.send({type:'session.update',session:{instructions:'intermediate page',tools:[]}});
+ adapter.send({type:'session.update',session:{instructions:'latest page',tools:[]}});
+ finishContext();
+ await new Promise(resolve=>setImmediate(resolve));
+ const contexts=requests.filter(([path])=>path==='/api/live/context').map(([,options])=>JSON.parse(options.body).instructions);
+ assert.deepEqual(contexts,['current slide','latest page'],'rapid page changes must discard superseded queued context');
  finishContext();
  adapter.event({type:'session.closed'});await adapter.close();
 })().catch(err=>{console.error(err);process.exit(1);});`

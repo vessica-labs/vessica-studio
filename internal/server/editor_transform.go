@@ -277,7 +277,7 @@ func transformRoute(method, p, deck string) bool {
 	suffix := strings.TrimPrefix(p, prefix)
 	parts := strings.Split(suffix, "/")
 	if method == "GET" {
-		return suffix == "share-qr.png" || suffix == "status" || len(parts) == 2 && (parts[0] == "slide" && studio.ValidSlideID(parts[1]) || parts[0] == "source")
+		return suffix == "share-qr.png" || suffix == "status" || suffix == "voice-context" || len(parts) == 2 && (parts[0] == "slide" && studio.ValidSlideID(parts[1]) || parts[0] == "source")
 	}
 	if method == "POST" && suffix == "slides" {
 		return true

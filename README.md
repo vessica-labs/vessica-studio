@@ -1500,6 +1500,23 @@ not start a microphone session when Vessica is off.
 Wake and sleep control speech only: explicit navigation and highlighting commands
 execute while Vessica is connected, whether awake or silently listening.
 
+Presenter voice reads the current page number and title from the player, using
+the same numbering as navigation (parked slides have no page number). It loads
+the selected slide's full companion Markdown and a presentation-wide table of
+contents with page numbers, titles, and topic summaries. Ask “what page are we
+on?”, “present this page”, or “go to the page about decision rights”. The agent
+reads fresh context before answering these questions or selecting a topic match;
+manual navigation, voice navigation, and companion saves refresh the context.
+GPT-Live receives a concise selection update as well as the backend context.
+
+`GET /api/deck/{deck}/voice-context?slide={id}` returns `current` (page, title,
+summary, full `companion`) and `pages` (ID, page, title, summary, hidden/parked
+flags). It requires presenter access and is not cached. Hidden pages retain
+their numbers; parked pages use `0`. Companions are loaded through this API,
+never embedded in exported presentation HTML. Exceptionally large context is
+marked explicitly in the initial prompt and remains available in full through
+the agent's `get_presentation_context` tool.
+
 Playback is checked explicitly. If the browser blocks sound, click the Vessica
 status pill to enable audio without ending the session. Hosts embedding the
 presenter across origins must delegate `autoplay` alongside `microphone` permission.

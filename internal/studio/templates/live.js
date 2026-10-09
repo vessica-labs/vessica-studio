@@ -18,7 +18,7 @@
     adapter(dc,relay=false){
       let ready=false,closed=false,closing=false,finished;
       const queue=[],calls=new Set(),done=new Promise(r=>finished=r);
-      let pollTimer,failures=0,configuration=Promise.resolve();
+      let pollTimer,failures=0,configuring=false,pendingConfiguration=null,lastConfiguration='';
       const dispatch=event=>dc.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(event)}));
       async function poll(){
         if(closing)return;
@@ -32,15 +32,27 @@
       }
       if(relay)pollTimer=setTimeout(poll,0);
       function raw(event){if(dc.readyState==='open')dc.send(JSON.stringify(event));}
+      async function configureLatest(){
+        if(configuring)return;
+        configuring=true;
+        try{
+          while(pendingConfiguration&&!closing){
+            const body=pendingConfiguration;pendingConfiguration=null;
+            const response=await fetch('/api/live/context',{method:'POST',headers:{'Content-Type':'application/json'},body,signal:AbortSignal.timeout(5000)});
+            if(!response.ok)throw new Error('Live context update failed');
+          }
+        }catch(_){dispatch({type:'error',error:{message:'Live context update failed'}});raw({type:'session.close'});}
+        finally{configuring=false;}
+      }
       function send(event){
         if(closing)return;
         if(!ready){queue.push(event);return;}
         if(event.type==='session.update'){
           const session=event.session;
-          if(relay){configuration=configuration.then(async()=>{
-            const response=await fetch('/api/live/context',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools}),signal:AbortSignal.timeout(5000)});
-            if(!response.ok)throw new Error('Live context update failed');
-          }).catch(()=>{dispatch({type:'error',error:{message:'Live context update failed'}});raw({type:'session.close'});});}
+          if(relay){
+            const body=JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools});
+            if(body!==lastConfiguration){lastConfiguration=body;pendingConfiguration=body;configureLatest();}
+          }
           else raw({type:'session.update',session:{delegation:{responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
         }
         if(event.type==='conversation.item.create'){
