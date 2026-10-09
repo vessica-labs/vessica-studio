@@ -80,7 +80,7 @@ They retain immutable source revision metadata for `release-build`. Verify the
 downloaded binary against the release checksums before running it. The Go
 requirement below applies when building from source.
 
-- [Go 1.26 or newer](https://go.dev/doc/install); the module selects patched Go 1.26.8 automatically when needed
+- [Go 1.26 or newer](https://go.dev/doc/install); the module selects patched Go 1.26.9 automatically when needed
 - Git, if you want version control or hosted content sync
 
 Optional tools unlock additional features:
