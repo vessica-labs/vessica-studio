@@ -124,6 +124,11 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 	if err != nil {
 		return "", err
 	}
+	avatarJS, err := templates.ReadFile("templates/avatar.js")
+	if err != nil {
+		return "", err
+	}
+	player = []byte(strings.Replace(string(player), "/*VSTD:AVATAR*/", string(avatarJS), 1))
 	liveJS, err := templates.ReadFile("templates/live.js")
 	if err != nil {
 		return "", err
