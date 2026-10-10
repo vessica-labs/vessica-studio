@@ -36,6 +36,16 @@ func TestPresentationContextTracksSelectionAndCompanions(t *testing.T) {
  const failing=ctx.refresh();pending[3].resolve({ok:false,status:503});await failing;
  assert.equal(ctx.snapshot().current.companion,null);assert.match(ctx.snapshot().error,/503/);
  const retry=ctx.read();answer(4,'a','Recovered companion');assert.equal((await retry).current.companion,'Recovered companion');
+ // An automatic configuration refresh must wait for a newer tool read of
+ // the same page, rather than publishing a transient null companion.
+ let settled=false;
+ const automatic=ctx.refresh().then(value=>{settled=true;return value;});
+ const tool=ctx.read();
+ answer(5,'a','Older companion');await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(settled,false,'obsolete refresh returned before the latest context loaded');
+ answer(6,'a','Latest companion');
+ assert.equal((await automatic).current.companion,'Latest companion');
+ assert.equal((await tool).current.companion,'Latest companion');
  // Very large decks must not produce an invalid Live offer or silently lose pages.
  slides=Array.from({length:1000},(_,i)=>slide('page'+i,'Long title '+i+'x'.repeat(160)));current=slides[0];
  const huge=ctx.prompt(6000);assert(huge.length<=6000);assert.match(huge,/toc_requires_tool/);

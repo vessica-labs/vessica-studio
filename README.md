@@ -1507,6 +1507,8 @@ contents with page numbers, titles, and topic summaries. Ask “what page are we
 on?”, “present this page”, or “go to the page about decision rights”. The agent
 reads fresh context before answering these questions or selecting a topic match;
 manual navigation, voice navigation, and companion saves refresh the context.
+Concurrent voice context reads wait for the latest selected-page refresh before
+updating the agent, preserving the companion during navigation and saved edits.
 GPT-Live receives a concise selection update as well as the backend context.
 
 `GET /api/deck/{deck}/voice-context?slide={id}` returns `current` (page, title,
