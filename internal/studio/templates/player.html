@@ -2500,6 +2500,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   setTimeout(ui,600);
 })();
 
+/*VSTD:AVATAR*/
 /*VSTD:LIVE*/
 
 /* ================= Vessica realtime layer (Phase 3 spike) =================
@@ -2571,9 +2572,10 @@ document.addEventListener('DOMContentLoaded',()=>{
       S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
       S.pc=new RTCPeerConnection();
       S.audio=new Audio();
-      const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;S.buttonConversation=null;}});
+      const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;S.buttonConversation=null;if(talking)S.avatar?.begin();else S.avatar?.end();}});
+      S.avatar=window.VSTDAvatar?.create({route:value=>voice.route(value),unavailable:()=>P().toast('Avatar unavailable · Vessica voice continues')});
       S.talking=false;
-      S.pc.ontrack=e=>{voice.attach(e.streams[0]||new MediaStream([e.track]));};
+      S.pc.ontrack=e=>{const stream=e.streams[0]||new MediaStream([e.track]);voice.attach(stream);S.avatar?.attach(stream);};
       S.mic.getTracks().forEach(t=>S.pc.addTrack(t,S.mic));
       S.dc=S.pc.createDataChannel('oai-events');
       S.dc.onmessage=onEvent;
@@ -2649,6 +2651,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     configurationGeneration++;lastFrontend='';
     clearTimeout(respTimer);respActive=false;respWanted=false;
     S.voice?.close();S.voice=null;
+    S.avatar?.close();S.avatar=null;
     const pc=S.pc,dc=S.dc,mic=S.mic,live=S.live;
     const destroy=()=>{try{dc&&dc.close();pc&&pc.close();mic&&mic.getTracks().forEach(t=>t.stop());}catch(_){}if(S.pc===pc)S.pc=S.dc=S.mic=null;};
     if(live){S.minted=false;live.close().finally(()=>{if(S.live===live)S.live=null;destroy();});}
@@ -2781,7 +2784,7 @@ ${((window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents up
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
     // GPT-Live can answer without delegating. Its input transcript, never its
     // output transcript, opens the speaker independently of backend tools.
-    if(S.live&&m.type==='session.input_transcript.delta')S.voice?.input(m.delta);
+    if(S.live&&m.type==='session.input_transcript.delta'){S.avatar?.interrupt();S.voice?.input(m.delta);}
     if(S.live){const started=m.type==='session.started';m=S.live.event(m);if(started)configure();if(!m)return;}
     if(m.type==='live.closed'){S.intentional=true;S.on=false;cleanup();setState('','Vessica session ended · press V to start again');return;}
     if(!/delta|buffer|transcript|\.added|\.created|rate_limits/.test(m.type))console.log('vessica evt:',m.type,m.name||'',(m.response&&m.response.status)||'');
@@ -2793,6 +2796,7 @@ ${((window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents up
       let args={};try{args=JSON.parse(m.arguments||'{}');}catch(_){}
       runTool(m.name,args,m.call_id);
     }
+    if(m.type==='input_audio_buffer.speech_started')S.avatar?.interrupt();
     if(m.type==='output_audio_buffer.started'&&S.talking&&!S.voice?.blocked())setState('speaking','Vessica speaking — say "that\'s all" or Shift+V to end');
     if(m.type==='output_audio_buffer.stopped'&&S.on&&S.talking&&!S.voice?.blocked())setState('listening','Vessica in conversation · listening');
     if(m.type==='error')console.warn('vessica ERROR:',JSON.stringify(m.error||m).slice(0,500));

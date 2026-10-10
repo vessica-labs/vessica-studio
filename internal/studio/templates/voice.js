@@ -3,7 +3,7 @@
 (function(){
   window.VSTDVoice={
     create(audio,callbacks){
-      let talking=false,blocked=false,closed=false,attempt=0,input='',lastInput=0;
+      let talking=false,blocked=false,closed=false,attempt=0,input='',lastInput=0,routed=false;
       audio.autoplay=true;audio.muted=true;
       function state(){callbacks.state('listening',talking?'Vessica in conversation · listening':'Vessica listening · say "Vessica" or Shift+V to talk');}
       function play(){
@@ -23,7 +23,7 @@
       }
       function begin(){
         if(closed||talking)return;
-        input='';talking=true;audio.muted=false;callbacks.conversation(true);
+        input='';talking=true;audio.muted=routed;callbacks.conversation(true);
         state();play();
       }
       function end(){
@@ -33,6 +33,7 @@
       return {
         attach(stream){if(closed)return;audio.srcObject=stream;play();},
         begin,end,
+        route(value){routed=!!value;audio.muted=!talking||routed;},
         talking:()=>talking,
         blocked:()=>blocked,
         retry(){if(!closed&&talking){blocked=false;state();play();}},

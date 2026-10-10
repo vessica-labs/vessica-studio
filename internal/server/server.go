@@ -25,6 +25,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/vessica-labs/vessica-studio/internal/avatar"
 	"github.com/vessica-labs/vessica-studio/internal/catalog"
 	"github.com/vessica-labs/vessica-studio/internal/collab"
 	"github.com/vessica-labs/vessica-studio/internal/oai"
@@ -42,9 +43,11 @@ const (
 )
 
 type Server struct {
-	St   *studio.Studio
-	Mode Mode
-	OAI  *oai.Client
+	avatarOnce sync.Once
+	avatars    *avatar.Manager
+	St         *studio.Studio
+	Mode       Mode
+	OAI        *oai.Client
 
 	mu         sync.Mutex
 	subs       map[chan string]bool
@@ -232,6 +235,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("POST /api/deck/{deck}/slide/{id}/detach-link", s.editOnly(s.handleDetachSlideLink))
 	mux.HandleFunc("POST /api/agent/cap", s.editOnly(s.handleAgentCap))
 	mux.HandleFunc("POST /api/realtime/token", s.handleRealtimeToken)
+	mux.HandleFunc("POST /api/avatar/{action}", s.handleAvatar)
 
 	// Phase 4: auth, share links, live-follow, health
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) { w.Write([]byte("ok")) })

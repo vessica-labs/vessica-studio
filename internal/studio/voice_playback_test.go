@@ -37,7 +37,8 @@ func TestVoicePlaybackWakeAndRecovery(t *testing.T) {
  assert.equal(voice.talking(),true);assert.equal(voice.blocked(),true);assert.match(states.at(-1)[1],/click.*sound/i);
  rejectPlayback=false;voice.retry();await flush();assert.equal(voice.blocked(),false);assert.equal(audio.paused,false);
  assert.equal(states.at(-1)[0],'listening');
- voice.end();assert.equal(audio.muted,true);assert.equal(voice.talking(),false);
+ voice.route(true);assert.equal(audio.muted,true,'avatar owns synchronized playback');voice.route(false);assert.equal(audio.muted,false);
+ voice.end();voice.route(false);assert.equal(audio.muted,true);assert.equal(voice.talking(),false);
  let settle;audio.play=()=>new Promise(resolve=>settle=resolve);
  voice.begin();voice.end();settle();await flush();assert.equal(audio.muted,true);assert.equal(voice.talking(),false);
  voice.close();assert.equal(audio.srcObject,null);assert.equal(audio.paused,true);assert.equal(pauses,1);
@@ -88,6 +89,7 @@ Object.defineProperty(global,'navigator',{value:{mediaDevices:{getUserMedia:asyn
 let blocked=false;
 global.Audio=class {constructor(){audio.push(this);}play(){return blocked?Promise.reject(new Error('NotAllowedError')):Promise.resolve();}pause(){this.paused=true;}};
 global.RTCPeerConnection=class {constructor(){pcs.push(this);this.iceGatheringState='complete';}addTrack(){}createDataChannel(){return this.dc=new EventTarget();}async createOffer(){return {sdp:'offer'};}async setLocalDescription(offer){this.localDescription=offer;}async setRemoteDescription(){this.ontrack({streams:[{id:'remote'}]});}close(){}};
+const avatarCalls=[];let avatarCallbacks;global.VSTDAvatar={create(callbacks){avatarCallbacks=callbacks;return {attach(){avatarCalls.push('attach');},begin(){avatarCalls.push('wake');},end(){avatarCalls.push('sleep');},interrupt(){avatarCalls.push('interrupt');},close(){assert.equal(audio.at(-1).muted,true,'mute ordinary voice before destroying avatar playback');avatarCalls.push('close');}};}};
 let liveMode=true;
 const requests=[];let companionText='## Talk track\nFull companion narrative beyond HTML notes. '+ 'Detailed narrative. '.repeat(100);
 global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:true,text:async()=>'answer',json:async()=>path==='/api/realtime/token'?(liveMode?{protocol:'live'}:{value:'test-secret'}):path==='/api/live/session'?{session:{id:'live_1'},transport:{sdp:'answer'}}:path.includes('/voice-context?')?{current:{id:decodeURIComponent(path.split('slide=')[1]),companion:companionText},pages:slides.map(el=>({id:el.id,summary:el.id==='0030-governance'?'Accountability and decision rights':'Costs and workforce'}))}:{events:[]}};};
@@ -98,7 +100,7 @@ global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:t
  listeners['vstd:conversation-toggle']();await tick();assert.equal(pcs.length,0,'conversation shortcut must not start a microphone session');assert.match(toasts.at(-1),/press V/i);
  listeners['vstd:vtoggle']();await tick();const first=audio.at(-1),dc=pcs.at(-1).dc;
  dc.readyState='open';dc.send=s=>sent.push(JSON.parse(s));dc.onopen();emit({type:'session.started'});await tick();
- assert.equal(first.muted,true);
+ assert.equal(first.muted,true);assert.deepEqual(avatarCalls,['attach']);
  const offer=JSON.parse(requests.find(r=>r.path==='/api/live/session').options.body);
  assert(offer.instructions.length<40000);assert(offer.instructions.includes(JSON.stringify(companionText).slice(1,-1)));assert(offer.instructions.includes('Accountability and decision rights'));assert(offer.tools.some(tool=>tool.name==='get_presentation_context'));
  assert(sent.some(m=>m.type==='session.thinking.append'&&m.content.includes('LATEST PRESENTER SELECTION')&&m.content.includes('\"page\":1')));
@@ -114,7 +116,8 @@ global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:t
  const context=JSON.parse(await global.__vpres.run('get_presentation_context',{}));assert.equal(context.current.page,2);assert.equal(context.current.title,'Costs');assert.equal(context.current.companion,companionText);assert.equal(context.pages.find(page=>page.id==='0030-governance').page,3);
  companionText='## Talk track\nNew saved narrative';global.__vreconf();await tick();assert(JSON.parse(requests.filter(r=>r.path==='/api/live/context').at(-1).options.body).instructions.includes(JSON.stringify(companionText).slice(1,-1)),'saved companion refreshes backend');
  before=creates();
- listeners['vstd:conversation-toggle']();await tick();assert.equal(first.muted,false);assert.equal(global.__vlive(),true);
+ listeners['vstd:conversation-toggle']();await tick();assert.equal(first.muted,false);assert.equal(global.__vlive(),true);assert.equal(avatarCalls.at(-1),'wake');
+ avatarCallbacks.route(true);assert.equal(first.muted,true);avatarCallbacks.route(false);assert.equal(first.muted,false);
  assert.equal(creates(),before,'button wake must not start an empty backend response');
  navigate(3);await tick();assert.deepEqual(navigation,[2,3]);assert.equal(creates(),before+1,'awake navigation continues without sleep and re-wake');
  backend('response.completed');
@@ -136,7 +139,7 @@ global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:t
  emit({type:'session.input_transcript.delta',delta:'Stop the simulation.'});assert.equal(first.muted,false);
  emit({type:'session.input_transcript.delta',delta:'Be quiet.'});assert.equal(first.muted,true);
  global.__vendRealtimeSession=async()=>{};emit({type:'session.closed'});await tick();assert.equal(first.paused,true);assert.equal(first.srcObject,null);
- assert.equal(global.__vlive(),false);
+ assert.equal(global.__vlive(),false);assert(avatarCalls.includes('close'),'voice teardown destroys renderer controller');
  // Local Realtime retains its tool-controlled wake path and a fresh muted speaker.
  liveMode=false;
  listeners['vstd:vtoggle']();await tick();const second=audio.at(-1),dc2=pcs.at(-1).dc;
