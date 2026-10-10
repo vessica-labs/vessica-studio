@@ -218,6 +218,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/deck/{deck}/export.pptx", s.handleExportPPTX)
 	mux.HandleFunc("GET /api/deck/{deck}/print.html", s.handlePrintHTML)
 	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
+	mux.HandleFunc("GET /api/deck/{deck}/voice-context", s.handleVoiceContext)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion", s.editOnly(s.handlePutFullCompanion))
@@ -411,6 +412,20 @@ func (s *Server) handleDeck(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.ServeFile(w, r, out)
+}
+
+func (s *Server) handleVoiceContext(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
+	if !s.canView(r, r.PathValue("deck")) || !s.isPresenter(r) {
+		jsonErr(w, fmt.Errorf("presenter access required"), http.StatusForbidden)
+		return
+	}
+	ctx, err := s.St.VoiceContext(r.PathValue("deck"), r.URL.Query().Get("slide"))
+	if err != nil {
+		jsonErr(w, err, http.StatusNotFound)
+		return
+	}
+	writeJSON(w, ctx)
 }
 
 func (s *Server) handleGetSlide(w http.ResponseWriter, r *http.Request) {

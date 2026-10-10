@@ -71,35 +71,48 @@ func TestPlayerLiveVoiceWithoutBackendWakeTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	presentation, err := templates.ReadFile("templates/presentation-context.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	script := `
 const assert=require('node:assert/strict');global.window=global;
 global.location={protocol:'https:'};const listeners={},clicks={},audio=[],pcs=[],sent=[],toasts=[],navigation=[];let presenter=true;
 const label={textContent:''},status={style:{},className:'',classList:{add(){}},addEventListener:(name,fn)=>clicks[name]=fn};
-const slide={querySelector:()=>({textContent:'Demo'}),querySelectorAll:()=>[],hasAttribute:()=>false};
-global.document={getElementById:id=>id==='vstatus'?status:label,addEventListener:(name,fn)=>listeners[name]=fn,querySelectorAll:()=>[slide]};
+const makeSlide=(id,title,parked=false)=>({id,innerText:title,dataset:{vstd:id},querySelector:()=>({textContent:title}),querySelectorAll:()=>[],hasAttribute:attr=>parked&&attr==='data-parked'});
+const slides=[makeSlide('0010-a','Demo'),makeSlide('0015-parked','Unused',true),makeSlide('0020-costs','Costs'),makeSlide('0030-governance','Operating model'),makeSlide('0040-recovery','Recovery')];let slide=slides[0];
+global.document={getElementById:id=>id==='vstatus'?status:label,addEventListener:(name,fn)=>listeners[name]=fn,querySelectorAll:()=>slides};
 global.VSTD={deck:'demo',title:'Demo'};global.VSTDPresenterControl=()=>presenter;
-global.VSTDP={slideEl:()=>slide,cur:()=>0,count:1,toast:t=>toasts.push(t),gotoNum:n=>navigation.push(n),step:n=>navigation.push(n)};
+global.VSTDP={slideEl:()=>slide,cur:()=>slides.indexOf(slide),count:slides.length,toast:t=>toasts.push(t),gotoNum:n=>{navigation.push(n);slide=slides.filter(el=>!el.hasAttribute('data-parked'))[n-1]||slide;listeners['vstd:slide']();},step:n=>navigation.push(n)};
 Object.defineProperty(global,'navigator',{value:{mediaDevices:{getUserMedia:async()=>({getTracks:()=>[{stop(){}}]})}},configurable:true});
 let blocked=false;
 global.Audio=class {constructor(){audio.push(this);}play(){return blocked?Promise.reject(new Error('NotAllowedError')):Promise.resolve();}pause(){this.paused=true;}};
 global.RTCPeerConnection=class {constructor(){pcs.push(this);this.iceGatheringState='complete';}addTrack(){}createDataChannel(){return this.dc=new EventTarget();}async createOffer(){return {sdp:'offer'};}async setLocalDescription(offer){this.localDescription=offer;}async setRemoteDescription(){this.ontrack({streams:[{id:'remote'}]});}close(){}};
 let liveMode=true;
-global.fetch=async(path)=>({ok:true,text:async()=>'answer',json:async()=>path==='/api/realtime/token'?(liveMode?{protocol:'live'}:{value:'test-secret'}):path==='/api/live/session'?{session:{id:'live_1'},transport:{sdp:'answer'}}:{events:[]}});
-` + string(voice) + string(live) + source[start:end] + `
+const requests=[];let companionText='## Talk track\nFull companion narrative beyond HTML notes. '+ 'Detailed narrative. '.repeat(100);
+global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:true,text:async()=>'answer',json:async()=>path==='/api/realtime/token'?(liveMode?{protocol:'live'}:{value:'test-secret'}):path==='/api/live/session'?{session:{id:'live_1'},transport:{sdp:'answer'}}:path.includes('/voice-context?')?{current:{id:decodeURIComponent(path.split('slide=')[1]),companion:companionText},pages:slides.map(el=>({id:el.id,summary:el.id==='0030-governance'?'Accountability and decision rights':'Costs and workforce'}))}:{events:[]}};};
+` + string(voice) + string(live) + string(presentation) + source[start:end] + `
 (async()=>{
  const tick=()=>new Promise(resolve=>setImmediate(resolve));
  const emit=m=>pcs.at(-1).dc.onmessage({data:JSON.stringify(m)});
  listeners['vstd:conversation-toggle']();await tick();assert.equal(pcs.length,0,'conversation shortcut must not start a microphone session');assert.match(toasts.at(-1),/press V/i);
  listeners['vstd:vtoggle']();await tick();const first=audio.at(-1),dc=pcs.at(-1).dc;
- dc.readyState='open';dc.send=s=>sent.push(JSON.parse(s));dc.onopen();emit({type:'session.started'});
+ dc.readyState='open';dc.send=s=>sent.push(JSON.parse(s));dc.onopen();emit({type:'session.started'});await tick();
  assert.equal(first.muted,true);
+ const offer=JSON.parse(requests.find(r=>r.path==='/api/live/session').options.body);
+ assert(offer.instructions.length<40000);assert(offer.instructions.includes(JSON.stringify(companionText).slice(1,-1)));assert(offer.instructions.includes('Accountability and decision rights'));assert(offer.tools.some(tool=>tool.name==='get_presentation_context'));
+ assert(sent.some(m=>m.type==='session.thinking.append'&&m.content.includes('LATEST PRESENTER SELECTION')&&m.content.includes('\"page\":1')));
  const creates=()=>sent.filter(m=>m.type==='response.create').length;
  const backend=(type,extra={})=>emit({type:'response.event',event:{type,...extra}});
  const navigate=number=>{backend('response.created');backend('response.output_item.done',{item:{type:'function_call',name:'goto_slide',call_id:'nav_'+number,arguments:JSON.stringify({number})}});};
  let before=creates();navigate(2);await tick();
  assert.deepEqual(navigation,[2],'silent listening executes navigation immediately');assert.equal(first.muted,true);
+ assert(sent.some(m=>m.type==='session.thinking.append'&&m.content.includes('\"page\":2')),'frontend receives fresh page selection');
+ const navResult=sent.find(m=>m.type==='response.item.create'&&m.item.call_id==='nav_2');assert.equal(JSON.parse(navResult.item.output).title,'Costs');
  assert.equal(creates(),before+1,'silent navigation result continues before backend completion');
  backend('response.completed');
+ const context=JSON.parse(await global.__vpres.run('get_presentation_context',{}));assert.equal(context.current.page,2);assert.equal(context.current.title,'Costs');assert.equal(context.current.companion,companionText);assert.equal(context.pages.find(page=>page.id==='0030-governance').page,3);
+ companionText='## Talk track\nNew saved narrative';global.__vreconf();await tick();assert(JSON.parse(requests.filter(r=>r.path==='/api/live/context').at(-1).options.body).instructions.includes(JSON.stringify(companionText).slice(1,-1)),'saved companion refreshes backend');
  before=creates();
  listeners['vstd:conversation-toggle']();await tick();assert.equal(first.muted,false);assert.equal(global.__vlive(),true);
  assert.equal(creates(),before,'button wake must not start an empty backend response');
