@@ -1,7 +1,7 @@
 /* Presenter context is read on demand; companion notes never enter exported HTML. */
 (function(){
   window.VSTDPresentationContext={create({deck,current,slides,fetch:request=window.fetch.bind(window)}){
-    let generation=0,loaded=null,error=null;
+    let generation=0,loaded=null,error=null,latest=null;
     const summaries=new Map();
     const slideID=el=>el?.dataset?.vstd||'';
     const text=value=>String(value||'').trim().replace(/\s+/g,' ');
@@ -19,7 +19,7 @@
       const sequence=++generation,id=slideID(current());
       loaded=null;error=null;
       if(!id){error='No selected slide ID';return snapshot();}
-      try{
+      const task=(async()=>{try{
         const response=await request('/api/deck/'+encodeURIComponent(deck)+'/voice-context?slide='+encodeURIComponent(id),{cache:'no-store',signal:AbortSignal.timeout(15000)});
         if(!response.ok)throw new Error('Presentation context HTTP '+response.status);
         const result=await response.json();
@@ -27,7 +27,12 @@
         if(sequence===generation&&slideID(current())===id){
           loaded=result;summaries.clear();result.pages.forEach(page=>summaries.set(page.id,page.summary));
         }
-      }catch(cause){if(sequence===generation)error=cause.message;}
+      }catch(cause){if(sequence===generation)error=cause.message;}})();
+      latest=task;
+      // Another selection/configuration/tool read may supersede this request.
+      // Await its work too so callers never publish the transient null state.
+      let waiting=task;
+      while(waiting){await waiting;if(waiting===latest)break;waiting=latest;}
       return snapshot();
     }
     async function read(){
