@@ -17,17 +17,21 @@ func TestAvatarWakeSleepAndFallback(t *testing.T) {
 	script := `global.window=global;global.crypto=require('node:crypto').webcrypto;` + string(source) + `
 (async()=>{
  const assert=require('node:assert/strict'),tick=()=>new Promise(r=>setImmediate(r));
- const actions=[],routes=[],sockets=[],rooms=[],surfaces=[];let onFrame,stops=0,captureStops=0,failures=0,resolveStart;
+ const stored=new Map();global.localStorage={getItem:k=>stored.get(k),setItem:(k,v)=>stored.set(k,v)};
+ assert.equal(VSTDAvatar.enabled(),false,'fresh browser defaults to direct voice');VSTDAvatar.saveEnabled(true);assert.equal(VSTDAvatar.enabled(),true);VSTDAvatar.saveEnabled(false);assert.equal(VSTDAvatar.enabled(),false);
+ global.localStorage={getItem(){throw Error('unavailable');},setItem(){throw Error('unavailable');}};assert.equal(VSTDAvatar.enabled(),false);VSTDAvatar.saveEnabled(true);
+ const actions=[],routes=[],sockets=[],rooms=[],surfaces=[];let onFrame,stops=0,captureStops=0,failures=0,loads=0,captures=0,resolveStart;
  class Socket {constructor(){sockets.push(this);this.readyState=1;this.bufferedAmount=0;this.sent=[];}send(x){this.sent.push(JSON.parse(x));}close(){this.closed=true;}}
  class Room {constructor(){rooms.push(this);this.events={};this.canPlaybackAudio=true;}on(name,fn){this.events[name]=fn;}async connect(){}async startAudio(){}disconnect(){this.closed=true;}}
  const sdk={Room,RoomEvent:{TrackSubscribed:'track',Disconnected:'disconnect',AudioPlaybackStatusChanged:'audio'},Track:{Kind:{Video:'video',Audio:'audio'}}};
  const make=()=>VSTDAvatar.create({route:x=>routes.push(x),unavailable:()=>failures++},{
-  load:async()=>sdk,WebSocket:Socket,
-  capture:async(_,fn)=>{onFrame=fn;return()=>captureStops++;},
+  load:async()=>{loads++;return sdk;},WebSocket:Socket,
+  capture:async(_,fn)=>{captures++;onFrame=fn;return()=>captureStops++;},
   surface:()=>{const s={video:{play:async()=>{}},audio:{append(){}},show(x){this.visible=x;},close(){this.closed=true;}};surfaces.push(s);return s;},
   request:async(action,id)=>{actions.push([action,id]);if(action==='stop'){stops++;return {};}
    if(action==='start')return new Promise(r=>resolveStart=()=>r({ws_url:'wss://media',livekit_url:'wss://room',livekit_client_token:'scoped'}));return {};}
  });
+ const disabled=make();disabled.setEnabled(false);disabled.attach({});disabled.begin();await tick();assert.equal(actions.length,0,'voice-only mode must not load/capture or allocate');assert.equal(loads,0);assert.equal(captures,0);assert.equal(captureStops,0);disabled.end();disabled.close();
  const avatar=make();avatar.attach({});await tick();assert.equal(actions.length,0,'listening must not allocate paid sessions');
  avatar.begin();avatar.begin();await tick();assert.equal(actions.filter(x=>x[0]==='start').length,1,'duplicate wake must not allocate twice');
  avatar.end();await tick();assert.equal(stops,1);assert.equal(captureStops,1);
@@ -35,11 +39,11 @@ func TestAvatarWakeSleepAndFallback(t *testing.T) {
  avatar.begin();await tick();resolveStart();await tick();
  const s=sockets.at(-1),room=rooms.at(-1);
  s.onmessage({data:JSON.stringify({type:'session.state_updated',state:'connected'})});
- const a={};room.events.track({kind:'video',attach(){}});room.events.track({kind:'audio',attach:()=>a});
+ const a={};room.events.track({kind:'video',attach(){}});
  const loud=new Int16Array(480).fill(5000),quiet=new Int16Array(480);
  onFrame(loud);assert(!routes.includes(true),'do not switch midway through direct voice');assert.equal(s.sent.length,0);
  for(let i=0;i<15;i++)onFrame(quiet);
- assert.equal(routes.at(-1),true);assert.equal(a.muted,false);assert.equal(surfaces.at(-1).visible,true);
+ assert.equal(routes.at(-1),true,'video and control must route without waiting for an audio track');room.events.track({kind:'audio',attach:()=>a});assert.equal(a.muted,false,'late audio track must play on the synchronized path');assert.equal(surfaces.at(-1).visible,true);
  assert.equal(s.sent.length,0,'idle silence must not open an utterance');
  for(let i=0;i<30;i++)onFrame(loud);
  assert.equal(s.sent.at(-1).type,'agent.speak');assert.equal(Buffer.from(s.sent.at(-1).audio,'base64').length,28800);
@@ -54,7 +58,7 @@ func TestAvatarWakeSleepAndFallback(t *testing.T) {
  onFrame(loud);avatar.interrupt();assert.equal(s.sent.at(-1).type,'agent.interrupt');
  const interrupted=s.sent.length;for(let i=0;i<40;i++)onFrame(loud);assert.equal(s.sent.length,interrupted,'discard old response after interruption');
  for(let i=0;i<15;i++)onFrame(quiet);for(let i=0;i<30;i++)onFrame(loud);assert.equal(s.sent.at(-1).type,'agent.speak','resume after an audio pause');
- room.events.disconnect();await tick();assert.equal(routes.at(-1),false);assert.equal(failures,1);assert.equal(room.closed,true);assert.equal(s.closed,true);assert.equal(surfaces.at(-1).closed,true);
+ avatar.setEnabled(false);await tick();assert.equal(routes.at(-1),false,'switch off restores direct voice immediately');assert.equal(room.closed,true);avatar.setEnabled(true);await tick();resolveStart();await tick();rooms.at(-1).events.disconnect();await tick();assert.equal(routes.at(-1),false);assert.equal(failures,1);assert.equal(room.closed,true);assert.equal(s.closed,true);assert.equal(surfaces.at(-1).closed,true);
  const sent=s.sent.length;onFrame(loud);assert.equal(s.sent.length,sent,'no hidden audio after session disposal');
  avatar.end();avatar.close();
  const before=actions.filter(x=>x[0]==='start').length;let failed=false;

@@ -77,30 +77,36 @@ func TestPlayerLiveVoiceWithoutBackendWakeTool(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := `
-const assert=require('node:assert/strict');global.window=global;
+const assert=require('node:assert/strict');global.window=global;const preferenceMessages=[];let preferenceListener;global.parent={postMessage:m=>preferenceMessages.push(m)};global.addEventListener=(name,fn)=>{if(name==='message')preferenceListener=fn;};
 global.location={protocol:'https:'};const listeners={},clicks={},audio=[],pcs=[],sent=[],toasts=[],navigation=[];let presenter=true;
+let savedAvatar=false;const avatarButton={setAttribute(k,v){this[k]=v;}};
 const label={textContent:''},status={style:{},className:'',classList:{add(){}},addEventListener:(name,fn)=>clicks[name]=fn};
 const makeSlide=(id,title,parked=false)=>({id,innerText:title,dataset:{vstd:id},querySelector:()=>({textContent:title}),querySelectorAll:()=>[],hasAttribute:attr=>parked&&attr==='data-parked'});
 const slides=[makeSlide('0010-a','Demo'),makeSlide('0015-parked','Unused',true),makeSlide('0020-costs','Costs'),makeSlide('0030-governance','Operating model'),makeSlide('0040-recovery','Recovery')];let slide=slides[0];
-global.document={getElementById:id=>id==='vstatus'?status:label,addEventListener:(name,fn)=>listeners[name]=fn,querySelectorAll:()=>slides};
+global.document={getElementById:id=>id==='vstatus'?status:id==='hudAvatar'?avatarButton:label,addEventListener:(name,fn)=>listeners[name]=fn,querySelectorAll:()=>slides};
 global.VSTD={deck:'demo',title:'Demo'};global.VSTDPresenterControl=()=>presenter;
 global.VSTDP={slideEl:()=>slide,cur:()=>slides.indexOf(slide),count:slides.length,toast:t=>toasts.push(t),gotoNum:n=>{navigation.push(n);slide=slides.filter(el=>!el.hasAttribute('data-parked'))[n-1]||slide;listeners['vstd:slide']();},step:n=>navigation.push(n)};
 Object.defineProperty(global,'navigator',{value:{mediaDevices:{getUserMedia:async()=>({getTracks:()=>[{stop(){}}]})}},configurable:true});
 let blocked=false;
 global.Audio=class {constructor(){audio.push(this);}play(){return blocked?Promise.reject(new Error('NotAllowedError')):Promise.resolve();}pause(){this.paused=true;}};
 global.RTCPeerConnection=class {constructor(){pcs.push(this);this.iceGatheringState='complete';}addTrack(){}createDataChannel(){return this.dc=new EventTarget();}async createOffer(){return {sdp:'offer'};}async setLocalDescription(offer){this.localDescription=offer;}async setRemoteDescription(){this.ontrack({streams:[{id:'remote'}]});}close(){}};
-const avatarCalls=[];let avatarCallbacks;global.VSTDAvatar={create(callbacks){avatarCallbacks=callbacks;return {attach(){avatarCalls.push('attach');},begin(){avatarCalls.push('wake');},end(){avatarCalls.push('sleep');},interrupt(){avatarCalls.push('interrupt');},close(){assert.equal(audio.at(-1).muted,true,'mute ordinary voice before destroying avatar playback');avatarCalls.push('close');}};}};
+const avatarCalls=[];let avatarCallbacks;global.VSTDAvatar={enabled:()=>savedAvatar,saveEnabled:value=>savedAvatar=value,create(callbacks){avatarCallbacks=callbacks;return {setEnabled(value){avatarCalls.push(value?'enabled':'disabled');},attach(){avatarCalls.push('attach');},begin(){avatarCalls.push('wake');},end(){avatarCalls.push('sleep');},interrupt(){avatarCalls.push('interrupt');},close(){assert.equal(audio.at(-1).muted,true,'mute ordinary voice before destroying avatar playback');avatarCalls.push('close');}};}};
 let liveMode=true;
 const requests=[];let companionText='## Talk track\nFull companion narrative beyond HTML notes. '+ 'Detailed narrative. '.repeat(100);
 global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:true,text:async()=>'answer',json:async()=>path==='/api/realtime/token'?(liveMode?{protocol:'live'}:{value:'test-secret'}):path==='/api/live/session'?{session:{id:'live_1'},transport:{sdp:'answer'}}:path.includes('/voice-context?')?{current:{id:decodeURIComponent(path.split('slide=')[1]),companion:companionText},pages:slides.map(el=>({id:el.id,summary:el.id==='0030-governance'?'Accountability and decision rights':'Costs and workforce'}))}:{events:[]}};};
 ` + string(voice) + string(live) + string(presentation) + source[start:end] + `
 (async()=>{
  const tick=()=>new Promise(resolve=>setImmediate(resolve));
+ const preference=preferenceMessages[0];assert.equal(preference.action,'read');
+ preferenceListener({source:{},origin:'https://other',data:{type:'vstd:avatar-preference-result',id:preference.id,enabled:true}});assert.equal(avatarButton['aria-checked'],'false','foreign frame cannot set preference');
+ preferenceListener({source:parent,origin:'https://app.example',data:{type:'vstd:avatar-preference-result',id:preference.id,enabled:false}});
  const emit=m=>pcs.at(-1).dc.onmessage({data:JSON.stringify(m)});
  listeners['vstd:conversation-toggle']();await tick();assert.equal(pcs.length,0,'conversation shortcut must not start a microphone session');assert.match(toasts.at(-1),/press V/i);
  listeners['vstd:vtoggle']();await tick();const first=audio.at(-1),dc=pcs.at(-1).dc;
  dc.readyState='open';dc.send=s=>sent.push(JSON.parse(s));dc.onopen();emit({type:'session.started'});await tick();
- assert.equal(first.muted,true);assert.deepEqual(avatarCalls,['attach']);
+ assert.equal(first.muted,true);assert.deepEqual(avatarCalls,['disabled','attach']);assert.equal(avatarButton['aria-checked'],'false');
+ listeners['vstd:avatar-toggle']();assert.equal(savedAvatar,true);assert.equal(avatarButton['aria-checked'],'true');assert.equal(avatarCalls.at(-1),'enabled');
+ presenter=false;listeners['vstd:avatar-toggle']();assert.equal(savedAvatar,true,'audience cannot change avatar mode');presenter=true;
  const offer=JSON.parse(requests.find(r=>r.path==='/api/live/session').options.body);
  assert(offer.instructions.length<40000);assert(offer.instructions.includes(JSON.stringify(companionText).slice(1,-1)));assert(offer.instructions.includes('Accountability and decision rights'));assert(offer.tools.some(tool=>tool.name==='get_presentation_context'));
  assert(sent.some(m=>m.type==='session.thinking.append'&&m.content.includes('LATEST PRESENTER SELECTION')&&m.content.includes('\"page\":1')));
@@ -119,6 +125,8 @@ global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:t
  listeners['vstd:conversation-toggle']();await tick();assert.equal(first.muted,false);assert.equal(global.__vlive(),true);assert.equal(avatarCalls.at(-1),'wake');
  avatarCallbacks.route(true);assert.equal(first.muted,true);avatarCallbacks.route(false);assert.equal(first.muted,false);
  assert.equal(creates(),before,'button wake must not start an empty backend response');
+ listeners['vstd:avatar-toggle']();assert.equal(preferenceMessages.at(-1).action,'write');assert.equal(savedAvatar,false);assert.equal(avatarCalls.at(-1),'disabled');assert.equal(first.muted,false,'voice-only mode plays directly');
+ listeners['vstd:avatar-toggle']();assert.equal(savedAvatar,true);assert.equal(avatarCalls.at(-1),'enabled');
  navigate(3);await tick();assert.deepEqual(navigation,[2,3]);assert.equal(creates(),before+1,'awake navigation continues without sleep and re-wake');
  backend('response.completed');
  await global.__vpres.run('end_conversation',{});assert.equal(first.muted,false,'late sleep tool cannot undo button wake');
@@ -144,7 +152,7 @@ global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:t
  liveMode=false;
  listeners['vstd:vtoggle']();await tick();const second=audio.at(-1),dc2=pcs.at(-1).dc;
  dc2.readyState='open';dc2.send=s=>sent.push(JSON.parse(s));dc2.onopen();
- assert.notEqual(second,first);assert.equal(second.muted,true);
+ assert.notEqual(second,first);assert.equal(second.muted,true);assert(avatarCalls.includes('enabled'),'avatar selection survives voice sessions');
  before=creates();listeners['vstd:conversation-toggle']();assert.equal(creates(),before+1,'a fresh local session must not inherit an active response');assert.equal(second.muted,false);assert(sent.some(m=>m.type==='conversation.item.create'&&m.item.type==='message'&&m.item.content[0].text.includes('[PRESENTER VOICE CONTROL] wake')));
  listeners['vstd:conversation-toggle']();assert.equal(second.muted,true);
  emit({type:'session.input_transcript.delta',delta:'Vessica'});assert.equal(second.muted,true);

@@ -48,11 +48,14 @@
     render();
     return {video,audio,show:on=>{canvas.hidden=!on;},close(){cancelAnimationFrame(frame);video.srcObject=null;canvas.remove();video.remove();audio.remove();}};
   }
+  const preferenceKey='vstd:avatar-enabled';
   window.VSTDAvatar={keyPixels,
+    enabled(){try{return localStorage.getItem(preferenceKey)==='true';}catch(_){return false;}},
+    saveEnabled(value){try{localStorage.setItem(preferenceKey,String(!!value));}catch(_){/* Session preference still works when storage is unavailable. */}},
     create(callbacks,deps={}){
       const request=deps.request||((action,id)=>fetch('/api/avatar/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id}),keepalive:action==='stop',signal:action==='stop'?undefined:AbortSignal.timeout(25000)}).then(async r=>{if(!r.ok)throw new Error('Avatar unavailable');return r.json();}));
       const load=deps.load||(()=>import(SDK));
-      let awake=false,stream=null,current=null,generation=0;
+      let enabled=true,awake=false,stream=null,current=null,generation=0;
       function send(s,event){if(s.ws?.readyState===1){if(s.ws.bufferedAmount>512*1024)throw new Error('Avatar upload fell behind');s.ws.send(JSON.stringify(event));}}
       async function dispose(s){
         if(!s||s.closed)return;s.closed=true;
@@ -92,7 +95,7 @@
         }catch(_){fail(s);}
       }
       async function start(){
-        if(!awake||!stream||current)return;
+        if(!enabled||!awake||!stream||current)return;
         const s={id:crypto.randomUUID(),generation,closed:false,audios:[],silence:0};current=s;
         try{
           // Load/capture before any paid provider session is allocated.
@@ -108,17 +111,17 @@
           s.ws.onmessage=e=>{
             if(s.closed)return;
             let event;try{event=JSON.parse(e.data);}catch(_){return;}
-            if(event.type==='session.state_updated'&&event.state==='connected'){s.controlReady=true;if(s.mediaReady&&s.controlReady)clearTimeout(s.timeout);}
+            if(event.type==='session.state_updated'&&event.state==='connected'){s.controlReady=true;if(s.mediaReady&&s.controlReady){clearTimeout(s.timeout);s.surface.show(true);}}
             if(event.type==='error'||(event.type==='session.state_updated'&&event.state==='disconnected'))fail(s);
           };
           s.ws.onerror=()=>fail(s);s.ws.onclose=()=>fail(s);
           s.room=new sdk.Room({singlePeerConnection:false});
-          let hasVideo=false,hasAudio=false;
+          let hasVideo=false;
           s.room.on(sdk.RoomEvent.TrackSubscribed,track=>{
             if(s.closed)return;
             if(track.kind===sdk.Track.Kind.Video){track.attach(s.surface.video);hasVideo=true;void s.surface.video.play().catch(()=>fail(s));}
-            if(track.kind===sdk.Track.Kind.Audio){const a=track.attach();a.muted=true;s.audios.push(a);s.surface.audio.append(a);hasAudio=true;}
-            s.mediaReady=hasVideo&&hasAudio;if(s.mediaReady&&s.controlReady)clearTimeout(s.timeout);
+            if(track.kind===sdk.Track.Kind.Audio){const a=track.attach();a.muted=!s.routed;s.audios.push(a);s.surface.audio.append(a);}
+            s.mediaReady=hasVideo;if(s.mediaReady&&s.controlReady){clearTimeout(s.timeout);s.surface.show(true);}
           });
           s.room.on(sdk.RoomEvent.Disconnected,()=>fail(s));
           s.room.on(sdk.RoomEvent.AudioPlaybackStatusChanged,()=>{if(!s.room.canPlaybackAudio)fail(s);});
@@ -130,6 +133,7 @@
       const unload=()=>{awake=false;generation++;void dispose(current);};
       window.addEventListener?.('pagehide',unload);
       return {
+        setEnabled(value){enabled=!!value;if(enabled)void start();else{generation++;void dispose(current);}},
         attach(value){stream=value;if(awake)void start();},
         begin(){if(awake)return;awake=true;generation++;void start();},
         end(){awake=false;generation++;void dispose(current);},

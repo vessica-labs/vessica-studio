@@ -1543,13 +1543,32 @@ continues directly over WebRTC. Cloud owns the backend model pin and billing.
 
 Set `LIVEAVATAR_API_KEY` in the engine server environment to enable the optional
 LiveAvatar overlay. Keep this provider key out of `studio.yaml`, decks and built
-HTML. No avatar session starts when a deck loads or while Vessica silently
-listens. Saying “Vessica”, pressing Shift+V, or the presenter conversation button
+HTML. In the Presentation HUD, **Avatar on/off** selects video or voice-only
+mode. The switch defaults off and remembers your choice in this browser across
+presentations and sessions. Switching it off during conversation immediately
+stops the renderer and restores direct voice; switching it on starts the avatar
+if Vessica is already awake. If browser storage is unavailable, the selection
+lasts for the current page only. Embedded hosts can retain it on a stable app
+origin using `vstd:avatar-preference` messages with `action: read` (plus `id`) or
+`action: write` (plus boolean `enabled`). Read replies use
+`vstd:avatar-preference-result`, echo `id`, and include boolean `enabled`. Hosts
+must check the exact editor origin and frame source. The player checks parent
+source and the pending read ID, and ignores stale replies after a manual choice.
+
+Voice-only mode uses the direct voice stream without loading the avatar SDK,
+creating an audio capture/worklet, allocating a provider session, or buffering
+audio for avatar synchronization. V starts Vessica silently listening; Shift+V
+and the Logitech Action button mapped to Shift+V wake/sleep conversation in
+either mode.
+
+With Avatar on, no avatar session starts when a deck loads or while Vessica
+silently listens. Saying “Vessica”, pressing Shift+V, or the presenter conversation button
 starts a LITE session using Alessandra in Black Suit (portrait green-screen
 studio avatar). Sleep/“that's all”, voice shutdown and leaving the page stop the
 provider session and remove its video, audio and processing resources.
 
-The avatar appears without a background in the lower-right corner. The browser
+Video becomes visible as soon as the renderer video and control channel are
+ready, even if its audio track arrives later. The avatar appears without a background in the lower-right corner. The browser
 removes green pixels on a transparent canvas. Ordinary voice continues while the
 avatar connects; synchronized LiveAvatar audio takes over at a pause to avoid
 repeating speech. Missing configuration, blocked sound, SDK/network failure or
@@ -1580,5 +1599,7 @@ Offline avatar checks: `go test ./internal/avatar ./internal/server
 internal/studio/testdata/avatar-browser.cjs`. It generates its own green-screen
 media and checks transparent pixels, lower-right placement, audio forwarding,
 wake/sleep requests and teardown without consuming provider credits. It writes
-a test-figure screenshot to `/tmp/vessica-liveavatar-qa.png`. Real avatar edge
+a test-figure screenshot to `/tmp/vessica-liveavatar-qa.png`. Run
+`internal/studio/testdata/avatar-mode-browser.cjs` with the same Playwright module
+to verify the full player HUD switch and persistence across page sessions. Real avatar edge
 quality, account access and end-to-end lip sync still require a provider trial.
