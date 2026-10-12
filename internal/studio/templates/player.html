@@ -2505,6 +2505,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 })();
 
 /*VSTD:AVATAR*/
+/*VSTD:PRESENTER*/
 /*VSTD:LIVE*/
 
 /* ================= Vessica realtime layer (Phase 3 spike) =================
@@ -2570,6 +2571,29 @@ document.addEventListener('DOMContentLoaded',()=>{
     // Live handles this as conversation context, without an empty backend turn.
     if(!S.live)requestResponse();
   });
+  // Desired-state controls are idempotent. The AV bridge reports the actual
+  // voice transport and speaker state after each command, never optimistic taps.
+  window.VSTDShowControl={
+    state:()=>({voice:S.on?(S.dc?.readyState==='open'?(S.voice?.talking()?'awake':'asleep'):'connecting'):'off',avatar:avatarEnabled,avatarStatus:S.avatar?.state?.()||'off',microphone:!!S.mic?.getAudioTracks().some(t=>t.readyState==='live'),playbackBlocked:!!S.voice?.blocked()}),
+    async enable(deviceId){if(S.on){S.voice?.retry();return;}S.unlockedAudio=new Audio('data:audio/wav;base64,UklGRnQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YVAAAACAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgA==');S.unlockedAudio.play().catch(()=>{});S.inputDevice=deviceId||'';await start();if(!S.on)throw Error(label.textContent||'Show could not start');},
+    async command(action){
+      if(action==='end'){stop('Show ended');return;}
+      if(action==='avatar-on'||action==='avatar-off'){
+        if(avatarEnabled!==(action==='avatar-on'))document.dispatchEvent(new Event('vstd:avatar-toggle'));
+        return;
+      }
+      if(action==='sleep'){
+        S.avatar?.interrupt();S.voice?.end();S.buttonConversation=false;
+        send({type:'response.cancel'});
+        return;
+      }
+      if(action==='wake'){
+        if(!(S.on&&S.dc?.readyState==='open'))throw Error('Enable show on the AV computer first');
+        if(!S.voice?.talking())document.dispatchEvent(new Event('vstd:conversation-toggle'));
+      }
+    },
+    stop:()=>stop('Show access ended')
+  };
   status.addEventListener('click',()=>{if(window.VSTDPresenterControl()){if(S.on&&S.voice?.blocked())S.voice.retry();else S.on?stop('Vessica off'):start();}});
   status.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();e.stopPropagation();status.click();}});
 
@@ -2599,9 +2623,9 @@ document.addEventListener('DOMContentLoaded',()=>{
       stage('loading presentation context…');
       await presentation.refresh();
       stage('requesting microphone…');
-      S.mic=await navigator.mediaDevices.getUserMedia({audio:true});
+      S.mic=await navigator.mediaDevices.getUserMedia({audio:S.inputDevice?{deviceId:{exact:S.inputDevice}}:true});
       S.pc=new RTCPeerConnection();
-      S.audio=new Audio();
+      S.audio=S.unlockedAudio||new Audio();S.unlockedAudio=null;
       const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;S.buttonConversation=null;if(talking)S.avatar?.begin();else S.avatar?.end();}});
       S.avatar=window.VSTDAvatar?.create({route:value=>voice.route(value),unavailable:()=>P().toast('Avatar unavailable · Vessica voice continues')});
       S.avatar?.setEnabled(avatarEnabled);
@@ -2642,7 +2666,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       const model=(rt.model||'gpt-realtime-2');
       let answerSdp;
       if(tj.protocol==='live'){
-        const connection=await window.VSTDLive.negotiate(S.pc,S.dc,{instructions:baseInstructions(),tools:TOOLS});
+        const connection=await window.VSTDLive.negotiate(S.pc,S.dc,{instructions:baseInstructions(),tools:availableTools()});
         S.live=connection.adapter;S.minted=true;answerSdp=connection.answer;
       }else{
         const sr=await fetchT(base+'/realtime/calls?model='+encodeURIComponent(model),{
@@ -2807,7 +2831,7 @@ ${((window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents up
     if(S.live&&frontend!==lastFrontend){lastFrontend=frontend;send({type:'session.thinking.append',delegation_id:null,content:frontend});}
     await presentation.refresh();
     if(sequence!==configurationGeneration||!S.on)return;
-    send({type:'session.update',session:{type:'realtime',instructions:baseInstructions(),tools:TOOLS,tool_choice:'auto'}});
+    send({type:'session.update',session:{type:'realtime',instructions:baseInstructions(),tools:availableTools(),tool_choice:'auto'}});
   }
   document.addEventListener('vstd:slide',()=>{if(S.on){clearGlow();configure();}});
 
@@ -2958,8 +2982,14 @@ ${((window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents up
     }
     throw new Error('unknown project tool');
   }
+  const presentationTools=new Set(['next_slide','prev_slide','goto_slide','highlight','clear_highlight','show_qr','hide_qr','show_chat_qr','hide_chat_qr','begin_conversation','end_conversation','get_presentation_context','control_simulation','open_companion']);
+  function availableTools(){return window.__vme?.editable===true?TOOLS:TOOLS.filter(t=>presentationTools.has(t.name));}
   function runTool(name,args,callId){
     let out='ok';
+    if(window.__vme?.editable!==true&&!presentationTools.has(name)){
+      out='Read-only presentation: this tool is unavailable';
+      send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:out}});requestResponse();return out;
+    }
     if(name==='get_presentation_context'){
       return presentation.read().then(state=>JSON.stringify(state)).catch(e=>'FAILED: '+e.message).then(output=>{
         send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output}});requestResponse();return output;
@@ -2971,6 +3001,7 @@ ${((window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents up
         requestResponse();return output;
       });
     }
+    if(CTOOLS[name]&&name!=='open_companion'&&!window.__vme?.editable){out='Read-only presentation: editing unavailable';send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:out}});requestResponse();return out;}
     if(CTOOLS[name]){
       if(!window.__companionDrawer){out='companion drawer unavailable';}
       else{
