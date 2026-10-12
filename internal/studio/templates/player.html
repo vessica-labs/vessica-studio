@@ -2194,7 +2194,7 @@ document.addEventListener('DOMContentLoaded',()=>{
 
   // public surface for the Vessica layer
   function gotoNum(n){const v=visIdx();if(n>=1&&n<=v.length)show(v[n-1]);}
-  window.VSTDP={show,goto:i=>show(i),gotoNum,step,cur:()=>cur,count:slides.length,
+  window.VSTDP={show,goto:i=>show(i),gotoNum,step,cur:()=>cur,page:()=>dispNum(cur),count:slides.length,
     slideEl:()=>slides[cur],toast,persistSlide};
 })();
 

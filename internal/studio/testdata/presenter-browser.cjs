@@ -2,7 +2,7 @@
 const {chromium}=require(process.env.VSTD_PLAYWRIGHT_MODULE||'@playwright/test');
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const read=name=>fs.readFileSync(path.join(__dirname,'../templates',name),'utf8');
-let html=read('player.html').replace('/*VSTD:META*/null/*:VSTD*/',JSON.stringify({deck:'demo',title:'AV test'})).replace('<!--VSTD:SLIDES-->','<section class="slide" data-vstd="0010-first"><h1>First</h1></section><section class="slide" data-vstd="0020-second"><h1>Second</h1></section>').replace('<!--VSTD:THEME-->','<style>.slide{width:1280px;height:720px;background:#fff;padding:80px;font:32px Arial}</style>').replace('/*VSTD:AVATAR*/',read('avatar.js')).replace('/*VSTD:PRESENTER*/',read('presenter.js')).replace('/*VSTD:LIVE*/',['live.js','voice.js','presentation-context.js'].map(read).join('\n')).replace('/*VSTD:BUNDLES*/',['bundle-download.js','bundles.js'].map(read).join('\n'));
+let html=read('player.html').replace('/*VSTD:META*/null/*:VSTD*/',JSON.stringify({deck:'demo',title:'AV test'})).replace('<!--VSTD:SLIDES-->','<section class="slide" data-vstd="0010-first"><h1>First</h1></section><section class="slide" data-vstd="0015-parked" data-parked="1"><h1>Parked</h1></section><section class="slide" data-vstd="0020-second"><h1>Second</h1></section>').replace('<!--VSTD:THEME-->','<style>.slide{width:1280px;height:720px;background:#fff;padding:80px;font:32px Arial}</style>').replace('/*VSTD:AVATAR*/',read('avatar.js')).replace('/*VSTD:PRESENTER*/',read('presenter.js')).replace('/*VSTD:LIVE*/',['live.js','voice.js','presentation-context.js'].map(read).join('\n')).replace('/*VSTD:BUNDLES*/',['bundle-download.js','bundles.js'].map(read).join('\n'));
 let confirmed,command=null,revoked=false,writes=0,receipt=null;
 const server=http.createServer(async(req,res)=>{
  res.setHeader('Content-Type','application/json');
@@ -27,11 +27,11 @@ const server=http.createServer(async(req,res)=>{
  await page.goto('http://127.0.0.1:'+server.address().port+'/?mode=presentation');await page.getByRole('button',{name:'Enable show',exact:true}).waitFor();
  await page.evaluate(()=>{window.VSTD.realtime={base:location.origin+'/v1',model:'fixture'};});
  await page.getByRole('button',{name:'Enable show',exact:true}).click();await page.waitForFunction(()=>window.VSTDShowControl.state().voice==='asleep');
- await page.keyboard.press('PageDown');await page.waitForFunction(()=>window.VSTDP.cur()===1);
- await new Promise(r=>setTimeout(r,1200));assert.equal(confirmed.slide,2,'HID clicker position reaches confirmed state');
+ await page.keyboard.press('PageDown');await page.waitForFunction(()=>window.VSTDP.cur()===2);
+ await new Promise(r=>setTimeout(r,1200));assert.equal(confirmed.slide,2,'HID clicker position reaches confirmed state');assert.equal(confirmed.slideId,'0020-second');
  command={id:'wake-test',sequence:1,action:'wake'};await page.waitForFunction(()=>window.VSTDShowControl.state().voice==='awake');
  command={id:'sleep-test',sequence:2,action:'sleep'};await page.waitForFunction(()=>window.VSTDShowControl.state().voice==='asleep');
  command={id:'avatar-test',sequence:3,action:'avatar-on'};await page.waitForFunction(()=>window.VSTDShowControl.state().avatar===true);await new Promise(r=>setTimeout(r,1200));assert.equal(receipt.id,'avatar-test');assert.equal(receipt.ok,true);
- const denied=await page.evaluate(()=>window.__vpres.run('edit_text',{find:'Second',replace:'HACKED'}));assert.match(denied,/Read-only/);assert.equal((await page.locator('#frame').textContent()).trim(),'FirstSecond');
+ const denied=await page.evaluate(()=>window.__vpres.run('edit_text',{find:'Second',replace:'HACKED'}));assert.match(denied,/Read-only/);assert.equal((await page.locator('#frame').textContent()).trim(),'FirstParkedSecond');
  assert.equal(await page.locator('#editbtn').isVisible(),false);assert.equal(writes,0);revoked=true;await page.waitForFunction(()=>document.getElementById('frame').children.length===0);assert.equal(await page.evaluate(()=>window.VSTDShowControl.state().voice),'off');assert.deepEqual(errors,[]);console.log(JSON.stringify({passed:true,hid:true,acknowledged:true,readonly:true,revocation:true,provider:'mock',microphone:'mock'}));
  }finally{await browser.close();server.close();}})().catch(e=>{console.error(e);server.close();process.exitCode=1;});
