@@ -52,6 +52,8 @@ body:hover #hud{opacity:1}
 #hud button{background:none;border:none;color:var(--vstd-rail-ink);font-family:var(--vstd-ui);font-size:13px;cursor:pointer;
   padding:4px 10px;border-radius:999px;white-space:nowrap}
 #hud button:hover{background:var(--vstd-rail-active)}
+#hud [role="switch"]::before{content:'';display:inline-block;width:24px;height:14px;border-radius:9px;margin-right:6px;vertical-align:-2px;background:radial-gradient(circle at 7px 7px,var(--vstd-rail-ink) 4px,transparent 5px),var(--vstd-rail-active)}
+#hud [role="switch"][aria-checked="true"]::before{background:radial-gradient(circle at 17px 7px,white 4px,transparent 5px),var(--vstd-accent)}
 #hud .cnt{color:var(--vstd-rail-muted);font-size:12px;padding:0 6px;min-width:70px;text-align:center;font-family:var(--vstd-ui)}
 #hudmore{display:none;position:absolute;bottom:48px;right:0;flex-direction:column;gap:2px;
   background:var(--vstd-rail);border:1px solid var(--vstd-rail-line);border-radius:16px;padding:8px;min-width:150px}
@@ -405,6 +407,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   <span class="cnt" id="cnt" style="display:none">1 / 1</span>
   <button data-act="next">Next ›</button>
   <button data-act="vessica" id="hudVessica" data-presenter-control style="display:none" title="Start/stop Vessica (V)">Vessica</button>
+  <button data-act="avatar" id="hudAvatar" data-presenter-control style="display:none" role="switch" aria-checked="false" title="Use video avatar when Vessica is awake">Avatar off</button>
   <button data-act="menu" data-presenter-control style="display:none">Agenda</button>
   <button data-act="grid" data-presenter-control style="display:none">Grid</button>
   <button data-act="sticky" id="hudSticky" data-edit-control style="display:none">Sticky</button>
@@ -941,6 +944,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     const a=b.dataset.act;if(!a)return;
     if(window.__vaudience&& !['prev','next','download'].includes(a))return;
     if(!window.__vme&&!['prev','next'].includes(a))return;
+    if(a==='avatar'){document.dispatchEvent(new Event('vstd:avatar-toggle'));return;}
     if(a==='vessica'){document.dispatchEvent(new Event('vstd:vtoggle'));document.getElementById('hudmore').classList.remove('open');return;}
     if(a==='more'){document.getElementById('hudmore').classList.toggle('open');return;}
     document.getElementById('hudmore').classList.remove('open');
@@ -2514,6 +2518,32 @@ document.addEventListener('DOMContentLoaded',()=>{
   const P=()=>window.VSTDP;
   const presentation=window.VSTDPresentationContext.create({deck:window.VSTD?.deck,current:()=>P().slideEl(),slides:()=>document.querySelectorAll('#frame > .slide')});
   let configurationGeneration=0,lastFrontend='';
+  let avatarEnabled=window.VSTDAvatar?.enabled()||false;
+  const avatarButton=document.getElementById('hudAvatar');
+  function syncAvatarControl(){
+    avatarButton?.setAttribute('aria-checked',String(avatarEnabled));
+    if(avatarButton)avatarButton.textContent=avatarEnabled?'Avatar on':'Avatar off';
+  }
+  syncAvatarControl();
+  // Hosted editor origins may change between sessions; the shell can retain
+  // this non-secret preference on its stable origin.
+  let preferenceRequest=window.parent!==window?crypto.randomUUID():null,preferenceOrigin=null;
+  window.addEventListener('message',event=>{
+    const message=event.data;
+    if(event.source!==window.parent||!preferenceRequest||!message||message.type!=='vstd:avatar-preference-result'||message.id!==preferenceRequest||typeof message.enabled!=='boolean')return;
+    preferenceRequest=null;preferenceOrigin=event.origin;
+    avatarEnabled=message.enabled;window.VSTDAvatar?.saveEnabled(avatarEnabled);
+    S.avatar?.setEnabled(avatarEnabled);syncAvatarControl();
+  });
+  if(preferenceRequest)window.parent.postMessage({type:'vstd:avatar-preference',action:'read',id:preferenceRequest},'*');
+  document.addEventListener('vstd:avatar-toggle',()=>{
+    if(!window.VSTDPresenterControl())return;
+    avatarEnabled=!avatarEnabled;window.VSTDAvatar?.saveEnabled(avatarEnabled);
+    // A delayed initial read must not overwrite a newer presenter choice.
+    preferenceRequest=null;
+    if(window.parent!==window)window.parent.postMessage({type:'vstd:avatar-preference',action:'write',enabled:avatarEnabled},preferenceOrigin||'*');
+    S.avatar?.setEnabled(avatarEnabled);syncAvatarControl();
+  });
 
   function setState(cls,text){
     status.className='';
@@ -2574,6 +2604,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       S.audio=new Audio();
       const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;S.buttonConversation=null;if(talking)S.avatar?.begin();else S.avatar?.end();}});
       S.avatar=window.VSTDAvatar?.create({route:value=>voice.route(value),unavailable:()=>P().toast('Avatar unavailable · Vessica voice continues')});
+      S.avatar?.setEnabled(avatarEnabled);
       S.talking=false;
       S.pc.ontrack=e=>{const stream=e.streams[0]||new MediaStream([e.track]);voice.attach(stream);S.avatar?.attach(stream);};
       S.mic.getTracks().forEach(t=>S.pc.addTrack(t,S.mic));
