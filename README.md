@@ -1603,3 +1603,26 @@ a test-figure screenshot to `/tmp/vessica-liveavatar-qa.png`. Run
 `internal/studio/testdata/avatar-mode-browser.cjs` with the same Playwright module
 to verify the full player HUD switch and persistence across page sessions. Real avatar edge
 quality, account access and end-to-end lip sync still require a provider trial.
+
+### AV handoff and private presenter controls
+
+Vessica Studio Cloud can grant temporary, read-only AV access to one saved
+revision and keep the owner's phone controller separate. The public engine
+supports this through `editor-transform` with `presentation_only: true`: its
+identity is presenter/read-only and every write is rejected. Voice exposes only
+presentation tools, and attempted editing tools are refused before execution.
+
+The shared player opts into the hosted controller transport only when its trusted
+`/api/me` response includes `remote_control: true`, a screen name, revision and
+`show_expires_at`. It reports actual slide, voice, microphone, playback and avatar
+state to `POST /api/presenter/poll`; commands use monotonic sequence numbers and
+receipts. Local operation remains offline-capable and does not use this transport.
+`POST /api/presenter/end` closes the screen. The host owns authentication, fixed
+revision storage, expiry, revocation, command admission and provider cleanup.
+
+On the AV computer, use **Enable show**, allow microphone access, select the
+venue microphone, and check the system audio output. Fullscreen and audible
+playback remain subject to browser permission and local user gestures. Phone
+controls do not capture a microphone or play presentation audio. Rehearse voice,
+avatar, screen selection and venue routing before the show. A normal HID clicker
+continues to navigate with Page Up/Page Down.

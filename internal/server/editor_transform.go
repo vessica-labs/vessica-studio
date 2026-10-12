@@ -26,17 +26,18 @@ import (
 )
 
 type EditorTransformInput struct {
-	AssetURLs       map[string]string    `json:"asset_urls,omitempty"`
-	AssetSessionURL string               `json:"asset_session_url,omitempty"`
-	AudienceURL     *string              `json:"audience_url,omitempty"`
-	Root            string               `json:"root,omitempty"`
-	Delta           bool                 `json:"delta,omitempty"`
-	Deck            string               `json:"deck"`
-	Files           []studio.ContentFile `json:"files"`
-	Method          string               `json:"method"`
-	Path            string               `json:"path"`
-	Headers         map[string]string    `json:"headers"`
-	Body            []byte               `json:"body"`
+	PresentationOnly bool                 `json:"presentation_only,omitempty"`
+	AssetURLs        map[string]string    `json:"asset_urls,omitempty"`
+	AssetSessionURL  string               `json:"asset_session_url,omitempty"`
+	AudienceURL      *string              `json:"audience_url,omitempty"`
+	Root             string               `json:"root,omitempty"`
+	Delta            bool                 `json:"delta,omitempty"`
+	Deck             string               `json:"deck"`
+	Files            []studio.ContentFile `json:"files"`
+	Method           string               `json:"method"`
+	Path             string               `json:"path"`
+	Headers          map[string]string    `json:"headers"`
+	Body             []byte               `json:"body"`
 }
 type EditorTransformResult struct {
 	Delta   bool                 `json:"delta,omitempty"`
@@ -74,7 +75,7 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	if err != nil || u.IsAbs() || u.Host != "" || u.RawPath != "" || strings.ContainsAny(u.Path, "\\\x00") || path.Clean(u.Path) != strings.TrimSuffix(u.Path, "/") || !studio.ValidDeckName(in.Deck) {
 		return result, errors.New("unsupported visual editor operation")
 	}
-	if !transformRoute(in.Method, u.Path, in.Deck) {
+	if !transformRoute(in.Method, u.Path, in.Deck) || (in.PresentationOnly && in.Method != "GET" && in.Method != "HEAD") {
 		return EditorTransformResult{Status: http.StatusNotFound, Headers: map[string]string{"content-type": "application/json"}, Body: []byte(`{"error":"operation unavailable in visual editor"}`), Files: in.Files}, nil
 	}
 	if len(in.Body) > 16<<20 {
@@ -124,7 +125,11 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	}
 	// Deliberately do not call New: no auth/provider initialization is needed for
 	// an already-authorized data transform, and no environment secrets are read.
-	s := &Server{St: st, Mode: ModeStudio, subs: map[chan string]bool{}}
+	mode := ModeStudio
+	if in.PresentationOnly {
+		mode = ModePresent
+	}
+	s := &Server{St: st, Mode: mode, subs: map[chan string]bool{}}
 	r, err := http.NewRequestWithContext(ctx, in.Method, in.Path, bytes.NewReader(in.Body))
 	if err != nil {
 		return result, err
@@ -137,7 +142,7 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	w := httptest.NewRecorder()
 	switch {
 	case u.Path == "/api/me":
-		writeJSON(w, map[string]any{"mode": "studio", "presenter": true, "editable": true, "start_editing": true, "capabilities": map[string]bool{"transfer_slides": false}})
+		writeJSON(w, map[string]any{"mode": string(mode), "presenter": true, "editable": !in.PresentationOnly, "start_editing": !in.PresentationOnly, "capabilities": map[string]bool{"transfer_slides": false}})
 	case u.Path == "/d/"+in.Deck+"/":
 		built, e := st.BuildWithAudienceURL(in.Deck, in.AudienceURL)
 		if e != nil {

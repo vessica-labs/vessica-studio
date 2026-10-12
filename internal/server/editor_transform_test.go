@@ -237,3 +237,40 @@ func TestEditorDeliveryURLsNeverPersistIntoSource(t *testing.T) {
 		t.Fatal("unsafe delivery URL accepted")
 	}
 }
+
+func TestPresentationTransformRejectsWrites(t *testing.T) {
+	st := testStudio(t)
+	snapshot, err := studio.CloudContent(st.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := EditorTransformInput{Deck: "demo", Files: snapshot.Files, PresentationOnly: true, Method: "GET", Path: "/api/me"}
+	result, err := TransformEditor(context.Background(), in)
+	if err != nil || result.Status != 200 {
+		t.Fatal(result.Status, err)
+	}
+	var me map[string]any
+	if err = json.Unmarshal(result.Body, &me); err != nil {
+		t.Fatal(err)
+	}
+	if me["editable"] != false || me["presenter"] != true || me["mode"] != "present" {
+		t.Fatal(me)
+	}
+	for _, route := range []struct{ method, path string }{
+		{"PUT", "/api/deck/demo/slide/0010-a/fragment"},
+		{"PUT", "/api/deck/demo/slide/0010-a/companion"},
+		{"POST", "/api/deck/demo/slides"},
+		{"POST", "/api/deck/demo/slide/0010-a/move"},
+	} {
+		in.Method, in.Path = route.method, route.path
+		got, err := TransformEditor(context.Background(), in)
+		if err != nil || got.Status != 404 {
+			t.Fatalf("write allowed %s: %d %v", route.path, got.Status, err)
+		}
+	}
+	in.Method, in.Path = "GET", "/api/deck/demo/voice-context?slide=0010-a"
+	got, err := TransformEditor(context.Background(), in)
+	if err != nil || got.Status != 200 {
+		t.Fatalf("voice context: %d %v", got.Status, err)
+	}
+}

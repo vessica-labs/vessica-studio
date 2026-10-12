@@ -55,7 +55,7 @@
     create(callbacks,deps={}){
       const request=deps.request||((action,id)=>fetch('/api/avatar/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({id}),keepalive:action==='stop',signal:action==='stop'?undefined:AbortSignal.timeout(25000)}).then(async r=>{if(!r.ok)throw new Error('Avatar unavailable');return r.json();}));
       const load=deps.load||(()=>import(SDK));
-      let enabled=true,awake=false,stream=null,current=null,generation=0;
+      let enabled=true,awake=false,stream=null,current=null,generation=0,failed=false;
       function send(s,event){if(s.ws?.readyState===1){if(s.ws.bufferedAmount>512*1024)throw new Error('Avatar upload fell behind');s.ws.send(JSON.stringify(event));}}
       async function dispose(s){
         if(!s||s.closed)return;s.closed=true;
@@ -64,7 +64,7 @@
         if(current===s){current=null;callbacks.route(false);}
         try{await request('stop',s.id);}catch(_){/* Host lease is the cleanup fallback. */}
       }
-      function fail(s){if(current!==s||s.closed)return;void dispose(s);callbacks.unavailable?.();}
+      function fail(s){if(current!==s||s.closed)return;failed=true;void dispose(s);callbacks.unavailable?.();}
       function route(s,on){if(s.routed===on)return;s.routed=on;callbacks.route(on);s.surface.show(on);s.audios.forEach(a=>a.muted=!on);}
       function flush(s){
         if(!s.samples)return;
@@ -95,6 +95,7 @@
         }catch(_){fail(s);}
       }
       async function start(){
+        failed=false;
         if(!enabled||!awake||!stream||current)return;
         const s={id:crypto.randomUUID(),generation,closed:false,audios:[],silence:0};current=s;
         try{
@@ -133,6 +134,7 @@
       const unload=()=>{awake=false;generation++;void dispose(current);};
       window.addEventListener?.('pagehide',unload);
       return {
+        state:()=>!enabled||!awake?'off':failed?'unavailable':current?.controlReady&&current?.mediaReady?'active':'connecting',
         setEnabled(value){enabled=!!value;if(enabled)void start();else{generation++;void dispose(current);}},
         attach(value){stream=value;if(awake)void start();},
         begin(){if(awake)return;awake=true;generation++;void start();},
