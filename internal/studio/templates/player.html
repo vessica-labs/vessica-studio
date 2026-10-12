@@ -2983,10 +2983,12 @@ ${((window.__vtools&&window.__vtools.digest())||'(no knowledge-base documents up
     throw new Error('unknown project tool');
   }
   const presentationTools=new Set(['next_slide','prev_slide','goto_slide','highlight','clear_highlight','show_qr','hide_qr','show_chat_qr','hide_chat_qr','begin_conversation','end_conversation','get_presentation_context','control_simulation','open_companion']);
-  function availableTools(){return window.__vme?.editable===true?TOOLS:TOOLS.filter(t=>presentationTools.has(t.name));}
+  const editingTools=new Set(['edit_text','set_slide_title','add_bullet','remove_element','note_edit_request','new_blank_slide','author_point','author_talk','author_lead','done_authoring','edit_companion','set_companion_section','append_companion_section']);
+  function toolAllowed(name){return window.__vme?.remote_control===true?presentationTools.has(name):window.__vme?.editable===true||!editingTools.has(name);}
+  function availableTools(){return TOOLS.filter(t=>toolAllowed(t.name));}
   function runTool(name,args,callId){
     let out='ok';
-    if(window.__vme?.editable!==true&&!presentationTools.has(name)){
+    if(!toolAllowed(name)){
       out='Read-only presentation: this tool is unavailable';
       send({type:'conversation.item.create',item:{type:'function_call_output',call_id:callId,output:out}});requestResponse();return out;
     }
