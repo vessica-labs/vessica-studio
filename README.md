@@ -1381,6 +1381,12 @@ sandbox. This additive gateway-authenticated transport provides canonical
 snapshots; the host remains responsible for tenant authorization and committing
 saved revisions. It does not change local `vstd serve` or read-only delivery.
 
+When Cloud advertises `workspace.sync.incremental`, sync and pull transfer only
+changed file bytes. Unchanged assets use verified SHA-256 references to the
+exact base revision or captured local snapshot. Deletions and online edits still
+use the normal reconciliation rules; older servers retain full-snapshot sync.
+See [the incremental sync protocol](docs/incremental-sync.md).
+
 Native Cloud commands default to `https://studio.vessica.ai`. Set
 `VSTD_CLOUD_ENDPOINT` to use another service (including an existing connection
 created against a different endpoint). `vstd cloud login` prints the service's

@@ -11,11 +11,12 @@ import (
 const ProtocolVersion = "1"
 
 const (
-	CapabilityWorkspaceCreate  = "workspace.create"
-	CapabilityWorkspaceRead    = "workspace.read"
-	CapabilityWorkspaceSync    = "workspace.sync"
-	CapabilityPublicationRead  = "publication.read"
-	CapabilityPublicationWrite = "publication.write"
+	CapabilityWorkspaceCreate      = "workspace.create"
+	CapabilityWorkspaceRead        = "workspace.read"
+	CapabilityWorkspaceSync        = "workspace.sync"
+	CapabilityWorkspaceIncremental = "workspace.sync.incremental"
+	CapabilityPublicationRead      = "publication.read"
+	CapabilityPublicationWrite     = "publication.write"
 )
 
 type Capabilities struct {
@@ -88,6 +89,7 @@ type SyncRequest struct {
 	OperationID    string `json:"operation_id,omitempty"`
 }
 type PublicationRequest struct {
+	Visibility  string `json:"visibility,omitempty"`
 	RevisionID  string `json:"revision_id"`
 	OperationID string `json:"operation_id,omitempty"`
 }

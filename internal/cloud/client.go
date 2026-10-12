@@ -232,6 +232,11 @@ func (c *Client) Sync(ctx context.Context, workspace string, in SyncRequest) (Re
 	if in.OperationID == "" && c.operationID != nil {
 		in.OperationID = c.operationID()
 	}
+	if err := c.negotiate(ctx, CapabilityWorkspaceIncremental); err == nil {
+		return c.syncIncremental(ctx, workspace, in)
+	} else if e, ok := err.(*IncompatibleError); !ok || e.MissingCapability != CapabilityWorkspaceIncremental {
+		return out, err
+	}
 	err := c.do(ctx, http.MethodPost, "/v1/workspaces/"+url.PathEscape(workspace)+"/revisions", in, &out, true)
 	return out, err
 }

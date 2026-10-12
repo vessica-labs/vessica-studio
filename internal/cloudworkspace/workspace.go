@@ -348,7 +348,13 @@ func (m Manager) Sync(ctx context.Context, root, message string) (cloud.Revision
 		if w.ID != a.WorkspaceID || !idRE.MatchString(w.HeadRevisionID) {
 			return revision, fmt.Errorf("invalid cloud head")
 		}
-		revision, err = m.Cloud.Revision(ctx, a.WorkspaceID, w.HeadRevisionID)
+		if cached, ok := m.Cloud.(interface {
+			RevisionCached(context.Context, string, string, []cloud.File) (cloud.Revision, error)
+		}); ok {
+			revision, err = cached.RevisionCached(ctx, a.WorkspaceID, w.HeadRevisionID, wireFiles(s.Files))
+		} else {
+			revision, err = m.Cloud.Revision(ctx, a.WorkspaceID, w.HeadRevisionID)
+		}
 	} else {
 		writerKind := "human"
 		if m.PreferCurrent {
