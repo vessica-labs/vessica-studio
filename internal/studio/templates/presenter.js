@@ -37,7 +37,7 @@
     if(!enabled||finished)return;
     try{
       const slide=window.VSTDP?.slideEl();
-      const state={...window.VSTDShowControl.state(),slide:window.VSTDP?.cur()+1,slideId:slide?.dataset.slideId||slide?.id||'',title:slide?.querySelector('h1,h2')?.textContent?.slice(0,200)||''};
+      const state={...window.VSTDShowControl.state(),slide:window.VSTDP?.page(),slideId:slide?.dataset.vstd||slide?.id||'',title:slide?.querySelector('h1,h2')?.textContent?.slice(0,200)||''};
       const r=await fetch('/api/presenter/poll',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({boot,state,receipt}),signal:AbortSignal.timeout(8000)});
       if(r.status===401||r.status===410||r.status===409){end();return;}
       if(!r.ok)throw Error('Disconnected');
