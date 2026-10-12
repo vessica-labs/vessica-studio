@@ -1609,8 +1609,9 @@ quality, account access and end-to-end lip sync still require a provider trial.
 Vessica Studio Cloud can grant temporary, read-only AV access to one saved
 revision and keep the owner's phone controller separate. The public engine
 supports this through `editor-transform` with `presentation_only: true`: its
-identity is presenter/read-only and every write is rejected. Voice exposes only
+identity is presenter/read-only and every write is rejected. Delegated AV voice exposes only
 presentation tools, and attempted editing tools are refused before execution.
+Ordinary local presentation mode retains its non-editing project tools.
 
 The shared player opts into the hosted controller transport only when its trusted
 `/api/me` response includes `remote_control: true`, a screen name, revision and
