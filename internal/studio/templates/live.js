@@ -53,7 +53,7 @@
             const body=JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools,dictation:!!config.dictation,brief:config.dictation?'':window.__vbrief?.markdown()||''});
             if(body!==lastConfiguration){lastConfiguration=body;pendingConfiguration=body;configureLatest();}
           }
-          else raw({type:'session.update',session:{delegation:{responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
+          else raw({type:'session.update',session:{delegation:{type:'responses',responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
         }
         if(event.type==='conversation.item.create'){
           if(event.item.type==='function_call_output')raw({type:'response.item.create',item:event.item});
