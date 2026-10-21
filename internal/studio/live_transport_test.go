@@ -81,3 +81,33 @@ func TestLiveTransportAuthenticatedRelay(t *testing.T) {
 		t.Fatalf("%v: %s", err, output)
 	}
 }
+
+func TestLiveTransportPassesBriefToBothContextsWithoutAffectingDictation(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	source, err := templates.ReadFile("templates/live.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `global.window=global;` + string(source) + `
+(async()=>{
+ const assert=require('node:assert/strict');window.__vbrief={markdown:()=>'# Acme pilot'};
+ for(const dictation of [false,true]){
+  const requests=[];global.fetch=async(path,options)=>{requests.push([path,JSON.parse(options.body||'{}')]);return {ok:true,json:async()=>({session:{id:'live_test'},transport:{sdp:'answer'},events:[]})};};
+  const dc={readyState:'open',send:()=>{},dispatchEvent:()=>{}};
+  const pc={iceGatheringState:'complete',localDescription:{sdp:'offer'}};
+  const {adapter}=await VSTDLive.negotiate(pc,dc,{instructions:'backend context',tools:[],dictation});
+  assert.equal(requests[0][1].brief,'# Acme pilot');
+  adapter.event({type:'session.started'});adapter.send({type:'session.update',session:{instructions:'new backend context',tools:[]}});
+  await new Promise(r=>setImmediate(r));
+  const update=requests.find(([path])=>path==='/api/live/context')[1];
+  assert.equal(update.brief,dictation?'':'# Acme pilot');assert.equal(update.dictation,dictation);
+  adapter.event({type:'session.closed'});await adapter.close();
+ }
+})().catch(error=>{console.error(error);process.exitCode=1;});`
+	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, output)
+	}
+}

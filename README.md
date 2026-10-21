@@ -1627,3 +1627,39 @@ playback remain subject to browser permission and local user gestures. Phone
 controls do not capture a microphone or play presentation audio. Rehearse voice,
 avatar, screen selection and venue routing before the show. A normal HID clicker
 continues to navigate with Page Up/Page Down.
+
+### Vessica conversation and deck meeting briefs
+
+Vessica answers ordinary conversation and questions supported by the deck's
+meeting brief directly, without a thinking preamble. Live web research and
+`deep_think` remain available for current facts and substantial analysis. Local
+`gpt-realtime-2` sessions use minimal reasoning; Cloud keeps its voice frontend
+responsive and delegates tools to its server-selected model.
+
+Talk with Vessica to prepare for a client meeting. A concise Markdown brief is
+maintained in the background for that deck and restored when voice reconnects.
+It retains useful facts, goals, decisions, brainstormed ideas, open questions,
+and research sources. There is no private prep mode: everything saved may be
+referenced in the later client conversation. Conversation transcripts are not
+stored. The HUD **KB** button displays the saved Markdown and save status;
+**Clear context** empties it and restarts active voice to remove old session
+history. Failed updates retain the previous brief and display an unsaved state.
+
+Local briefs live at `_vessica/<deck>/brief.json` with private file permissions,
+outside deck builds and Cloud content snapshots. They require no Cloud account.
+Automatic brief updates use the same configured OpenAI key and tools model;
+read/clear operations work offline. Cloud persists briefs separately from
+published presentation content, scoped to the authorized workspace and deck.
+Local and Cloud installations maintain their own brief stores; ordinary deck
+sync does not transfer meeting briefs. Existing legacy KB document APIs remain
+available, but the HUD no longer uploads documents or automatically injects
+those documents into conversational context.
+
+Presenter-only brief API: `GET /api/vessica/{deck}/brief` returns
+`{generation, revision, markdown, updated_at}`; `POST` accepts
+`{generation, revision, text}` to distill new conversational input; `DELETE`
+rotates the generation and clears the brief. Stale saves return 409, including
+summaries finishing after a clear. Input text is temporary and never written to
+the brief store. `POST /api/vessica/{deck}/think` accepts `{task}` and returns
+`{result}`. Cloud research and brief updates require an active admitted voice
+session and use trusted provider usage receipts against its existing reservation.
