@@ -18,7 +18,7 @@
     adapter(dc,relay=false,config={}){
       let ready=false,closed=false,closing=false,finished;
       const queue=[],calls=new Set(),done=new Promise(r=>finished=r);
-      let pollTimer,failures=0,configuring=false,pendingConfiguration=null,lastConfiguration='';
+      let pollTimer,contextTimer,contextFailures=0,failures=0,configuring=false,pendingConfiguration=null,lastConfiguration='';
       const dispatch=event=>dc.dispatchEvent(new MessageEvent('message',{data:JSON.stringify(event)}));
       async function poll(){
         if(closing)return;
@@ -38,10 +38,17 @@
         try{
           while(pendingConfiguration&&!closing){
             const body=pendingConfiguration;pendingConfiguration=null;
-            const response=await fetch('/api/live/context',{method:'POST',headers:{'Content-Type':'application/json'},body,signal:AbortSignal.timeout(5000)});
-            if(!response.ok)throw new Error('Live context update failed');
+            try{
+              const response=await fetch('/api/live/context',{method:'POST',headers:{'Content-Type':'application/json'},body,signal:AbortSignal.timeout(10000)});
+              if(!response.ok)throw new Error('Live context update failed');
+              contextFailures=0;
+            }catch(error){
+              lastConfiguration='';
+              if(!closing&&++contextFailures<=3){pendingConfiguration=pendingConfiguration||body;contextTimer=setTimeout(configureLatest,1000*contextFailures);}
+              throw error;
+            }
           }
-        }catch(_){dispatch({type:'error',error:{message:'Live context update failed'}});raw({type:'session.close'});}
+        }catch(_){dispatch({type:'error',error:{message:'Live context update delayed; voice remains connected'}});}
         finally{configuring=false;}
       }
       function send(event){
@@ -67,7 +74,7 @@
         if(event.type==='response.create'){raw({type:'response.create'});return;}
         raw(event);
       }
-      return {send,
+      return {send,ended:()=>closed,
         event(message){
           if(message.type==='session.started'){ready=true;queue.splice(0).forEach(send);return {type:'session.updated'};}
           if(message.type==='session.closed'){closed=true;finished();return {type:'live.closed'};}
@@ -86,7 +93,7 @@
           return message;
         },
         close(){
-          clearTimeout(pollTimer);if(!closing){closing=true;if(ready&&!closed)raw({type:'session.close'});}
+          clearTimeout(pollTimer);clearTimeout(contextTimer);if(!closing){closing=true;if(ready&&!closed)raw({type:'session.close'});}
           finalizing=(async()=>{let timer;await Promise.race([done,new Promise(r=>timer=setTimeout(r,10000))]);clearTimeout(timer);await window.__vendRealtimeSession?.();return closed;})();return finalizing;
         }
       };

@@ -146,12 +146,19 @@ global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:t
  emit({type:'session.input_transcript.delta',delta:'Vessica'});assert.equal(first.muted,false,'spoken wake after button sleep');
  emit({type:'session.input_transcript.delta',delta:'Stop the simulation.'});assert.equal(first.muted,false);
  emit({type:'session.input_transcript.delta',delta:'Be quiet.'});assert.equal(first.muted,true);
+ // A slow brief save must not wedge restart after the provider has already ended.
+ global.__vbrief={markdown:()=> 'B'.repeat(8000),refresh:async()=>{},flush:()=>new Promise(()=>{})};
+ companionText='Long narrative. '.repeat(3000);
  global.__vendRealtimeSession=async()=>{};emit({type:'session.closed'});await tick();assert.equal(first.paused,true);assert.equal(first.srcObject,null);
  assert.equal(global.__vlive(),false);assert(avatarCalls.includes('close'),'voice teardown destroys renderer controller');
  // Local Realtime retains its tool-controlled wake path and a fresh muted speaker.
  liveMode=false;
  listeners['vstd:vtoggle']();await tick();const second=audio.at(-1),dc2=pcs.at(-1).dc;
- dc2.readyState='open';dc2.send=s=>sent.push(JSON.parse(s));dc2.onopen();
+ dc2.readyState='open';dc2.send=s=>sent.push(JSON.parse(s));dc2.onopen();await tick();
+ const configured=sent.filter(m=>m.type==='session.update').at(-1).session.instructions;
+ assert(configured.length<=40000,'a full brief and narrative must fit the hosted context contract');
+ assert(configured.endsWith('B'.repeat(8000)),'the entire meeting brief must survive the context budget');
+ global.__vbrief.flush=async()=>{};
  assert.notEqual(second,first);assert.equal(second.muted,true);assert(avatarCalls.includes('enabled'),'avatar selection survives voice sessions');
  before=creates();listeners['vstd:conversation-toggle']();assert.equal(creates(),before+1,'a fresh local session must not inherit an active response');assert.equal(second.muted,false);assert(sent.some(m=>m.type==='conversation.item.create'&&m.item.type==='message'&&m.item.content[0].text.includes('[PRESENTER VOICE CONTROL] wake')));
  listeners['vstd:conversation-toggle']();assert.equal(second.muted,true);
