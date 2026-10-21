@@ -3280,7 +3280,7 @@ ${window.__vbrief?.markdown()||'(no meeting brief yet)'}`;
   const hud=document.getElementById('hud');
   if(hud){
     const btn=document.createElement('button');btn.id='kbbtn';btn.textContent='KB';btn.title='View or clear this deck’s meeting brief';
-    btn.dataset.presenterControl='';btn.style.display='none';
+    btn.hidden=true;btn.style.display='none';
     btn.addEventListener('click',event=>{event.stopPropagation();if(window.VSTDPresenterControl())drawer.open();});
     hud.appendChild(btn);
   }
