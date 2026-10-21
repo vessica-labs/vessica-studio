@@ -2627,7 +2627,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       S.mic=await navigator.mediaDevices.getUserMedia({audio:S.inputDevice?{deviceId:{exact:S.inputDevice}}:true});
       S.pc=new RTCPeerConnection();
       S.audio=S.unlockedAudio||new Audio();S.unlockedAudio=null;
-      const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;S.buttonConversation=null;if(talking)S.avatar?.begin();else S.avatar?.end();}});
+      const voice=S.voice=window.VSTDVoice.create(S.audio,{state:setState,conversation:talking=>{S.talking=talking;S.buttonConversation=null;if(talking){S.avatar?.begin();if(!S.live&&S.pendingInput&&Date.now()-S.pendingInput.time<5000){window.__vbrief?.capture('Presenter',S.pendingInput.text);S.pendingInput=null;}}else S.avatar?.end();}});
       S.avatar=window.VSTDAvatar?.create({route:value=>voice.route(value),unavailable:()=>P().toast('Avatar unavailable · Vessica voice continues')});
       S.avatar?.setEnabled(avatarEnabled);
       S.talking=false;
@@ -2706,6 +2706,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   function cleanup(){
     configurationGeneration++;lastFrontend='';
     clearTimeout(respTimer);respActive=false;respWanted=false;
+    S.pendingInput=null;
     S.voice?.close();S.voice=null;
     S.avatar?.close();S.avatar=null;
     const pc=S.pc,dc=S.dc,mic=S.mic,live=S.live;
@@ -2843,10 +2844,13 @@ ${window.__vbrief?.markdown()||'(no meeting brief yet)'}`;
   function onEvent(e){
     let m;try{m=JSON.parse(e.data);}catch(_){return;}
     if(S.live&&m.type==='session.input_transcript.delta'){S.avatar?.interrupt();S.voice?.input(m.delta);}
-    if((S.talking||(!S.live&&/\bvessica\b/i.test(m.transcript||'')))&&window.__vbrief){
+    if(!S.live&&m.type==='conversation.item.input_audio_transcription.completed'){
+      if(S.talking)window.__vbrief?.capture('Presenter',m.transcript);
+      else S.pendingInput={text:m.transcript,time:Date.now()};
+    }
+    if(S.talking&&window.__vbrief){
       if(m.type==='session.input_transcript.delta')window.__vbrief.capture('Presenter',m.delta);
       if(m.type==='session.output_transcript.delta')window.__vbrief.capture('Vessica',m.delta);
-      if(!S.live&&m.type==='conversation.item.input_audio_transcription.completed')window.__vbrief.capture('Presenter',m.transcript);
       if(!S.live&&(m.type==='response.output_audio_transcript.done'||m.type==='response.audio_transcript.done'))window.__vbrief.capture('Vessica',m.transcript);
     }
     // GPT-Live can answer without delegating. Its input transcript, never its
