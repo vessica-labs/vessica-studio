@@ -41,6 +41,21 @@ func (s *Server) briefPath(deck string) (string, error) {
 			return "", fmt.Errorf("unsafe brief directory")
 		}
 	}
+	// Older studios may not have the runtime exclusion in their root ignore
+	// file. Ignore runtime state from inside the directory without editing it.
+	ignore, err := os.OpenFile(filepath.Join(s.St.Root, "_vessica", ".gitignore"), os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err == nil {
+		_, err = ignore.WriteString("*\n")
+		closeErr := ignore.Close()
+		if err != nil {
+			return "", err
+		}
+		if closeErr != nil {
+			return "", closeErr
+		}
+	} else if !os.IsExist(err) {
+		return "", err
+	}
 	p = filepath.Join(p, "brief.json")
 	if info, err := os.Lstat(p); err == nil && (!info.Mode().IsRegular() || info.Mode()&os.ModeSymlink != 0) {
 		return "", fmt.Errorf("unsafe brief file")
