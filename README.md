@@ -1630,6 +1630,10 @@ continues to navigate with Page Up/Page Down.
 
 ### Vessica conversation and deck meeting briefs
 
+Long meeting briefs share a bounded voice context budget with narrative excerpts.
+A delayed context update leaves voice connected. A provider-ended session can be
+restarted without waiting on an in-flight brief save.
+
 Vessica answers ordinary conversation and questions supported by the deck's
 meeting brief directly, without a thinking preamble. Live web research and
 `deep_think` remain available for current facts and substantial analysis. Local

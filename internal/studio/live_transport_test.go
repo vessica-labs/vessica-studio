@@ -111,3 +111,35 @@ func TestLiveTransportPassesBriefToBothContextsWithoutAffectingDictation(t *test
 		t.Fatalf("%v: %s", err, output)
 	}
 }
+
+func TestLiveContextFailureDoesNotHangUpVoice(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	source, err := templates.ReadFile("templates/live.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `global.window=global;` + string(source) + `
+(async()=>{
+ const assert=require('node:assert/strict');const sent=[],contexts=[];
+ const dc=new EventTarget();dc.readyState='open';dc.send=value=>sent.push(JSON.parse(value));
+ global.fetch=async(path,options)=>{
+   if(path==='/api/live/context'){contexts.push(JSON.parse(options.body));return {ok:contexts.length>1};}
+   return {ok:true,json:async()=>({events:[]})};
+ };
+ const adapter=VSTDLive.adapter(dc,true);adapter.event({type:'session.started'});
+ adapter.send({type:'session.update',session:{instructions:'oversized old context',tools:[]}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert(!sent.some(event=>event.type==='session.close'),'a context rejection must not terminate live voice');
+ adapter.send({type:'session.update',session:{instructions:'corrected context',tools:[]}});
+ await new Promise(resolve=>setImmediate(resolve));
+ assert.equal(contexts.at(-1).instructions,'corrected context');
+ assert.equal(adapter.ended(),false);
+ adapter.event({type:'session.closed'});assert.equal(adapter.ended(),true);await adapter.close();
+})().catch(error=>{console.error(error);process.exit(1);});`
+	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, output)
+	}
+}
