@@ -66,6 +66,10 @@ func (s *Server) vesGate(h http.HandlerFunc) http.HandlerFunc {
 
 // VessicaRoutes registers the demo-tool endpoints on mux.
 func (s *Server) VessicaRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /api/vessica/{deck}/brief", s.vesGate(s.handleBrief))
+	mux.HandleFunc("POST /api/vessica/{deck}/brief", s.vesGate(s.handleBrief))
+	mux.HandleFunc("DELETE /api/vessica/{deck}/brief", s.vesGate(s.handleBrief))
+	mux.HandleFunc("POST /api/vessica/{deck}/think", s.vesGate(s.handleThink))
 	mux.HandleFunc("GET /api/vessica/{deck}/kb", s.vesGate(s.handleKBList))
 	mux.HandleFunc("GET /api/vessica/{deck}/kb/{name}", s.vesGate(s.handleKBRead))
 	mux.HandleFunc("POST /api/vessica/{deck}/kb/{name}", s.vesGate(s.handleKBWrite))
@@ -585,7 +589,7 @@ func (s *Server) handleWebSearch(w http.ResponseWriter, r *http.Request) {
 		"tools": []map[string]any{{"type": "web_search"}},
 		"input": req.Query,
 		"instructions": "Search the web and answer concisely for a live spoken " +
-			"presentation context. Lead with the answer; include 1-3 source names inline.",
+			"presentation context. Lead with the answer; include 1-3 sources with their URLs and publication dates.",
 	}
 	body, code, err := s.OAI.PostJSON("/responses", payload)
 	if err != nil {

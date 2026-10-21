@@ -9,13 +9,13 @@
         function check(){if(pc.iceGatheringState==='complete'){clearTimeout(timeout);pc.removeEventListener('icegatheringstatechange',check);resolve();}}
         pc.addEventListener('icegatheringstatechange',check);check();
       });
-      const response=await fetch('/api/live/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,instructions:config.instructions,tools:config.tools,dictation:!!config.dictation}),signal:AbortSignal.timeout(45000)});
+      const response=await fetch('/api/live/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,instructions:config.instructions,tools:config.tools,dictation:!!config.dictation,brief:window.__vbrief?.markdown()||''}),signal:AbortSignal.timeout(45000)});
       const result=await response.json();
       if(!response.ok)throw new Error(result.message||'Live session could not start');
       if(!result.session?.id||!result.transport?.sdp)throw new Error('Invalid Live connection receipt');
-      return {answer:result.transport.sdp,adapter:this.adapter(dc,true)};
+      return {answer:result.transport.sdp,adapter:this.adapter(dc,true,config)};
     },
-    adapter(dc,relay=false){
+    adapter(dc,relay=false,config={}){
       let ready=false,closed=false,closing=false,finished;
       const queue=[],calls=new Set(),done=new Promise(r=>finished=r);
       let pollTimer,failures=0,configuring=false,pendingConfiguration=null,lastConfiguration='';
@@ -50,7 +50,7 @@
         if(event.type==='session.update'){
           const session=event.session;
           if(relay){
-            const body=JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools});
+            const body=JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools,dictation:!!config.dictation,brief:config.dictation?'':window.__vbrief?.markdown()||''});
             if(body!==lastConfiguration){lastConfiguration=body;pendingConfiguration=body;configureLatest();}
           }
           else raw({type:'session.update',session:{delegation:{responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
