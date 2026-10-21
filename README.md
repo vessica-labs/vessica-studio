@@ -1641,7 +1641,8 @@ maintained in the background for that deck and restored when voice reconnects.
 It retains useful facts, goals, decisions, brainstormed ideas, open questions,
 and research sources. There is no private prep mode: everything saved may be
 referenced in the later client conversation. Conversation transcripts are not
-stored. The HUD **KB** button displays the saved Markdown and save status;
+stored. The **KB** control is available in both the presentation HUD and editor
+ribbon. It displays the saved Markdown and save status;
 **Clear context** empties it and restarts active voice to remove old session
 history. Failed updates retain the previous brief and display an unsaved state.
 
