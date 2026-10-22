@@ -1369,6 +1369,12 @@ The full contributor guide, package ownership map, and validation contract are
 in [`AGENTS.md`](AGENTS.md). Tests use local fixtures and do not require live
 OpenAI, GitHub, Railway, Telnyx, Resend, or S3 credentials.
 
+The separate documentation site in `docs-site/` uses Node 24.22.1. Run
+`npm ci`, `npm test`, and `npm run build` in that directory before deploying it.
+Railpack reads the pinned version from `package.json`; remove any conflicting
+`RAILPACK_NODE_VERSION` override when updating the pin. The static server returns
+HTTP 400 for malformed request paths and remains available for subsequent requests.
+
 ## License
 
 [Apache License 2.0](LICENSE) © Vessica Labs
