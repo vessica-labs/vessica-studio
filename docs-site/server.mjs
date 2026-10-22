@@ -16,7 +16,15 @@ const types = {
 };
 
 createServer((request, response) => {
-  const pathname = decodeURIComponent(new URL(request.url || "/", "http://localhost").pathname);
+  let pathname;
+  try {
+    pathname = decodeURIComponent(new URL(request.url || "/", "http://localhost").pathname);
+    if (pathname.includes("\0")) throw new URIError("invalid path");
+  } catch {
+    response.writeHead(400, { "Content-Type": "text/plain; charset=utf-8" });
+    response.end("Bad request");
+    return;
+  }
   const safePath = normalize(pathname).replace(/^(\.\.(\/|\\|$))+/, "");
   let file = join(root, safePath);
   if (pathname.endsWith("/")) file = join(file, "index.html");
