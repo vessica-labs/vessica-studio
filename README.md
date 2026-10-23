@@ -2,7 +2,7 @@
 
 **A local-first, agent-driven presentation studio built on ordinary files.**
 
-[![Go 1.22+](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go)](https://go.dev/doc/install)
+[![Go 1.26.10+](https://img.shields.io/badge/Go-1.26.10%2B-00ADD8?logo=go)](https://go.dev/doc/install)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 
 [Documentation](https://studio-docs.vessica.ai/) ·
@@ -73,7 +73,7 @@ see the [installation guide](https://studio-docs.vessica.ai/install/).
 
 ### Requirements
 
-- [Go 1.22 or newer](https://go.dev/doc/install)
+- [Go 1.26.10 or newer](https://go.dev/doc/install)
 - Git, if you want version control or hosted content sync
 
 Optional tools unlock additional features:
