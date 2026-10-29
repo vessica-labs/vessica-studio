@@ -1489,6 +1489,12 @@ delivery. Storage denial falls back to ordinary downloads. Leaving the slide des
 application frame, so inactive simulations stop using CPU/GPU. Existing published
 releases retain their loader; publish a new release with vstd 0.7.32 to upgrade.
 
+File-backed `editor-transform` callers may materialize manifest-addressed bundle
+ZIPs alongside the canonical snapshot. The transform verifies their size and
+SHA-256 before serving GET, HEAD, and range requests, including in presentation-only
+mode. Bundle bytes remain outside returned snapshots. Hosted AV delivery must
+restore the selected archive and keep its downloads behind screen authorization.
+
 ### Cloud voice and release consumption
 
 The engine player supports an authenticated host returning a GPT-Live transport
