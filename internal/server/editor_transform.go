@@ -106,12 +106,12 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	if err = studio.ApplyCloudContent(root, in.Files); err != nil {
 		return result, err
 	}
-	// CloudContent deliberately omits large video blobs. A file-backed transform
-	// may still serve a video materialized by the trusted Cloud runtime, so copy
-	// only regular, manifest-addressed, integrity-checked video files into the
+	// CloudContent deliberately omits large media blobs. A file-backed transform
+	// may still serve media materialized by the trusted Cloud runtime, so copy
+	// only regular, manifest-addressed, integrity-checked media files into the
 	// disposable transform root.
 	if sourceRoot != "" {
-		if err = copyEditorTransformVideos(sourceRoot, root); err != nil {
+		if err = copyEditorTransformMedia(sourceRoot, root); err != nil {
 			return result, err
 		}
 	}
@@ -224,24 +224,35 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 
 var editorTransformVideoHash = regexp.MustCompile(`^[a-f0-9]{64}$`)
 
-func copyEditorTransformVideos(sourceRoot, targetRoot string) error {
+func copyEditorTransformMedia(sourceRoot, targetRoot string) error {
 	manifest, err := library.Load(filepath.Join(sourceRoot, "library"))
 	if err != nil {
 		return err
 	}
+	type media struct {
+		file, hash, canonical string
+		bytes, limit          int64
+	}
+	var assets []media
 	for _, asset := range manifest.Videos {
-		if !editorTransformVideoHash.MatchString(asset.Hash) || asset.File != "video/"+asset.Hash+".mp4" || asset.Bytes <= 0 || asset.Bytes > 512<<20 {
-			return errors.New("invalid editor video reference")
+		assets = append(assets, media{asset.File, asset.Hash, "video/" + asset.Hash + ".mp4", asset.Bytes, 512 << 20})
+	}
+	for _, asset := range manifest.Bundles {
+		assets = append(assets, media{asset.File, asset.Hash, "bundle/" + asset.Hash + ".zip", asset.Bytes, 128 << 20})
+	}
+	for _, asset := range assets {
+		if !editorTransformVideoHash.MatchString(asset.hash) || asset.file != asset.canonical || asset.bytes <= 0 || asset.bytes > asset.limit {
+			return errors.New("invalid editor media reference")
 		}
-		source := filepath.Join(sourceRoot, "library", filepath.FromSlash(asset.File))
+		source := filepath.Join(sourceRoot, "library", filepath.FromSlash(asset.file))
 		info, err := os.Lstat(source)
 		if errors.Is(err, os.ErrNotExist) {
 			continue
 		}
-		if err != nil || !info.Mode().IsRegular() || info.Size() != asset.Bytes {
-			return errors.New("invalid editor video file")
+		if err != nil || !info.Mode().IsRegular() || info.Size() != asset.bytes {
+			return errors.New("invalid editor media file")
 		}
-		target := filepath.Join(targetRoot, "library", filepath.FromSlash(asset.File))
+		target := filepath.Join(targetRoot, "library", filepath.FromSlash(asset.file))
 		if err = os.MkdirAll(filepath.Dir(target), 0700); err != nil {
 			return err
 		}
@@ -264,14 +275,17 @@ func copyEditorTransformVideos(sourceRoot, targetRoot string) error {
 		if closeErr != nil {
 			return closeErr
 		}
-		if written != asset.Bytes || fmt.Sprintf("%x", digest.Sum(nil)) != asset.Hash {
-			return errors.New("editor video integrity failure")
+		if written != asset.bytes || fmt.Sprintf("%x", digest.Sum(nil)) != asset.hash {
+			return errors.New("editor media integrity failure")
 		}
 	}
 	return nil
 }
 
 func transformRoute(method, p, deck string) bool {
+	if method == "HEAD" && (strings.HasPrefix(p, "/assets/video/") || strings.HasPrefix(p, "/assets/bundle/") || strings.HasPrefix(p, "/library/")) {
+		return true
+	}
 	if method == "GET" && (p == "/api/me" || p == "/d/"+deck+"/" || strings.HasPrefix(p, "/library/") || (strings.HasPrefix(p, "/assets/video/") || strings.HasPrefix(p, "/assets/bundle/"))) {
 		return true
 	}
@@ -297,6 +311,9 @@ func transformRoute(method, p, deck string) bool {
 }
 
 func (r EditorTransformResult) MarshalJSON() ([]byte, error) {
+	if r.Body == nil {
+		r.Body = []byte{}
+	}
 	type file struct {
 		Path    string `json:"path"`
 		Content []byte `json:"content"`

@@ -113,6 +113,63 @@ func TestEditorTransformServesMaterializedFileBackedVideo(t *testing.T) {
 	}
 }
 
+func TestEditorTransformServesMaterializedFileBackedBundle(t *testing.T) {
+	st := testStudio(t)
+	content := []byte("materialized cloud bundle")
+	digest := fmt.Sprintf("%x", sha256.Sum256(content))
+	manifest := &library.Manifest{Version: 1, Bundles: []library.BundleAsset{{ID: "flight", File: "bundle/" + digest + ".zip", Hash: digest, Bytes: int64(len(content)), Entrypoint: "index.html", ExpandedBytes: int64(len(content)), FileCount: 1}}}
+	if err := manifest.Save(filepath.Join(st.Root, "library")); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(st.Root, "library", "bundle", digest+".zip")
+	if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	in := EditorTransformInput{Root: st.Root, Delta: true, PresentationOnly: true, Deck: "demo", Method: "HEAD", Path: "/assets/bundle/flight"}
+	result, err := TransformEditor(context.Background(), in)
+	if err != nil || result.Status != 200 || len(result.Body) != 0 || result.Headers["content-length"] != fmt.Sprint(len(content)) {
+		t.Fatalf("HEAD: %+v %v", result, err)
+	}
+	wire, err := json.Marshal(result)
+	if err != nil || !strings.Contains(string(wire), `"body":""`) {
+		t.Fatalf("HEAD must retain the base64 body contract: %s %v", wire, err)
+	}
+	in.Method, in.Headers = "GET", map[string]string{"range": "bytes=0-10"}
+	result, err = TransformEditor(context.Background(), in)
+	if err != nil || result.Status != 206 || string(result.Body) != string(content[:11]) {
+		t.Fatalf("GET: %+v %v", result, err)
+	}
+	for _, f := range result.Files {
+		if strings.HasPrefix(f.Path, "library/bundle/") {
+			t.Fatal("bundle leaked into snapshot")
+		}
+	}
+	in.Path = "/assets/bundle/unregistered"
+	result, err = TransformEditor(context.Background(), in)
+	if err != nil || result.Status != 404 {
+		t.Fatalf("unregistered bundle: %+v %v", result, err)
+	}
+	in.Path = "/assets/bundle/flight"
+	if err := os.WriteFile(file, []byte(strings.Repeat("x", len(content))), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TransformEditor(context.Background(), in); err == nil {
+		t.Fatal("corrupt bundle accepted")
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(st.Root, "studio.yaml"), file); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := TransformEditor(context.Background(), in); err == nil {
+		t.Fatal("symlink bundle accepted")
+	}
+}
+
 func TestEditorTransformFileBackedDelta(t *testing.T) {
 	st := testStudio(t)
 	in := EditorTransformInput{Root: st.Root, Delta: true, Deck: "demo", Method: "GET", Path: "/api/me"}
