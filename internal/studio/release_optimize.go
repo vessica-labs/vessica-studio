@@ -65,9 +65,11 @@ func optimizeReleaseDelivery(root, html string, assets map[string]struct{}) (str
 			if lookupErr != nil {
 				return "", fmt.Errorf("optimized video requires FFmpeg: %w", lookupErr)
 			}
-			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			err = exec.CommandContext(ctx, ffmpeg, append(args, dest)...).Run()
-			cancel()
+			err = cachedReleaseDerivative(source, dest, ffmpeg, "h264-1080-crf23-medium-aac128-faststart-v1", func() error {
+				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				defer cancel()
+				return exec.CommandContext(ctx, ffmpeg, append(args, dest)...).Run()
+			})
 		} else {
 			err = encodeReleaseWebP(source, dest, 1920)
 		}
@@ -175,7 +177,9 @@ func encodeReleaseWebP(source, dest string, maxWidth int) error {
 		height = max(1, height*maxWidth/width)
 		width = maxWidth
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
-	defer cancel()
-	return exec.CommandContext(ctx, encoder, "-quiet", "-q", "82", "-metadata", "none", "-exact", "-resize", fmt.Sprint(width), fmt.Sprint(height), source, "-o", dest).Run()
+	return cachedReleaseDerivative(source, dest, encoder, fmt.Sprintf("webp-q82-exact-%dx%d-v1", width, height), func() error {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+		defer cancel()
+		return exec.CommandContext(ctx, encoder, "-quiet", "-q", "82", "-metadata", "none", "-exact", "-resize", fmt.Sprint(width), fmt.Sprint(height), source, "-o", dest).Run()
+	})
 }
