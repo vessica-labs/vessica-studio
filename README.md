@@ -579,6 +579,14 @@ fields; delivery settings and variant rules participate in the deterministic
 manifest checksum. Original studio files are retained unchanged. Encoder versions
 should be pinned consistently across build workers.
 
+Optimized `release-build` media encoding can reuse unchanged image/video derivatives
+when the host explicitly sets an absolute `XDG_CACHE_HOME`. The disposable cache
+binds source bytes, encoding recipe and encoder binary identity, verifies cached
+bytes before reuse, and is capped at 256 MiB per cache namespace. Missing, corrupt
+or unwritable cache entries fall back to encoding. Source files, output recipes
+and release checksums are unchanged. Multi-tenant hosts must supply separate
+private cache directories for each tenant; the cache never grants content access.
+
 `delivery-resources` exports only compiled-in engine/default-theme CSS named by
 its digest. Hosts install this trusted output independently of tenant uploads;
 custom themes and deck overrides remain presentation scoped. A host must not

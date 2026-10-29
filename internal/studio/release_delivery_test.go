@@ -49,6 +49,7 @@ func TestSanitizeDeliverySVG(t *testing.T) {
 }
 
 func TestOptimizedReleasePreservesOriginalAndTransparency(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	if _, err := exec.LookPath("cwebp"); err != nil {
 		t.Skip("cwebp unavailable")
 	}
@@ -118,9 +119,15 @@ func TestOptimizedReleasePreservesOriginalAndTransparency(t *testing.T) {
 	if manifest.ManifestChecksum != again.ManifestChecksum {
 		t.Fatal("optimized release is nondeterministic")
 	}
+	t.Setenv("XDG_CACHE_HOME", "")
+	uncached, err := st.BuildReleaseWithOptions("demo", filepath.Join(t.TempDir(), "release"), ReleaseEngineIdentity{Name: "vstd", Version: "test", Revision: strings.Repeat("a", 40)}, ReleaseOptions{Optimize: true, DeliveryTemplate: true})
+	if err != nil || manifest.ManifestChecksum != uncached.ManifestChecksum {
+		t.Fatal("cached and uncached releases differ", err)
+	}
 }
 
 func TestOptimizedVideoIsCappedFastStartWithWebPPoster(t *testing.T) {
+	t.Setenv("XDG_CACHE_HOME", t.TempDir())
 	for _, tool := range []string{"ffmpeg", "ffprobe", "cwebp"} {
 		if _, err := exec.LookPath(tool); err != nil {
 			t.Skip(tool + " unavailable")
@@ -136,6 +143,7 @@ func TestOptimizedVideoIsCappedFastStartWithWebPPoster(t *testing.T) {
 		t.Fatalf("video fixture: %s %v", raw, err)
 	}
 	assets := map[string]struct{}{path: {}}
+	original, _ := os.ReadFile(source)
 	if _, err := optimizeReleaseDelivery(root, `const posterFor=id=>'./assets/video-posters/'+id+'.jpg';`, assets); err != nil {
 		t.Fatal(err)
 	}
@@ -153,6 +161,16 @@ func TestOptimizedVideoIsCappedFastStartWithWebPPoster(t *testing.T) {
 	}
 	if _, ok := assets["assets/video-posters/demo.webp"]; !ok {
 		t.Fatal("missing poster")
+	}
+	if err := os.WriteFile(source, original, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := optimizeReleaseDelivery(root, `const posterFor=id=>'./assets/video-posters/'+id+'.jpg';`, map[string]struct{}{path: {}}); err != nil {
+		t.Fatal(err)
+	}
+	cached, _ := os.ReadFile(source)
+	if !bytes.Equal(data, cached) {
+		t.Fatal("cached video differs from encoded video")
 	}
 }
 
