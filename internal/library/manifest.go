@@ -3,6 +3,7 @@
 package library
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -23,7 +24,9 @@ type StyleFamily struct {
 
 type Asset struct {
 	// Preserve source attribution and future metadata when registering new images.
-	extra map[string]json.RawMessage
+	extra          map[string]json.RawMessage
+	sourceFields   map[string]json.RawMessage
+	baselineFields map[string]json.RawMessage
 
 	ID      string   `json:"id"`
 	File    string   `json:"file"`
@@ -52,11 +55,25 @@ func (a *Asset) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &extra); err != nil {
 		return err
 	}
+	source := make(map[string]json.RawMessage)
 	for _, key := range assetFields {
+		if value, ok := extra[key]; ok {
+			source[key] = value
+		}
 		delete(extra, key)
+	}
+	normalized, err := json.Marshal(typed)
+	if err != nil {
+		return err
+	}
+	var baseline map[string]json.RawMessage
+	if err := json.Unmarshal(normalized, &baseline); err != nil {
+		return err
 	}
 	*a = Asset(typed)
 	a.extra = extra
+	a.sourceFields = source
+	a.baselineFields = baseline
 	return nil
 }
 
@@ -65,12 +82,23 @@ func (a Asset) MarshalJSON() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	if len(a.extra) == 0 {
+	if a.baselineFields == nil && len(a.extra) == 0 {
 		return raw, nil
 	}
 	var fields map[string]json.RawMessage
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return nil, err
+	}
+	// Keep unchanged wire fields exactly as they were, including absence, null
+	// and explicit empty values. Cloud accepts only additive registrations.
+	for _, key := range assetFields {
+		if a.baselineFields != nil && bytes.Equal(fields[key], a.baselineFields[key]) {
+			if original, ok := a.sourceFields[key]; ok {
+				fields[key] = original
+			} else {
+				delete(fields, key)
+			}
+		}
 	}
 	for key, value := range a.extra {
 		fields[key] = value

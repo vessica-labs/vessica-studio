@@ -1713,3 +1713,9 @@ explicit presenter requests. Snapshot fields are reference data, never agent
 instructions. Current numbers require a fresh status response; background state
 updates do not trigger speech. Hosted apps must enforce mutating permissions in
 their backend and disclose stale, partial, synthetic and replay states.
+
+Image generation allows up to 12 minutes for a complete provider response. Text
+and realtime requests retain their three-minute HTTP timeout.
+
+Registering a generated image preserves existing image records, including omitted
+metadata fields and explicit empty values, so additive Cloud edits remain valid.

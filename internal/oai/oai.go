@@ -90,6 +90,10 @@ func (c *Client) GetRaw(path string) ([]byte, int, error) {
 }
 
 func (c *Client) post(path string, payload any) ([]byte, int, error) {
+	return c.postWithClient(c.HTTP, path, payload)
+}
+
+func (c *Client) postWithClient(client *http.Client, path string, payload any) ([]byte, int, error) {
 	b, _ := json.Marshal(payload)
 	model := payloadModel(b)
 	started := time.Now()
@@ -99,13 +103,17 @@ func (c *Client) post(path string, payload any) ([]byte, int, error) {
 	}
 	req.Header.Set("Authorization", "Bearer "+c.Key)
 	req.Header.Set("Content-Type", "application/json")
-	res, err := c.HTTP.Do(req)
+	res, err := client.Do(req)
 	if err != nil {
 		c.observe(Observation{Path: path, Model: model, DurationMS: time.Since(started).Milliseconds()})
 		return nil, 0, err
 	}
 	defer res.Body.Close()
-	body, _ := io.ReadAll(res.Body)
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		c.observe(Observation{Path: path, Model: model, StatusCode: res.StatusCode, DurationMS: time.Since(started).Milliseconds()})
+		return nil, res.StatusCode, err
+	}
 	usage := responseUsage(body)
 	usage.Path = path
 	usage.Model = model
@@ -184,7 +192,11 @@ func (c *Client) GenerateAsset(libDir, model, prompt, family, size, slug string,
 	if size == "" {
 		size = "1024x1024"
 	}
-	body, code, err := c.post("/images/generations", map[string]any{
+	// Image generation can wait on the provider for several minutes. Copy the
+	// client so text and realtime requests keep their shorter timeout.
+	imageHTTP := *c.HTTP
+	imageHTTP.Timeout = 12 * time.Minute
+	body, code, err := c.postWithClient(&imageHTTP, "/images/generations", map[string]any{
 		"model": model, "prompt": full, "size": size, "n": 1,
 	})
 	if err != nil {

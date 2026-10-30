@@ -148,3 +148,43 @@ func TestImageRegistrationPreservesExistingSourceMetadata(t *testing.T) {
 		t.Fatalf("typed changes lost: %#v", loaded.Assets[0])
 	}
 }
+
+func TestImageRegistrationPreservesOmittedAndEmptyKnownFields(t *testing.T) {
+	dir := t.TempDir()
+	input := `{"version":1,"styleFamilies":{},"assets":[{"id":"source","file":"img/source.png","family":"","tags":[],"usage":null,"attribution":{"creator":"Example"}}]}`
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), []byte(input), 0600); err != nil {
+		t.Fatal(err)
+	}
+	manifest, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	manifest.Assets = append(manifest.Assets, Asset{ID: "new", File: "img/new.png", Model: "fixture"})
+	if err := manifest.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before, after struct {
+		Assets []map[string]any `json:"assets"`
+	}
+	json.Unmarshal([]byte(input), &before)
+	json.Unmarshal(raw, &after)
+	if !reflect.DeepEqual(before.Assets[0], after.Assets[0]) {
+		t.Fatalf("registration changed existing record: before=%v after=%v", before.Assets[0], after.Assets[0])
+	}
+	manifest.Assets[0].Model = "updated"
+	manifest.Assets[0].Tags = []string{"updated"}
+	if err := manifest.Save(dir); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Assets[0].Model != "updated" || !reflect.DeepEqual(loaded.Assets[0].Tags, []string{"updated"}) {
+		t.Fatal("typed edits were lost")
+	}
+}
