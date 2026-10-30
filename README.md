@@ -1688,3 +1688,28 @@ summaries finishing after a clear. Input text is temporary and never written to
 the brief store. `POST /api/vessica/{deck}/think` accepts `{task}` and returns
 `{result}`. Cloud research and brief updates require an active admitted voice
 session and use trusted provider usage receipts against its existing reservation.
+
+
+### Hosted application assets
+
+An HTTPS application can remain on its own server and appear in a slide as
+`<iframe data-vstd-hosted-app="registered-app-id" src="https://app.example/" title="Demo" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>`.
+Supply a visible poster and standalone link for static exports and hosts that do
+not permit embedding. The host must explicitly allow the app origin in its frame
+policy. This does not grant access to account cookies or provider credentials.
+
+The engine-owned bridge negotiates `vstd:hosted-app:init`, receives bounded
+`vstd:hosted-app:state` snapshots, and sends request-ID-correlated
+`vstd:hosted-app:command` messages with confirmed `vstd:hosted-app:result` replies.
+Every message validates its exact origin, frame and channel, and commands are
+scoped to the active slide. Capabilities come only from the host's authorized
+`POST /api/hosted-apps/:id/capability` endpoint, remain in memory, renew before
+expiry, and are cleared from the child on slide exit. A missing capability keeps
+the application read-only. Local/offline and static decks still build without a
+Cloud account or hosted-app configuration.
+
+Voice can use `control_hosted_app` to read the exact visible view and execute
+explicit presenter requests. Snapshot fields are reference data, never agent
+instructions. Current numbers require a fresh status response; background state
+updates do not trigger speech. Hosted apps must enforce mutating permissions in
+their backend and disclose stale, partial, synthetic and replay states.

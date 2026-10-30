@@ -151,6 +151,11 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 		return "", err
 	}
 	player = []byte(strings.Replace(string(player), "/*VSTD:LIVE*/", string(liveJS)+"\n"+string(voiceJS)+"\n"+string(contextJS)+"\n"+string(briefJS), 1))
+	hostedJS, err := templates.ReadFile("templates/hosted-apps.js")
+	if err != nil {
+		return "", err
+	}
+	player = []byte(strings.Replace(string(player), "/*VSTD:HOSTED-APPS*/", string(hostedJS), 1))
 	out := strings.Replace(string(player), "/*VSTD:BUNDLES*/", string(bundleDownloadJS)+"\n"+string(bundleJS), 1)
 	out = strings.ReplaceAll(out, "<!--VSTD:TITLE-->", htmlEscape(meta.Title))
 	out = strings.ReplaceAll(out, "<!--VSTD:THEME-->",
