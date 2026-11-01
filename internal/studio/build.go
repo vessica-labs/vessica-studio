@@ -138,6 +138,10 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 	if err != nil {
 		return "", err
 	}
+	decisionsJS, err := templates.ReadFile("templates/decisions.js")
+	if err != nil {
+		return "", err
+	}
 	voiceJS, err := templates.ReadFile("templates/voice.js")
 	if err != nil {
 		return "", err
@@ -150,7 +154,7 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 	if err != nil {
 		return "", err
 	}
-	player = []byte(strings.Replace(string(player), "/*VSTD:LIVE*/", string(liveJS)+"\n"+string(voiceJS)+"\n"+string(contextJS)+"\n"+string(briefJS), 1))
+	player = []byte(strings.Replace(string(player), "/*VSTD:LIVE*/", string(liveJS)+"\n"+string(decisionsJS)+"\n"+string(voiceJS)+"\n"+string(contextJS)+"\n"+string(briefJS), 1))
 	hostedJS, err := templates.ReadFile("templates/hosted-apps.js")
 	if err != nil {
 		return "", err

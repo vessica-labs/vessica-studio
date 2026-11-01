@@ -9,11 +9,11 @@
         function check(){if(pc.iceGatheringState==='complete'){clearTimeout(timeout);pc.removeEventListener('icegatheringstatechange',check);resolve();}}
         pc.addEventListener('icegatheringstatechange',check);check();
       });
-      const response=await fetch('/api/live/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,instructions:config.instructions,tools:config.tools,dictation:!!config.dictation,brief:window.__vbrief?.markdown()||''}),signal:AbortSignal.timeout(45000)});
+      const response=await fetch('/api/live/session',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sdp:pc.localDescription.sdp,instructions:config.instructions,tools:config.tools,...(config.triggers?{triggers:config.triggers}:{}),dictation:!!config.dictation,brief:window.__vbrief?.markdown()||''}),signal:AbortSignal.timeout(45000)});
       const result=await response.json();
       if(!response.ok)throw new Error(result.message||'Live session could not start');
       if(!result.session?.id||!result.transport?.sdp)throw new Error('Invalid Live connection receipt');
-      return {answer:result.transport.sdp,adapter:this.adapter(dc,true,config)};
+      return {answer:result.transport.sdp,session:result.session,decisionsTriggers:result.decisions_triggers!==false,adapter:this.adapter(dc,true,config)};
     },
     adapter(dc,relay=false,config={}){
       let ready=false,closed=false,closing=false,finished;
@@ -57,10 +57,10 @@
         if(event.type==='session.update'){
           const session=event.session;
           if(relay){
-            const body=JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools,dictation:!!config.dictation,brief:config.dictation?'':window.__vbrief?.markdown()||''});
+            const body=JSON.stringify({sdp:'context',instructions:session.instructions,tools:session.tools,...(session.triggers?{triggers:session.triggers}:{}),dictation:!!config.dictation,brief:config.dictation?'':window.__vbrief?.markdown()||''});
             if(body!==lastConfiguration){lastConfiguration=body;pendingConfiguration=body;configureLatest();}
           }
-          else raw({type:'session.update',session:{delegation:{type:'responses',responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
+          else raw({type:'session.update',session:{...(session.triggers?{triggers:session.triggers}:{}),delegation:{type:'responses',responses:{instructions:session.instructions,tools:session.tools,tool_choice:'auto',parallel_tool_calls:false}}}});return;
         }
         if(event.type==='conversation.item.create'){
           if(event.item.type==='function_call_output')raw({type:'response.item.create',item:event.item});
@@ -82,7 +82,7 @@
             const event=message.event;
             if(event.type==='response.created')return {type:'response.created'};
             if(event.type==='response.output_item.done'&&event.item?.type==='function_call'&&!calls.has(event.item.call_id)){
-              calls.add(event.item.call_id);return {...event.item,type:'response.function_call_arguments.done'};
+              calls.add(event.item.call_id);return {...event.item,type:'response.function_call_arguments.done',...(message.delegation_id?{delegation_id:message.delegation_id}:{})};
             }
             if(event.type==='response.completed'||event.type==='response.failed'||event.type==='response.incomplete'){
               return {type:'response.done',response:{status:event.type==='response.completed'?'completed':'failed'}};

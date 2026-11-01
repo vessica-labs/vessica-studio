@@ -1526,6 +1526,27 @@ not start a microphone session when Vessica is off.
 Wake and sleep control speech only: explicit navigation and highlighting commands
 execute while Vessica is connected, whether awake or silently listening.
 
+Hosts advertising `decisions_triggers: true` in the Live descriptor enable a
+parallel Decisions path for explicit next/back, page-number navigation and
+highlight/clear commands. The engine sends bounded `triggers` with the Live offer
+and context updates; the host keeps `delegation.type: responses`, its chosen
+thinking model, and all research/editing tools. The host validates this optional
+input and applies updates over its trusted provider connection. Local Realtime,
+dictation and older hosts retain the existing path.
+
+Decisions results arrive directly as `decision.event` on the WebRTC data channel,
+along with input transcripts, `session.updated` and `session.delegation.created`.
+The player waits for a matching trigger configuration, checks presenter authority
+and current page/element state, and allows a 200 ms correction window. A shared
+dispatcher arbitrates Decisions and correlated agent tool calls; the first path
+owns the action. Relative moves use the page snapshot captured with the request.
+The host must preserve `delegation_id` when relaying Responses calls. Unknown,
+low-confidence, stale or unsupported decisions leave the existing backend in
+charge; topic navigation and edits remain agent work. A definitive provider
+rejection of Decisions access can fall back to a Responses-only session without
+changing credentials or permissions. No automatic narration-based navigation or
+highlighting is enabled by this first implementation.
+
 Presenter voice reads the current page number and title from the player, using
 the same numbering as navigation (parked slides have no page number). It loads
 the selected slide's full companion Markdown and a presentation-wide table of
