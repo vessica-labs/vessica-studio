@@ -3028,7 +3028,7 @@ ${window.__vbrief?.markdown()||'(no meeting brief yet)'}`;
     }
     if(name==='next_slide')P().step(1);
     else if(name==='prev_slide')P().step(-1);
-    else if(name==='goto_slide')P().gotoNum(args.number);
+    else if(name==='goto_slide')P().gotoNum(args.number||1);
     else if(name==='highlight')return doHighlight(args.phrase||'')?'highlighted':'no matching element';
     else if(name==='clear_highlight'){clearGlow();return 'highlight cleared';}
     return JSON.stringify(presentation.snapshot().current, ['page','total','id','title']);

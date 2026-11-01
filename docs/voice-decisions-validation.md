@@ -1,8 +1,8 @@
 # Decisions presentation controls: local validation
 
-Validated November 1, 2026. This implementation has not been released or deployed.
+Pre-release validation recorded November 1, 2026 for v0.7.60.
 The Cloud broker changes are a separate private-repository change; consuming them
-requires a future public-engine release and an explicit Cloud engine-lock update.
+requires the public-engine release and an explicit Cloud engine-lock update.
 
 ## Behavior exercised
 
