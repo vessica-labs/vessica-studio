@@ -23,8 +23,8 @@ func TestLiveTransportDelegationAndGracefulClose(t *testing.T) {
  adapter.event({type:'session.started'});
  assert.equal(sent[0].session.delegation.responses.instructions,'current slide');
  adapter.event({type:'response.event',event:{type:'response.created'}});
- const call={type:'response.event',event:{type:'response.output_item.done',item:{type:'function_call',name:'next_slide',call_id:'call_1',arguments:'{}'}}};
- assert.equal(adapter.event(call).type,'response.function_call_arguments.done');assert.equal(adapter.event(call),null);
+ const call={type:'response.event',delegation_id:'del_1',event:{type:'response.output_item.done',item:{type:'function_call',name:'next_slide',call_id:'call_1',arguments:'{}'}}};
+ const translated=adapter.event(call);assert.equal(translated.type,'response.function_call_arguments.done');assert.equal(translated.delegation_id,'del_1');assert.equal(adapter.event(call),null);
  adapter.send({type:'conversation.item.create',item:{type:'function_call_output',call_id:'call_1',output:'advanced'}});
  assert.equal(sent.at(-1).type,'response.item.create');
  adapter.send({type:'response.create'});assert.equal(sent.at(-1).type,'response.create','tool results must continue immediately without waiting for response.completed');

@@ -72,6 +72,10 @@ func TestPlayerLiveVoiceWithoutBackendWakeTool(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	decisions, err := templates.ReadFile("templates/decisions.js")
+	if err != nil {
+		t.Fatal(err)
+	}
 	presentation, err := templates.ReadFile("templates/presentation-context.js")
 	if err != nil {
 		t.Fatal(err)
@@ -91,10 +95,10 @@ let blocked=false;
 global.Audio=class {constructor(){audio.push(this);}play(){return blocked?Promise.reject(new Error('NotAllowedError')):Promise.resolve();}pause(){this.paused=true;}};
 global.RTCPeerConnection=class {constructor(){pcs.push(this);this.iceGatheringState='complete';}addTrack(){}createDataChannel(){return this.dc=new EventTarget();}async createOffer(){return {sdp:'offer'};}async setLocalDescription(offer){this.localDescription=offer;}async setRemoteDescription(){this.ontrack({streams:[{id:'remote'}]});}close(){}};
 const avatarCalls=[];let avatarCallbacks;global.VSTDAvatar={enabled:()=>savedAvatar,saveEnabled:value=>savedAvatar=value,create(callbacks){avatarCallbacks=callbacks;return {setEnabled(value){avatarCalls.push(value?'enabled':'disabled');},attach(){avatarCalls.push('attach');},begin(){avatarCalls.push('wake');},end(){avatarCalls.push('sleep');},interrupt(){avatarCalls.push('interrupt');},close(){assert.equal(audio.at(-1).muted,true,'mute ordinary voice before destroying avatar playback');avatarCalls.push('close');}};}};
-let liveMode=true;
+let liveMode=true,fastControls=false;
 const requests=[];let companionText='## Talk track\nFull companion narrative beyond HTML notes. '+ 'Detailed narrative. '.repeat(100);
-global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:true,text:async()=>'answer',json:async()=>path==='/api/realtime/token'?(liveMode?{protocol:'live'}:{value:'test-secret'}):path==='/api/live/session'?{session:{id:'live_1'},transport:{sdp:'answer'}}:path.includes('/voice-context?')?{current:{id:decodeURIComponent(path.split('slide=')[1]),companion:companionText},pages:slides.map(el=>({id:el.id,summary:el.id==='0030-governance'?'Accountability and decision rights':'Costs and workforce'}))}:{events:[]}};};
-` + string(voice) + string(live) + string(presentation) + source[start:end] + `
+global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:true,text:async()=>'answer',json:async()=>path==='/api/realtime/token'?(liveMode?{protocol:'live',decisions_triggers:fastControls}:{value:'test-secret'}):path==='/api/live/session'?{session:{id:'live_1'},transport:{sdp:'answer'}}:path.includes('/voice-context?')?{current:{id:decodeURIComponent(path.split('slide=')[1]),companion:companionText},pages:slides.map(el=>({id:el.id,summary:el.id==='0030-governance'?'Accountability and decision rights':'Costs and workforce'}))}:{events:[]}};};
+` + string(voice) + string(live) + string(decisions) + string(presentation) + source[start:end] + `
 (async()=>{
  const tick=()=>new Promise(resolve=>setImmediate(resolve));
  const preference=preferenceMessages[0];assert.equal(preference.action,'read');
@@ -151,6 +155,26 @@ global.fetch=async(path,options={})=>{requests.push({path,options});return {ok:t
  companionText='Long narrative. '.repeat(3000);
  global.__vendRealtimeSession=async()=>{};emit({type:'session.closed'});await tick();assert.equal(first.paused,true);assert.equal(first.srcObject,null);
  assert.equal(global.__vlive(),false);assert(avatarCalls.includes('close'),'voice teardown destroys renderer controller');
+ // New hosts enable direct Decisions; old hosts above sent no trigger fields.
+ assert(!offer.triggers,'older host offers remain compatible');
+ fastControls=true;listeners['vstd:vtoggle']();await tick();const fastDC=pcs.at(-1).dc;
+ fastDC.readyState='open';fastDC.send=s=>sent.push(JSON.parse(s));fastDC.onopen();emit({type:'session.started'});await tick();
+ const fastOffer=JSON.parse(requests.filter(r=>r.path==='/api/live/session').at(-1).options.body);assert.equal(fastOffer.triggers.length,1);
+ const fastContext=JSON.parse(requests.filter(r=>r.path==='/api/live/context').at(-1).options.body);
+ emit({type:'session.updated',session:{triggers:fastContext.triggers}});
+ emit({type:'session.input_transcript.delta',event_id:'fast-input',delta:'Go to page four.',start_ms:1000,end_ms:1200});
+ emit({type:'session.delegation.created',offset_ms:1200,delegation:{id:'fast-delegation',target:'responses'}});
+ emit({type:'decision.event',source_event_type:'session.input_transcript.delta',source_event_id:'fast-input',event:{type:'decision.completed',decision:{answers:fastContext.triggers[0].decisions.questions.map(q=>({type:'choice',name:q.name,choice:q.name.includes('navigation')?'p:0040-recovery':'none'}))}}});
+ const fastBefore=creates();await new Promise(r=>setTimeout(r,230));
+ assert.equal(navigation.at(-1),4);assert.equal(creates(),fastBefore,'a Decisions action must not start a Responses round trip');assert.equal(audio.at(-1).muted,true,'fast controls preserve silent listening');
+ const navCount=navigation.length;
+ emit({type:'response.event',delegation_id:'fast-delegation',event:{type:'response.output_item.done',item:{type:'function_call',name:'next_slide',call_id:'duplicate-fast-nav',arguments:'{}'}}});
+ assert.equal(navigation.length,navCount,'delayed agent cannot advance a second page');
+ emit({type:'response.event',delegation_id:'fast-delegation',event:{type:'response.output_item.done',item:{type:'function_call',name:'web_search',call_id:'mixed-search',arguments:JSON.stringify({query:'Synthetic example company current figures'})}}});await tick();
+ assert(requests.some(r=>r.path.endsWith('/search')),'a mixed request retains the research tool path');
+ emit({type:'response.event',delegation_id:'fast-delegation',event:{type:'response.output_item.done',item:{type:'function_call',name:'deep_think',call_id:'mixed-thinking',arguments:JSON.stringify({task:'Compare these synthetic options carefully'})}}});await tick();
+ assert(requests.some(r=>r.path.endsWith('/think')),'detailed thinking still reaches its existing endpoint');
+ emit({type:'session.closed'});await tick();
  // Local Realtime retains its tool-controlled wake path and a fresh muted speaker.
  liveMode=false;
  listeners['vstd:vtoggle']();await tick();const second=audio.at(-1),dc2=pcs.at(-1).dc;
