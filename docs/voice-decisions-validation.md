@@ -1,6 +1,6 @@
 # Decisions presentation controls: validation
 
-Validation notes for the v0.7.61 transcript-chunk repair, November 1, 2026.
+Validation notes for the v0.7.62 transcript-chunk and destination-grounding repair, November 1, 2026.
 Cloud consumes this public-engine release through a separate verified engine pin.
 
 ## Hosted regression
@@ -17,11 +17,20 @@ then ` slide` with a different choice at 0.28. A complete exact highlight target
 received confidence 0.37 and fell back to the backend.
 
 The dispatcher now keeps at most 32 bounded predictions within one utterance and
-rechecks them against its accumulated words. Navigation retains its 0.5 confidence
-floor and absolute destination checks. Highlight confidence from 0.25 to 0.5 is
+rechecks them against its accumulated words. Navigation below 0.5 confidence requires a complete literal next/previous/back or
+numeric-page command and a matching bounded destination. Ambiguous and narrative
+requests still require the original confidence floor. Absolute destination checks
+remain enforced. Highlight confidence from 0.25 to 0.5 is
 usable only when the complete spoken label exactly matches the selected bounded
 element. Earlier highlight predictions also require this exact grounding.
 Ambiguous, partial and very low-confidence choices retain the backend fallback.
+
+A second hosted check of v0.7.61 confirmed native highlighting, thinking and
+research, but correctly classified next-page choices at confidence 0.44 still fell
+back to the backend. A local candidate tested over the hosted connection produced
+both native control receipts while remaining asleep and suppressing duplicates.
+The v0.7.62 regression covers this trace and rejects ambiguous and narrative
+navigation at the same confidence. Deployed acceptance remains required.
 
 ## Automated coverage
 

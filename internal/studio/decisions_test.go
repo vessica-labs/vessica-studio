@@ -91,7 +91,7 @@ const input=(id,delta,start)=>c.observe({type:'session.input_transcript.delta',e
 const decision=(id,nav='none',highlight='none',confidence=.56)=>c.observe({type:'decision.event',source_event_type:'session.input_transcript.delta',source_event_id:id,event:{type:'decision.completed',decision:{answers:config[0].decisions.questions.map(q=>({type:'choice',name:q.name,choice:q.name.includes('navigation')?nav:highlight,confidence}))}}});
 const flush=()=>{now+=250;const work=[...timers.values()];timers.clear();work.forEach(fn=>fn());};
 // Real hosted trace: the useful prediction belongs to "Next", then " slide" arrives.
-input('next',' Next',0);decision('next','p:demo');flush();assert.equal(page,1,'a partial command cannot execute');
+input('next',' Next',0);decision('next','p:demo','none',.44);flush();assert.equal(page,1,'a partial command cannot execute');
 input('slide',' slide',400);decision('slide','p:cover','none',.28);flush();assert.equal(page,2,'retain the relevant prediction until its utterance becomes a complete explicit command');
 c.observe({type:'session.delegation.created',offset_ms:600,delegation:{id:'agent-next',target:'responses'}});
 c.backend('next_slide',{},'agent-next',()=>{throw Error('duplicate move after chunked decision');});
@@ -99,12 +99,16 @@ config=configure();
 input('h',' Highlight',2000);input('h2',' dictate',2400);input('h3',' new',2600);input('h4',' slides',3200);
 decision('h4','none','h0',.37);flush();assert.deepEqual(actions.at(-1),['highlight',{phrase:'Dictate new slides'}],'a precise target match can ground a moderate-confidence native choice');
 const count=actions.length;
+input('ambiguous-navigation',' Go to the other section.',4000);decision('ambiguous-navigation','p:cover','none',.44);flush();assert.equal(actions.length,count,'moderate confidence requires an explicit destination in the words');
+input('wrong-grounding',' Next slide.',4300);decision('wrong-grounding','p:cover','none',.44);flush();assert.equal(actions.length,count,'moderate confidence cannot contradict the requested destination');
+input('narration','Back in 2024, we improved margins.',4400);decision('narration','p:cover','none',.44);flush();assert.equal(actions.length,count,'a narrative prefix cannot ground moderate-confidence navigation');
 input('unclear',' Highlight something over there.',4500);decision('unclear','none','h0',.37);flush();assert.equal(actions.length,count,'moderate confidence alone cannot authorize an ambiguous target');
 input('partial-highlight',' Highlight the revenue',6000);decision('partial-highlight','none','h1',.37);flush();assert.equal(actions.length,count,'moderate confidence must match the full bounded target');
 input('finished-highlight',' chart',6400);flush();assert.equal(actions.length,count+1,'an earlier bounded highlight prediction can become grounded as the transcript completes');
 input('new-utterance','Research this company.',8000);decision('h4','none','h0',.8);flush();assert.equal(actions.length,count+1,'old utterance predictions cannot control new speech');
 page=1;config=configure();input('before-correction',' Next',10000);decision('before-correction','p:demo');input('complete',' slide',10400);input('correction',' actually stay here',10600);flush();assert.equal(page,1,'a correction cancels carried predictions');
 input('late-next',' Next',12000);decision('late-next','p:demo');now+=3000;input('late-slide',' slide',12400);flush();assert.equal(page,1,'carried predictions expire');
+input('literal-number','Go to page 2.',14000);decision('literal-number','p:demo','none',.44);flush();assert.equal(page,2,'moderate confidence can use a matching literal numeric destination');
 c.close();
 `
 	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
