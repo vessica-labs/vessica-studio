@@ -1,58 +1,55 @@
-# Decisions presentation controls: local validation
+# Decisions presentation controls: validation
 
-Pre-release validation recorded November 1, 2026 for v0.7.60.
-The Cloud broker changes are a separate private-repository change; consuming them
-requires the public-engine release and an explicit Cloud engine-lock update.
+Validation notes for the v0.7.61 transcript-chunk repair, November 1, 2026.
+Cloud consumes this public-engine release through a separate verified engine pin.
 
-## Behavior exercised
+## Hosted regression
 
-- Explicit navigation and highlighting use native input-transcript Decisions
-  triggers alongside the existing Responses delegation.
-- Both arrival orders are covered: Decisions first and backend first. A correlated
-  delayed agent call cannot execute a second relative page move.
-- Current-slide state, explicit numeric destinations, presenter authority,
-  corrections, stale results, low confidence, unknown choices and session teardown
-  are checked. Failed fast execution leaves the backend able to finish the action.
-- Mixed requests retain the existing web-search and detailed-thinking endpoints.
-  The complete companion/context and meeting-brief paths remain in place.
-- Older hosts, local Realtime and dictation retain their existing transport.
-  A definitive provider rejection of Decisions access falls back without changing
-  credentials or provider permissions.
+An authenticated hosted WebRTC session accepted Decisions triggers alongside the
+existing Responses delegation. Synthetic speech navigated once, highlighted the
+requested element and left Vessica asleep. The thinking and web-search endpoints
+both returned successful results. Session closure returned HTTP 204.
 
-## Automated checks
+That v0.7.60 check also exposed a fast-path gap: the backend completed the controls,
+while the dispatcher discarded useful native predictions across transcript chunks.
+The provider emitted ` Next` with the correct next-page choice at confidence 0.56,
+then ` slide` with a different choice at 0.28. A complete exact highlight target
+received confidence 0.37 and fell back to the backend.
 
-Engine: `go test ./...`, `go test -race ./...`, `go vet ./...`, CLI build,
-formatting and diff hygiene passed during implementation. The final changed Studio
-package was rechecked after adjustments. Checks used the available Go 1.26.5 with
-`GOTOOLCHAIN=local` and a temporary build cache: the cached 1.26.10 toolchain selected
-by `go.mod` was missing standard-library packages. Exact pinned-toolchain CI is
-still required before release.
+The dispatcher now keeps at most 32 bounded predictions within one utterance and
+rechecks them against its accumulated words. Navigation retains its 0.5 confidence
+floor and absolute destination checks. Highlight confidence from 0.25 to 0.5 is
+usable only when the complete spoken label exactly matches the selected bounded
+element. Earlier highlight predictions also require this exact grounding.
+Ambiguous, partial and very low-confidence choices retain the backend fallback.
 
-The Cloud non-PostgreSQL suite passed 795 tests (8 skipped) after installing its
-checksum-verified existing engine pin. That run excluded the pre-existing
-`supply-chain.test.ts` file, which expects engine 0.7.58 while the checked-in lock
-specifies 0.7.59. A separate run confirmed that assertion fails without any changes
-to the lock or supply-chain code. Focused voice tests, TypeScript type checking,
-production build, changed-file lint/format checks, secret scan and Cloud architecture
-lint passed. Database acceptance and hosted-browser deployment checks were not run.
+## Automated coverage
 
-The engine architecture lint has existing failures: the 937-line
-`internal/server/pptx_capture.js` exceeds its file-size rule, and the scanner flags
-an existing ignored `.env` file. Neither was changed by this feature.
+The Node-backed Studio tests replay the hosted chunk sequence and verify that a
+partial command waits, a useful earlier result survives a later irrelevant result,
+and the corresponding delayed backend move is suppressed. They also cover exact
+highlight grounding, partial and ambiguous targets, correction, expiry and results
+from older utterances.
 
-## Live provider check
+Existing tests cover both action arrival orders, current page/element revisions,
+explicit numeric destinations, presenter authority, unknown choices, session
+teardown, failed fast execution and preserved research/thinking routes. Local
+Realtime, dictation and hosts without Decisions retain their existing transport.
 
-A short primary-WebSocket session used synthetic speech, native Decisions triggers
-and a `gpt-6.1-sol` Responses backend with `gpt-live-1`. The provider accepted the
-trigger configuration, emitted input transcripts and Decisions results, and the
-engine dispatcher executed one `goto_slide` action. The later Responses tool call
-was received and did not execute another move. The session closed successfully.
-No presenter microphone, production Studio session or production deployment was used.
+The release gate includes formatting, `go test ./...`, `go test -race ./...`,
+`go vet ./...`, the CLI build and diff hygiene using the pinned Go toolchain.
+Cloud separately verifies its released binary checksums, API and database tests,
+clean-clone behavior and both runtime container images.
 
-This was a functional smoke test, not a latency benchmark. Its one fast action
-occurred about 2.85 seconds after the synthetic audio stream began, including
-leading silence and speech playback. The initial 0.9 confidence cutoff prevented
-fast execution despite correct classifications; observed native confidence led to
-a preliminary 0.5 cutoff, alongside lexical, destination and state checks and a
-200 ms correction window. A representative command corpus and real microphone
-trials should determine production thresholds and median/tail latency claims.
+## Hosted acceptance after rollout
+
+Verify the exact engine and Cloud revisions and every production service before
+starting the authenticated player. Use synthetic audio and an existing presenter
+session, with no content edits. Require observed native control receipts for both
+navigation and highlighting, confirm one page move after delayed backend calls,
+and check that Vessica remains asleep. Exercise the existing thinking and research
+endpoints, then confirm voice closure and reservation settlement.
+
+This is functional acceptance. A representative command corpus and real microphone
+trials are still needed for confidence calibration and median/tail latency claims.
+The thresholds above are preliminary and do not establish a latency benchmark.
