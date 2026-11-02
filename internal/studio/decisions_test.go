@@ -70,3 +70,44 @@ const empty=VSTDDecisions.create({snapshot:()=>({current:{id:'parked',page:0},pa
 		t.Fatalf("%v: %s", err, output)
 	}
 }
+
+func TestPresentationDecisionsTranscriptChunks(t *testing.T) {
+	node, err := exec.LookPath("node")
+	if err != nil {
+		t.Skip("node unavailable")
+	}
+	source, err := templates.ReadFile("templates/decisions.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := `global.window=global;` + string(source) + `
+const assert=require('node:assert/strict');
+let page=1,now=0,serial=0;const timers=new Map(),actions=[];
+const pages=[{id:'cover',page:1,title:'Cover'},{id:'demo',page:2,title:'Demo'}];
+const c=VSTDDecisions.create({snapshot:()=>({current:pages[page-1],pages}),targets:()=>['Dictate new slides','Revenue chart'],authorized:()=>true,execute:(name,args)=>{actions.push([name,args]);if(name==='goto_slide')page=args.number;return 'done';},now:()=>now,setTimer:fn=>{timers.set(++serial,fn);return serial;},clearTimer:id=>timers.delete(id)});
+const configure=()=>{const config=c.configuration();c.observe({type:'session.updated',session:{triggers:config}});return config;};
+let config=configure();
+const input=(id,delta,start)=>c.observe({type:'session.input_transcript.delta',event_id:id,delta,start_ms:start,end_ms:start+200});
+const decision=(id,nav='none',highlight='none',confidence=.56)=>c.observe({type:'decision.event',source_event_type:'session.input_transcript.delta',source_event_id:id,event:{type:'decision.completed',decision:{answers:config[0].decisions.questions.map(q=>({type:'choice',name:q.name,choice:q.name.includes('navigation')?nav:highlight,confidence}))}}});
+const flush=()=>{now+=250;const work=[...timers.values()];timers.clear();work.forEach(fn=>fn());};
+// Real hosted trace: the useful prediction belongs to "Next", then " slide" arrives.
+input('next',' Next',0);decision('next','p:demo');flush();assert.equal(page,1,'a partial command cannot execute');
+input('slide',' slide',400);decision('slide','p:cover','none',.28);flush();assert.equal(page,2,'retain the relevant prediction until its utterance becomes a complete explicit command');
+c.observe({type:'session.delegation.created',offset_ms:600,delegation:{id:'agent-next',target:'responses'}});
+c.backend('next_slide',{},'agent-next',()=>{throw Error('duplicate move after chunked decision');});
+config=configure();
+input('h',' Highlight',2000);input('h2',' dictate',2400);input('h3',' new',2600);input('h4',' slides',3200);
+decision('h4','none','h0',.37);flush();assert.deepEqual(actions.at(-1),['highlight',{phrase:'Dictate new slides'}],'a precise target match can ground a moderate-confidence native choice');
+const count=actions.length;
+input('unclear',' Highlight something over there.',4500);decision('unclear','none','h0',.37);flush();assert.equal(actions.length,count,'moderate confidence alone cannot authorize an ambiguous target');
+input('partial-highlight',' Highlight the revenue',6000);decision('partial-highlight','none','h1',.37);flush();assert.equal(actions.length,count,'moderate confidence must match the full bounded target');
+input('finished-highlight',' chart',6400);flush();assert.equal(actions.length,count+1,'an earlier bounded highlight prediction can become grounded as the transcript completes');
+input('new-utterance','Research this company.',8000);decision('h4','none','h0',.8);flush();assert.equal(actions.length,count+1,'old utterance predictions cannot control new speech');
+page=1;config=configure();input('before-correction',' Next',10000);decision('before-correction','p:demo');input('complete',' slide',10400);input('correction',' actually stay here',10600);flush();assert.equal(page,1,'a correction cancels carried predictions');
+input('late-next',' Next',12000);decision('late-next','p:demo');now+=3000;input('late-slide',' slide',12400);flush();assert.equal(page,1,'carried predictions expire');
+c.close();
+`
+	if output, err := exec.Command(node, "-e", script).CombinedOutput(); err != nil {
+		t.Fatalf("%v: %s", err, output)
+	}
+}

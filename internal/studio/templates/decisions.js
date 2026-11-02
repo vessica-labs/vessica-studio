@@ -49,10 +49,10 @@
         const correction=/^\s*[^\w]*(?:actually|instead|rather|no[, ]|wait)\b/i.test(message.delta);
         if(correction&&utterance)utterance.invalid=true;
         const boundary=correction||!utterance||start-utterance.end>650||(/[.!?]\s*$/.test(utterance.text)&&!/^\s*(and|but|actually|instead)\b/i.test(message.delta));
-        if(boundary)utterance={id:++serial,text:'',end,owners:{},revision,invalid:false};
+        if(boundary)utterance={id:++serial,text:'',end,owners:{},candidates:[],revision,invalid:false};
         utterance.text=(utterance.text+message.delta).slice(-1600);utterance.end=end;
         latest={id:message.event_id,start,end,text:utterance.text,received:now(),revision,state:state(),utterance};
-        boundedSet(sources,message.event_id,latest);return;
+        boundedSet(sources,message.event_id,latest);queue();return;
       }
       if(message.type==='session.delegation.created'&&message.delegation?.target==='responses'){
         const offset=message.offset_ms;
@@ -62,30 +62,57 @@
       }
       if(message.type!=='decision.event'||message.source_event_type!=='session.input_transcript.delta'||message.event?.type!=='decision.completed'||!accepted)return;
       const source=sources.get(message.source_event_id);
-      if(!source||source!==latest||source.revision!==revision||source.utterance.invalid||now()-source.received>2500)return;
+      if(!source||source.utterance!==latest?.utterance||source.revision!==revision||source.utterance.invalid||now()-source.received>2500)return;
       const answers=message.event.decision?.answers;
       if(!Array.isArray(answers))return;
-      const select=channel=>{
+      for(const channel of ['navigation','highlight']){
         const q=configuration[0].decisions.questions.find(q=>q.name==='vstd_'+channel+'_'+revision);
         const a=answers.find(a=>a.name===q.name&&a.type==='choice');
-        if(!a||a.confidence!==undefined&&(!Number.isFinite(a.confidence)||a.confidence<0.5))return 'none';
-        return q.choices.some(c=>c.value===a.choice)?a.choice:'none';
-      };
-      const navigation=select('navigation'),highlight=select('highlight');
-      if(navigation==='none'&&highlight==='none')return;
-      cancel();timer=setTimer(()=>{
+        if(!a||a.choice==='none'||a.confidence!==undefined&&(!Number.isFinite(a.confidence)||a.confidence<0.25)||!q.choices.some(c=>c.value===a.choice))continue;
+        source.utterance.candidates.push({source,channel,choice:a.choice,confidence:a.confidence??1});
+        if(source.utterance.candidates.length>32)source.utterance.candidates.shift();
+      }
+      queue();
+    }
+    // A result can belong to "Next" while the following delta completes " slide".
+    // Keep bounded predictions within this utterance, then ground them against its
+    // accumulated words. Corrections, page changes and expiry still cancel them.
+    const normalized=text=>text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu,' ').trim();
+    function eligible(candidate){
+      const {source,channel,choice,confidence}=candidate,s=source.state;
+      if(source.revision!==revision||now()-source.received>2500)return false;
+      const spoken=directive(source.utterance.text);
+      if(!intent(source.utterance.text,channel))return false;
+      if(channel==='navigation'){
+        if(confidence<0.5)return false;
+        const page=s.pages.find(p=>'p:'+p.id===choice),number=spoken.match(/\b(?:page|slide)\s+(\d+)\b/i);
+        const next=/\bnext\s+(?:slide|page)\b/i.test(spoken),previous=/\b(?:previous|prev)\s+(?:slide|page)\b|^go back\b|^back\b/i.test(spoken);
+        return !!page&&(!number||page.page===Number(number[1]))&&(!next||page.page===s.current.page+1)&&(!previous||page.page===s.current.page-1);
+      }
+      if(confidence>=0.5&&source===latest)return true;
+      // Moderate native confidence is usable only when every word of the selected
+      // bounded element is explicitly spoken. Ambiguous and partial targets defer.
+      const phrase=s.targets[Number(choice.slice(1))];
+      return choice!=='clear'&&!!phrase&&normalized(spoken.replace(/^highlight\s+(?:the\s+)?/i,''))===normalized(phrase);
+    }
+    function queue(){
+      const source=latest;
+      cancel();
+      if(!accepted||!source||source.revision!==revision||source.utterance.invalid||cancelled(source.utterance.text))return;
+      const candidates=source.utterance.candidates.filter(eligible).sort((a,b)=>a.source.end-b.source.end);
+      const navigation=candidates.findLast(c=>c.channel==='navigation');
+      const highlight=candidates.findLast(c=>c.channel==='highlight');
+      const candidate=navigation||highlight;
+      if(!candidate)return;
+      timer=setTimer(()=>{
         timer=null;
-        if(closed||!authorized()||source!==latest||source.revision!==revision||JSON.stringify(state())!==signature||source.utterance.invalid||cancelled(source.utterance.text))return;
-        if(navigation!=='none'&&intent(source.utterance.text,'navigation')){
-          const s=source.state;
-          const page=s.pages.find(p=>'p:'+p.id===navigation);
-          const spoken=directive(source.utterance.text),number=spoken.match(/\b(?:page|slide)\s+(\d+)\b/i);
-          const next=/\bnext\s+(?:slide|page)\b/i.test(spoken),previous=/\b(?:previous|prev)\s+(?:slide|page)\b|^go back\b|^back\b/i.test(spoken);
-          if(page&&(!number||page.page===Number(number[1]))&&(!next||page.page===s.current.page+1)&&(!previous||page.page===s.current.page-1))apply(source,'navigation','decision',()=>execute('goto_slide',{number:page.page}),()=>state().current.id===page.id);
-        }else if(highlight!=='none'&&intent(source.utterance.text,'highlight')){
-          if(highlight==='clear')apply(source,'highlight','decision',()=>execute('clear_highlight',{}));
-          else {const phrase=source.state.targets[Number(highlight.slice(1))];if(phrase)apply(source,'highlight','decision',()=>execute('highlight',{phrase}));}
-        }
+        if(closed||!authorized()||source!==latest||source.revision!==revision||JSON.stringify(state())!==signature||source.utterance.invalid||cancelled(source.utterance.text)||!eligible(candidate))return;
+        const {source:origin,channel,choice}=candidate;
+        if(channel==='navigation'){
+          const page=origin.state.pages.find(p=>'p:'+p.id===choice);
+          apply(origin,channel,'decision',()=>execute('goto_slide',{number:page.page}),()=>state().current.id===page.id);
+        }else if(choice==='clear')apply(origin,channel,'decision',()=>execute('clear_highlight',{}));
+        else apply(origin,channel,'decision',()=>execute('highlight',{phrase:origin.state.targets[Number(choice.slice(1))]}));
       },200);
     }
     function apply(source,channel,owner,action,verify=()=>true){

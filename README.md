@@ -1537,7 +1537,11 @@ dictation and older hosts retain the existing path.
 Decisions results arrive directly as `decision.event` on the WebRTC data channel,
 along with input transcripts, `session.updated` and `session.delegation.created`.
 The player waits for a matching trigger configuration, checks presenter authority
-and current page/element state, and allows a 200 ms correction window. A shared
+and current page/element state, and allows a 200 ms correction window. Bounded
+predictions can survive transcript chunks within the same utterance, so a result
+for “Next” can execute once “slide” arrives. Corrections, expiry and page changes
+still cancel it. A moderate-confidence highlight requires an exact match to the
+full spoken element label; ambiguous or partial targets defer to the backend. A shared
 dispatcher arbitrates Decisions and correlated agent tool calls; the first path
 owns the action. Relative moves use the page snapshot captured with the request.
 The host must preserve `delegation_id` when relaying Responses calls. Unknown,
