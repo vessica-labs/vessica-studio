@@ -84,9 +84,10 @@
       const spoken=directive(source.utterance.text);
       if(!intent(source.utterance.text,channel))return false;
       if(channel==='navigation'){
-        if(confidence<0.5)return false;
         const page=s.pages.find(p=>'p:'+p.id===choice),number=spoken.match(/\b(?:page|slide)\s+(\d+)\b/i);
         const next=/\bnext\s+(?:slide|page)\b/i.test(spoken),previous=/\b(?:previous|prev)\s+(?:slide|page)\b|^go back\b|^back\b/i.test(spoken);
+        const literal=/^(?:(?:go|move|jump|switch|advance|show|open) (?:to )?)?(?:the )?(?:(?:next|previous|prev) (?:page|slide)|(?:page|slide) \d+)(?: please)?$/.test(normalized(spoken))||/^(?:go )?back(?: please)?$/.test(normalized(spoken));
+        if(confidence<0.5&&!literal)return false;
         return !!page&&(!number||page.page===Number(number[1]))&&(!next||page.page===s.current.page+1)&&(!previous||page.page===s.current.page-1);
       }
       if(confidence>=0.5&&source===latest)return true;
