@@ -662,12 +662,16 @@ The HTTP routes accept an optional non-parked slide ID, for example
 `/api/deck/operating-model/export.pptx?mode=editable&slide=0030-economics`.
 Without `slide`, they preserve the existing whole-deck behavior.
 
-PDF is a fixed-layout document and is regenerated per request. PowerPoint
+PDF is a fixed-layout document and is regenerated per request. Dynamic
+`data-current-month-year` fields resolve to the rendering machine's current month
+and year, and slide-number pills retain the deck's non-parked slide order. Authored fallback
+text remains unchanged. PowerPoint
 stores disposable per-slide artifacts and a manifest under
 `decks/<deck>/build/assets/powerpoint/`. Repeating an export reuses unchanged
 slides; changing a fragment, referenced local asset, theme CSS, or deck CSS
 invalidates only the affected entries (theme/deck CSS naturally affect the
-whole deck). The cache is excluded from Git, content sync, file-watcher reloads,
+whole deck). Dynamic dates and deck numbering also invalidate the relevant slide
+artifacts when their rendered values change. The cache is excluded from Git, content sync, file-watcher reloads,
 bundles, and source-asset manifests. Delete that directory at any time to force
 a clean rebuild. Editable PowerPoint converts supported rendered elements into
 native PresentationML objects. Text retains browser wrapping, padding and inline

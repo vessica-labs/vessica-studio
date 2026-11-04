@@ -5,7 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
+
+	"golang.org/x/net/html"
+	"golang.org/x/net/html/atom"
 )
 
 // openSectionRe matches a slide fragment's root <section ...> opening tag.
@@ -71,6 +76,47 @@ const printCSS = `
 .vstd-page .notes{display:none!important}
 `
 
+// Resolve player-owned fields in the disposable print document. Source
+// fallbacks remain untouched, and static exports need no player JavaScript.
+func resolvePrintFields(frag string, now time.Time, page int) string {
+	if !strings.Contains(frag, "data-current-month-year") && !strings.Contains(frag, "pgpill") {
+		return frag
+	}
+	nodes, err := html.ParseFragment(strings.NewReader(frag), &html.Node{Type: html.ElementNode, DataAtom: atom.Div, Data: "div"})
+	if err != nil {
+		return frag
+	}
+	var visit func(*html.Node)
+	visit = func(n *html.Node) {
+		value := ""
+		for _, a := range n.Attr {
+			if a.Key == "data-current-month-year" {
+				value = now.Format("January 2006")
+			} else if a.Key == "class" && strings.Contains(" "+strings.Join(strings.Fields(a.Val), " ")+" ", " pgpill ") {
+				value = strconv.Itoa(page)
+			}
+		}
+		if value != "" {
+			for n.FirstChild != nil {
+				n.RemoveChild(n.FirstChild)
+			}
+			n.AppendChild(&html.Node{Type: html.TextNode, Data: value})
+			return
+		}
+		for c := n.FirstChild; c != nil; c = c.NextSibling {
+			visit(c)
+		}
+	}
+	var b strings.Builder
+	for _, n := range nodes {
+		visit(n)
+		if err := html.Render(&b, n); err != nil {
+			return frag
+		}
+	}
+	return b.String()
+}
+
 // BuildPrintHTML assembles a static print-ready page for PDF export: theme +
 // deck CSS with one page per slide, in deck order, including hidden slides
 // but excluding parked ("unused") ones. Unlike Build it embeds no player —
@@ -114,24 +160,27 @@ func (s *Studio) BuildPrintHTMLForSlides(deck string, selected []string) (string
 	}
 	var pages strings.Builder
 	var exported []string
+	now := time.Now()
+	page := 0
 	for _, id := range ids {
-		if selected != nil && !wanted[id] {
-			continue
-		}
 		frag, _, err := s.ReadSlide(deck, id)
 		if err != nil {
 			return "", nil, err
 		}
 		if SlideParked(frag) {
-			if selected != nil {
+			if selected != nil && wanted[id] {
 				return "", nil, fmt.Errorf("slide %q is parked and cannot be exported", id)
 			}
+			continue
+		}
+		page++
+		if selected != nil && !wanted[id] {
 			continue
 		}
 		exported = append(exported, id)
 		delete(wanted, id)
 		pages.WriteString(fmt.Sprintf(`<div class="vstd-page" id="vstd-page-%d">`, len(exported)))
-		pages.WriteString(markActive(addPrintVideoPosters(stampFragment(frag, id))))
+		pages.WriteString(markActive(addPrintVideoPosters(stampFragment(resolvePrintFields(frag, now, page), id))))
 		pages.WriteString("</div>\n")
 	}
 	if len(wanted) != 0 {

@@ -178,3 +178,26 @@ func TestCatalogThumbnailFailuresAreNotCached(t *testing.T) {
 		t.Fatalf("cache-control=%q", got)
 	}
 }
+
+func TestPowerPointCacheInvalidatesRenumberedSlide(t *testing.T) {
+	st := testStudio(t)
+	addCacheTestSlide(t, st)
+	if err := os.WriteFile(st.SlidePath("demo", "0020-b", ".html"), []byte(`<section class="slide"><div class="pgpill">99</div></section>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	fake := &recordingPowerPointRenderer{}
+	s := New(st, ModeStudio)
+	s.PowerPointRenderer = fake
+	req := httptest.NewRequest(http.MethodGet, "/", nil)
+	ids := []string{"0020-b"}
+	if _, _, err := s.cachedVisualPowerPointSlides(context.Background(), req, "demo", ids); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(st.SlidePath("demo", "0010-a", ".html"), []byte(`<section class="slide" data-parked>Unused</section>`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	_, stats, err := s.cachedVisualPowerPointSlides(context.Background(), req, "demo", ids)
+	if err != nil || stats.Misses != 1 || len(fake.visual) != 2 {
+		t.Fatalf("numbering change stats=%+v calls=%v err=%v", stats, fake.visual, err)
+	}
+}
