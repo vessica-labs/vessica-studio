@@ -21,7 +21,7 @@ import (
 	"github.com/vessica-labs/vessica-studio/internal/studio"
 )
 
-const powerpointCacheVersion = 1
+const powerpointCacheVersion = 2
 
 type PowerPointCacheEntry struct {
 	Mode        string    `json:"mode"`
@@ -127,6 +127,15 @@ func (s *Server) slidePowerPointFingerprint(deck, id, mode string) (string, erro
 	if mode == "editable" {
 		h.Write([]byte(pptxCaptureJS))
 		h.Write([]byte("editable-geometry:2"))
+	}
+	// Player-owned fields can change without an edit to this fragment: the
+	// current month advances, or another slide is parked or reordered.
+	if strings.Contains(fragment, "data-current-month-year") || strings.Contains(fragment, "pgpill") {
+		printed, _, err := s.St.BuildPrintHTMLForSlides(deck, []string{id})
+		if err != nil {
+			return "", err
+		}
+		h.Write([]byte(printed))
 	}
 	h.Write([]byte(fragment))
 	h.Write(themeCSS)

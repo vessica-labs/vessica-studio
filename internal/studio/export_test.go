@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func writeFile(t *testing.T, path, content string) {
@@ -42,9 +43,9 @@ func TestBuildPrintHTML(t *testing.T) {
 	writeFile(t, filepath.Join(root, "decks", "demo", "deck.yaml"),
 		"title: Demo Deck\ntheme: default\n")
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0010-active.html"),
-		`<section class="slide" data-sec="A"><h1>Active</h1></section>`)
+		`<section class="slide" data-sec="A"><h1>Active</h1><div data-current-month-year>Stale fallback</div><div class="pgpill">99</div></section>`)
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0020-hidden.html"),
-		`<section class="slide" data-hidden="1"><h1>Hidden</h1><video data-vstd-video="clip-1"></video></section>`)
+		`<section class="slide" data-hidden="1"><h1>Hidden</h1><div class="extra pgpill">98</div><video data-vstd-video="clip-1"></video></section>`)
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0030-parked.html"),
 		`<section class="slide" data-parked="1"><h1>Parked</h1></section>`)
 
@@ -55,6 +56,18 @@ func TestBuildPrintHTML(t *testing.T) {
 	html, pages, err := st.BuildPrintHTML("demo")
 	if err != nil {
 		t.Fatal(err)
+	}
+	if !strings.Contains(html, time.Now().Format("January 2006")) || strings.Contains(html, "Stale fallback") {
+		t.Error("print HTML did not resolve the player dynamic date")
+	}
+	original, err := os.ReadFile(filepath.Join(root, "decks", "demo", "slides", "0010-active.html"))
+	if err != nil || !strings.Contains(string(original), "Stale fallback") {
+		t.Fatal("print export changed the authored source")
+	}
+	for _, want := range []string{`class="pgpill">1</div>`, `class="extra pgpill">2</div>`} {
+		if !strings.Contains(html, want) {
+			t.Errorf("print page numbering missing %q", want)
+		}
 	}
 	if pages != 2 {
 		t.Errorf("pages = %d, want 2 (active + hidden, parked excluded)", pages)
@@ -91,6 +104,9 @@ func TestBuildPrintHTML(t *testing.T) {
 	subset, ids, err := st.BuildPrintHTMLForSlides("demo", []string{"0020-hidden"})
 	if err != nil || len(ids) != 1 || ids[0] != "0020-hidden" || strings.Contains(subset, "<h1>Active</h1>") || !strings.Contains(subset, "<h1>Hidden</h1>") {
 		t.Fatalf("single-slide export ids=%v err=%v html=%s", ids, err, subset)
+	}
+	if !strings.Contains(subset, `class="extra pgpill">2</div>`) {
+		t.Fatal("selected slide lost its deck number")
 	}
 	if _, _, err := st.BuildPrintHTMLForSlides("demo", []string{"0030-parked"}); err == nil || !strings.Contains(err.Error(), "parked") {
 		t.Fatalf("parked slide export error = %v", err)
