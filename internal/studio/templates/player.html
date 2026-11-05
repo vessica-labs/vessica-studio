@@ -1939,6 +1939,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     setTimeout(()=>URL.revokeObjectURL(a.href),2000);
   }
 
+  /*VSTD:EXPORTS*/
   // ---- deck export: PDF, visual-exact PowerPoint, or best-effort editable PowerPoint ----
   let __downloadBusy=false;window.__vdownloadScope='deck';
   async function downloadDeck(format){
@@ -1950,7 +1951,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     try{
       const slide=window.__vdownloadScope==='slide'&&slides[cur]&&slides[cur].dataset.vstd?slides[cur].dataset.vstd:'';
       const params=new URLSearchParams();if(editable)params.set('mode','editable');if(slide)params.set('slide',slide);
-      const query=params.toString();const r=await fetch('/api/deck/'+window.VSTD.deck+'/export.'+ext+(query?'?'+query:''));
+      const query=params.toString();const r=await window.VSTDExportDownload.fetch('/api/deck/'+window.VSTD.deck+'/export.'+ext+(query?'?'+query:''));
       if(!r.ok){const j=await r.json().catch(()=>({}));throw new Error(j.error||('HTTP '+r.status));}
       const blob=await r.blob();
       const a=document.createElement('a');

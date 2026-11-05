@@ -662,6 +662,13 @@ The HTTP routes accept an optional non-parked slide ID, for example
 `/api/deck/operating-model/export.pptx?mode=editable&slide=0030-economics`.
 Without `slide`, they preserve the existing whole-deck behavior.
 
+The player requests `Prefer: respond-async`. Local servers return the document
+normally. A hosted adapter may instead return HTTP 202 with a same-origin
+`Location` and `Retry-After`; the player polls that location for up to twenty
+minutes, preserving the selected export parameters. Short status requests keep
+hosted preparation independent of one long browser connection. Cross-origin
+status locations are rejected, and only read-only download requests retry.
+
 PDF is a fixed-layout document and is regenerated per request. Dynamic
 `data-current-month-year` fields resolve to the rendering machine's current month
 and year, and slide-number pills retain the deck's non-parked slide order. Authored fallback
