@@ -28,6 +28,8 @@ vm.runInNewContext(` + string(encoded) + `,scope);
  assert.equal(await(await download('/export.pdf')).text(),'completed');assert.equal(requests.length,3);assert.equal(requests[1].url,'https://example.test/export.pdf?job=1');assert.equal(now,6000);
  responses=[new Error('network'),new Response('retried')];assert.equal(await(await download('/export.pdf')).text(),'retried');
  responses=[new Error('network'),new Error('network'),new Error('network')];await assert.rejects(download('/export.pdf'),/connection interrupted/);
+ responses=[new Response('',{status:503}),new Response('recovered')];assert.equal(await(await download('/export.pdf')).text(),'recovered');
+ responses=Array.from({length:3},()=>new Response('unavailable',{status:503}));assert.equal((await download('/export.pdf')).status,503);
  for(const location of ['https://other.test/file','https://user:pass@example.test/file','javascript:alert(1)']){responses=[new Response('{}',{status:202,headers:{Location:location}})];await assert.rejects(download('/export.pdf'),/Invalid export status location/);}
  responses=[new Response('{}',{status:202})];await assert.rejects(download('/export.pdf'),/Invalid export status location/);
  responses=[new Response('denied',{status:403})];assert.equal((await download('/export.pdf')).status,403);

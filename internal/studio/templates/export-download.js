@@ -11,12 +11,17 @@
       let response;
       try{
         response=await fetch(url.href,{credentials:'same-origin',headers:{Prefer:'respond-async'},signal:controller.signal,redirect:'error'});
-        failures=0;
       }catch{
         if(++failures>=3)throw new Error('Export connection interrupted. Please retry.');
         await new Promise(resolve=>setTimeout(resolve,1000*failures));
         continue;
       }finally{clearTimeout(timer);}
+      if([502,503,504].includes(response.status)&&++failures<3){
+        await response.body?.cancel();
+        await new Promise(resolve=>setTimeout(resolve,1000*failures));
+        continue;
+      }
+      failures=0;
       if(response.status!==202)return response;
       const next=response.headers.get('Location');
       await response.body?.cancel();

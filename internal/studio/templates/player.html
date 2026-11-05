@@ -1947,7 +1947,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(!(window.VSTD&&window.VSTD.deck&&location.protocol.indexOf('http')===0)){toast(ext.toUpperCase()+' export needs the engine (vstd serve)');return;}
     if(__downloadBusy)return;
     __downloadBusy=true;
-    toast(pptx?(editable?'Building editable PowerPoint objects…':'Rendering visual-exact PowerPoint…'):'Generating PDF…',120000);
+    toast(pptx?(editable?'Building editable PowerPoint objects…':'Rendering visual-exact PowerPoint…'):'Generating PDF…',20*60*1000);
     try{
       const slide=window.__vdownloadScope==='slide'&&slides[cur]&&slides[cur].dataset.vstd?slides[cur].dataset.vstd:'';
       const params=new URLSearchParams();if(editable)params.set('mode','editable');if(slide)params.set('slide',slide);
