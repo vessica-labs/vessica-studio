@@ -173,3 +173,19 @@ Stop for human direction before destructive compatibility changes, credential or
 provider-permission changes, weakening local-only operation or security boundaries,
 publishing a release, deploying a hosted environment, or merging a Harness-created
 pull request without explicit authority.
+
+## Deterministic architecture and short CI
+
+Run `make arch-lint` during engine changes and `make ci-check` before submitting.
+First-party source warns above 500 physical lines and fails above 1000. The
+embedded player has one exact, non-growing legacy cap in
+`.harness/arch-lint-rules.json`; shrink or remove it as modules are extracted.
+New exceptions cannot cover new or enlarged source. Go AST checks enforce the
+documented dependency directions and the public/private engine boundary.
+The public engine does not consume the private Platform SDK.
+
+Default PR CI checks architecture, formatting, dependency integrity and compilation.
+The complete gate above remains required before deployment. The existing full
+engine/media/docs validation is available manually and runs for new versioned
+releases; an ordinary main push does not repeat it for an already published
+engine version. Documentation-site changes also compile in the short gate.

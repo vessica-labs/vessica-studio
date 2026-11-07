@@ -11,7 +11,8 @@ Rule file format:
       "type": "max_file_lines",
       "globs": ["src/**/*.py"],
       "exclude": ["**/generated/**"],
-      "max_lines": 800,
+      "max_lines": 1000,
+      "warn_lines": 500,
       "message": "Split large source files along a clear responsibility boundary."
     },
     {
@@ -46,7 +47,9 @@ Rule file format:
 
 The shipped rule file contains a small, language-neutral baseline. Add only
 rules that encode an accepted architecture decision and can be checked without
-model judgment.
+model judgment. File-size rules can declare exact legacy caps with a reason and
+removal plan. The immutable parent comparison rejects cap growth, and shrinking
+source requires the corresponding exception to shrink or disappear.
 """
 
 from __future__ import annotations
@@ -54,7 +57,9 @@ from __future__ import annotations
 import argparse
 import fnmatch
 import json
+import os
 import re
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -131,7 +136,7 @@ def validate_rule(rule: Any, index: int) -> dict[str, Any]:
         "require_path": common | {"path"},
         "forbid_text": common | {"globs", "exclude", "pattern"},
         "require_text": common | {"file", "pattern"},
-        "max_file_lines": common | {"globs", "exclude", "max_lines"},
+        "max_file_lines": common | {"globs", "exclude", "max_lines", "warn_lines", "legacy"},
     }[rule_type]
     unknown = sorted(set(rule) - allowed)
     if unknown:
@@ -154,6 +159,21 @@ def validate_rule(rule: Any, index: int) -> dict[str, Any]:
             maximum = rule.get("max_lines")
             if isinstance(maximum, bool) or not isinstance(maximum, int) or maximum < 1:
                 raise ConfigError(f"rules[{index}].max_lines must be a positive integer")
+            warning = rule.get("warn_lines", maximum)
+            if isinstance(warning, bool) or not isinstance(warning, int) or not 0 < warning <= maximum:
+                raise ConfigError(f"rules[{index}].warn_lines must be positive and no larger than max_lines")
+            legacy = rule.get("legacy", {})
+            if not isinstance(legacy, dict):
+                raise ConfigError(f"rules[{index}].legacy must be an object")
+            for path, entry in legacy.items():
+                safe_relative(path, "legacy path")
+                if any(c in path for c in "*?[") or not isinstance(entry, dict):
+                    raise ConfigError("Legacy exceptions require exact paths and objects")
+                count = entry.get("lines")
+                if isinstance(count, bool) or not isinstance(count, int) or count <= maximum:
+                    raise ConfigError("Legacy lines must exceed the hard limit")
+                if not all(isinstance(entry.get(k), str) and entry[k].strip() for k in ("reason", "plan")):
+                    raise ConfigError("Legacy exceptions require a reason and removal plan")
     else:
         safe_relative(rule.get("file", ""), f"rules[{index}].file")
         compile_pattern(rule, index)
@@ -247,20 +267,63 @@ def lint(root: Path, rules: list[dict[str, Any]]) -> list[dict[str, Any]]:
             candidates: set[Path] = set()
             for glob in rule["globs"]:
                 candidates.update(path for path in matching_paths(root, glob, rule.get("exclude")) if path.is_file())
+            seen: set[str] = set()
             for path in sorted(candidates, key=lambda candidate: candidate.relative_to(root).as_posix()):
                 try:
                     text = path.read_text(encoding="utf-8")
                 except UnicodeDecodeError as exc:
                     raise ConfigError(f"rule {rule['id']} matched non-UTF-8 file {path.relative_to(root)}") from exc
                 actual = len(text.splitlines())
-                if actual > rule["max_lines"]:
+                relative = path.relative_to(root).as_posix()
+                seen.add(relative)
+                legacy = rule.get("legacy", {}).get(relative)
+                if legacy and actual < legacy["lines"]:
+                    violations.append({"rule": rule["id"], "path": relative, "line": None,
+                                       "message": "Reduce or remove the stale legacy exception to match improved source."})
+                maximum = legacy["lines"] if legacy else rule["max_lines"]
+                if actual > maximum:
                     violations.append({
                         "rule": rule["id"],
-                        "path": path.relative_to(root).as_posix(),
-                        "line": rule["max_lines"] + 1,
-                        "message": f"{rule['message']} ({actual} lines; maximum {rule['max_lines']})",
+                        "path": relative,
+                        "line": maximum + 1,
+                        "message": f"{rule['message']} ({actual} lines; maximum {maximum})",
                     })
+                elif actual > rule.get("warn_lines", rule["max_lines"]):
+                    violations.append({"rule": rule["id"], "path": relative,
+                                       "line": rule.get("warn_lines", rule["max_lines"]) + 1,
+                                       "severity": "warning",
+                                       "message": f"{rule['message']} ({actual} lines; soft limit {rule.get('warn_lines', rule['max_lines'])})"})
+            for stale in sorted(set(rule.get("legacy", {})) - seen):
+                violations.append({"rule": rule["id"], "path": stale, "line": None,
+                                   "message": "Remove the legacy exception for an unmatched or removed file."})
     return violations
+
+
+def validate_baseline(root: Path, rules: list[dict[str, Any]], config: Path, ref: str) -> None:
+    """Compare exceptions against an immutable parent, never a mutable branch."""
+    if not re.fullmatch(r"[a-fA-F0-9]{40}", ref):
+        raise ConfigError("Baseline reference must be a full immutable Git SHA")
+    exists = subprocess.run(["git", "cat-file", "-e", f"{ref}^{{commit}}"], cwd=root,
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    if exists.returncode:
+        raise ConfigError("Baseline commit is unavailable; fetch the immutable parent before linting")
+    def historical(path: str) -> str | None:
+        result = subprocess.run(["git", "show", f"{ref}:{path}"], cwd=root, text=True,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=False)
+        return result.stdout if result.returncode == 0 else None
+    previous = historical(config.resolve().relative_to(root).as_posix())
+    old = json.loads(previous) if previous is not None else {"rules": []}
+    old_rules = {rule["id"]: rule for rule in old["rules"]}
+    for rule in rules:
+        for path, entry in rule.get("legacy", {}).items():
+            prior = old_rules.get(rule["id"], {}).get("legacy", {}).get(path)
+            if prior:
+                if entry["lines"] > prior["lines"]:
+                    raise ConfigError(f"Legacy exception cannot grow: {path}")
+            else:
+                source = historical(path)
+                if source is None or len(source.splitlines()) != entry["lines"]:
+                    raise ConfigError(f"New legacy exception must exactly match existing baseline source: {path}")
 
 
 def main() -> None:
@@ -268,6 +331,8 @@ def main() -> None:
     parser.add_argument("--root", default=".", help="Repository root; defaults to the current directory")
     parser.add_argument("--config", default=".harness/arch-lint-rules.json", help="Rule file relative to the repository root")
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON")
+    parser.add_argument("--baseline-ref", default=os.environ.get("ARCHITECTURE_BASE_REF"),
+                        help="Immutable parent SHA used to prevent exception growth")
     args = parser.parse_args()
     root = Path(args.root).resolve()
     config_path = Path(args.config)
@@ -275,6 +340,8 @@ def main() -> None:
         config_path = root / config_path
     try:
         rules = load_config(config_path)
+        if args.baseline_ref and not re.fullmatch(r"0+", args.baseline_ref):
+            validate_baseline(root, rules, config_path, args.baseline_ref)
         violations = lint(root, rules)
     except (ConfigError, OSError) as exc:
         if args.json:
@@ -282,18 +349,19 @@ def main() -> None:
         else:
             print(f"arch-lint: CONFIG ERROR: {exc}", file=sys.stderr)
         raise SystemExit(2)
+    errors = [v for v in violations if v.get("severity") != "warning"]
     if args.json:
-        print(json.dumps({"ok": not violations, "rules": len(rules), "violations": violations}, sort_keys=True))
+        print(json.dumps({"ok": not errors, "rules": len(rules), "violations": violations}, sort_keys=True))
     elif violations:
         for violation in violations:
             location = violation["path"]
             if violation["line"] is not None:
                 location += f":{violation['line']}"
-            print(f"{location}: [{violation['rule']}] {violation['message']}")
-        print(f"arch-lint: FAIL ({len(violations)} violation(s), {len(rules)} rule(s))")
+            print(f"{location}: {violation.get('severity', 'error')} [{violation['rule']}] {violation['message']}")
+        print(f"arch-lint: {'FAIL' if errors else 'PASS'} ({len(errors)} error(s), {len(violations)-len(errors)} warning(s), {len(rules)} rule(s))")
     else:
         print(f"arch-lint: PASS ({len(rules)} rule(s))")
-    raise SystemExit(1 if violations else 0)
+    raise SystemExit(1 if errors else 0)
 
 
 if __name__ == "__main__":

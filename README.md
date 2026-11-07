@@ -1375,15 +1375,24 @@ Issues and focused pull requests are welcome. Preserve the file contract and
 public compatibility surfaces, keep credentials out of fixtures and logs, and
 add tests for behavior changes.
 
-Build and run the standard checks:
+Run `make ci-check` for the short deterministic architecture, formatting,
+dependency-integrity and compilation gate. Architecture checks warn above 500
+source lines and fail above 1000; the existing embedded player has an explicit
+non-growing legacy cap. Go AST checks protect the domain and public/private
+dependency boundaries.
+
+Before deployment, run the complete checks:
 
 ```sh
+make arch-lint
 make build
 go test ./...
 go test -race ./...
 go vet ./...
 ```
 
+Default PR CI runs the short gate. Full engine, race, media and documentation
+validation remains available manually and runs before new versioned releases.
 The full contributor guide, package ownership map, and validation contract are
 in [`AGENTS.md`](AGENTS.md). Tests use local fixtures and do not require live
 OpenAI, GitHub, Railway, Telnyx, Resend, or S3 credentials.

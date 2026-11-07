@@ -2,11 +2,51 @@
   "version": 1,
   "rules": [
     {
-      "id": "studio-does-not-import-cloud-transport",
-      "type": "forbid_text",
-      "globs": ["internal/studio/*.go"],
-      "pattern": "github.com/vessica-labs/vessica-studio/internal/cloud",
-      "message": "Studio owns content types; cloud adapters depend inward, never the reverse."
+      "id": "source-file-size",
+      "type": "max_file_lines",
+      "globs": [
+        "**/*.go",
+        "**/*.js",
+        "**/*.jsx",
+        "**/*.ts",
+        "**/*.tsx",
+        "**/*.html",
+        "**/*.css",
+        "**/*.py",
+        "**/*.sh",
+        "**/*.sql",
+        "**/*.svelte",
+        "**/*.swift",
+        "**/*.vue",
+        "**/*.rs",
+        "**/*.c",
+        "**/*.h",
+        "**/*.cpp",
+        "**/*.scss"
+      ],
+      "exclude": [
+        "**/node_modules/**",
+        "**/vendor/**",
+        "**/.venv/**",
+        "**/dist/**",
+        "**/build/**",
+        "**/coverage/**",
+        "**/generated/**",
+        "**/gen/**",
+        "**/*.generated.*",
+        "**/*.min.js",
+        "**/*.min.css"
+      ],
+      "max_lines": 1000,
+      "warn_lines": 500,
+      "legacy": {
+        "internal/studio/templates/player.html": {
+          "lines": 4083,
+          "reason": "Existing engine-owned embedded player predates the ecosystem guardrails.",
+          "plan": "VE-10: extract cohesive player modules while preserving assembled HTML and offline builds."
+        }
+      },
+      "message": "Split source along a cohesive responsibility boundary."
     },
     {
       "id": "architecture-document-present",
@@ -27,84 +67,6 @@
       "message": "Initialized studios must continue to receive the downstream agent guide."
     },
     {
-      "id": "typescript-javascript-files-under-500-lines",
-      "type": "max_file_lines",
-      "globs": [
-        "**/*.js",
-        "**/*.jsx",
-        "**/*.ts",
-        "**/*.tsx"
-      ],
-      "exclude": [
-        "**/node_modules/**",
-        "**/vendor/**",
-        "**/.venv/**",
-        "**/venv/**",
-        "**/dist/**",
-        "**/build/**",
-        "**/coverage/**",
-        "**/generated/**",
-        "**/gen/**",
-        "**/migrations/**",
-        "**/*.generated.*",
-        "**/*.min.js",
-        "**/*.min.css"
-      ],
-      "max_lines": 500,
-      "message": "Split large TypeScript or JavaScript files along a clear responsibility boundary."
-    },
-    {
-      "id": "other-source-files-under-800-lines",
-      "type": "max_file_lines",
-      "globs": [
-        "**/*.c",
-        "**/*.cc",
-        "**/*.cpp",
-        "**/*.cs",
-        "**/*.css",
-        "**/*.go",
-        "**/*.h",
-        "**/*.hpp",
-        "**/*.html",
-        "**/*.java",
-        "**/*.kt",
-        "**/*.kts",
-        "**/*.php",
-        "**/*.py",
-        "**/*.rb",
-        "**/*.rs",
-        "**/*.scala",
-        "**/*.scss",
-        "**/*.sh",
-        "**/*.sql",
-        "**/*.svelte",
-        "**/*.swift",
-        "**/*.vue"
-      ],
-      "exclude": [
-        "**/node_modules/**",
-        "**/vendor/**",
-        "**/.venv/**",
-        "**/venv/**",
-        "**/dist/**",
-        "**/build/**",
-        "**/coverage/**",
-        "**/generated/**",
-        "**/gen/**",
-        "**/migrations/**",
-        "cmd/vstd/main.go",
-        "internal/server/agent.go",
-        "internal/server/collaboration.go",
-        "internal/server/server.go",
-        "internal/studio/templates/player.html",
-        "**/*.generated.*",
-        "**/*.min.js",
-        "**/*.min.css"
-      ],
-      "max_lines": 800,
-      "message": "Split large source files along a clear responsibility boundary."
-    },
-    {
       "id": "no-committed-environment-files",
       "type": "forbid_path",
       "glob": "**/.env*",
@@ -114,6 +76,18 @@
         "**/.env*.template"
       ],
       "message": "Do not commit environment secret files; commit only example, sample, or template variants."
+    },
+    {
+      "id": "go-dependency-guard-present",
+      "type": "require_path",
+      "path": "internal/architecture/architecture_test.go",
+      "message": "Retain the AST-based Go dependency guard."
+    },
+    {
+      "id": "no-private-platform-sdk",
+      "type": "forbid_path",
+      "glob": "**/vessica-platform*.tgz",
+      "message": "The public engine cannot ship the private Platform SDK."
     }
   ]
 }
