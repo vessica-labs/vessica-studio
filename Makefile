@@ -7,7 +7,7 @@
 BIN    := vstd
 PREFIX ?= /usr/local
 
-.PHONY: build install go-install uninstall vet clean
+.PHONY: build install go-install uninstall vet clean arch-lint ci-check
 
 build:
 	go build -trimpath -o $(BIN) ./cmd/vstd
@@ -29,3 +29,15 @@ vet:
 
 clean:
 	rm -f $(BIN)
+
+# Fast deterministic gate. Full regression/race/media checks precede releases.
+arch-lint:
+	python3 -m unittest discover -s .harness/scripts -p 'test_*.py'
+	python3 .harness/scripts/arch-lint.py
+	go test ./internal/architecture
+
+ci-check: arch-lint
+	test -z "$$(gofmt -l $$(find cmd internal plugin -name '*.go' -type f))"
+	go mod verify
+	go build -trimpath ./cmd/vstd
+	git diff --check

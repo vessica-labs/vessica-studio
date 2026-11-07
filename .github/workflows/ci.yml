@@ -1,0 +1,41 @@
+name: Architecture and build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ARCHITECTURE_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: make ci-check
+      - name: Detect documentation site changes
+        id: docs
+        run: |
+          if test -z "$ARCHITECTURE_BASE_REF" || test "$ARCHITECTURE_BASE_REF" = "0000000000000000000000000000000000000000" || ! git diff --quiet "$ARCHITECTURE_BASE_REF" HEAD -- docs-site; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          fi
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.docs.outputs.changed == 'true'
+        with:
+          node-version: '24.22.1'
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - name: Compile changed documentation site
+        if: steps.docs.outputs.changed == 'true'
+        working-directory: docs-site
+        run: npm ci && npm run build

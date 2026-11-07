@@ -78,10 +78,15 @@ unchanged command/failure more than twice. Playwright work, if introduced, uses
 
 ## CI Gates
 
-Formatting, `go test ./...`, `go test -race ./...`, `go vet ./...`, CLI build,
-architecture lint, and diff hygiene block completion for public compatibility or
-release-risk changes. Focused ticket checks may run earlier; the pipeline owns
-the deduplicated final gates.
+Default PR CI runs `make ci-check`: deterministic architecture regressions,
+Go AST dependency rules, 500/1000-line source limits, formatting, module
+integrity, CLI compilation and diff hygiene. Changed documentation-site source
+also compiles. The complete Go regression/race/vet, real-browser/media, docs
+and existing release checks remain available through manual validation and
+new versioned release runs. An ordinary main push for an already published
+version only checks release eligibility and does not repeat that full suite.
+The complete checks still block pre-deployment completion; their placement
+does not waive them. Focused ticket checks may run earlier.
 
 ## Required Evidence
 

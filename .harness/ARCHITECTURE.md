@@ -81,9 +81,10 @@ but the public engine remains usable without that service.
 
 ## Known Constraints
 
-- `cmd/vstd/main.go`, three server files, and the player template predate the
-  Harness size gate and are explicitly grandfathered. Changes should reduce or
-  avoid increasing those files where practical.
+- The embedded player template predates the 500-line warning/1000-line hard
+  size gate and has an exact non-growing legacy cap. CLI help is extracted
+  from `main.go`; other source files now remain below the hard limit. Shrink
+  or remove the player exception when extracting cohesive modules.
 - Chrome/Chromium, FFmpeg/FFprobe, Railway, OpenAI, and S3 are optional or
   feature-specific dependencies; the core test/build path stays offline-capable.
 - The implemented Cloud protocol is exercised against deterministic fake
