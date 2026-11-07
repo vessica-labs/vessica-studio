@@ -1144,6 +1144,25 @@ document.addEventListener('DOMContentLoaded',()=>{
   });
   addEventListener('keydown',hideTip,true);
   menu.addEventListener('click',e=>{if(e.target===menu)menu.classList.remove('open');});
+  // ---------- Optional host keyboard shortcuts (v1) ----------
+  (()=>{
+    let hostOrigin='';
+    window.addEventListener('message',e=>{
+      if(window.parent===window||e.source!==window.parent||!/^https?:\/\//.test(e.origin))return;
+      if(e.data?.type!=='vstd:host-shortcuts'||e.data.version!==1||typeof e.data.enabled!=='boolean')return;
+      hostOrigin=e.data.enabled?e.origin:'';
+    });
+    document.addEventListener('keydown',e=>{
+      if(!hostOrigin||window.parent===window||e.repeat||e.isComposing||e.altKey||e.shiftKey)return;
+      const key=e.key.toLowerCase(),target=e.target?.closest?e.target:document.activeElement;
+      const editable=target?.closest?.('input,textarea,select,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"]');
+      const command=key==='k'&&(e.ctrlKey||e.metaKey)?'search':key==='v'&&e.ctrlKey&&!e.metaKey&&!editable?'agent':'';
+      if(!command)return;
+      e.preventDefault();e.stopImmediatePropagation();
+      window.parent.postMessage({type:'vstd:host-shortcut',version:1,command},hostOrigin);
+    },true);
+  })();
+  // ---------- End host keyboard shortcuts ----------
   function keyTargetIsTextEntry(e){
     const selector='input,textarea,select,[contenteditable="true"],[contenteditable=""],[role="textbox"]';
     return [e&&e.target,document.activeElement].some(el=>el&&el.nodeType===1&&

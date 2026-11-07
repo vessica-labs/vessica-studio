@@ -1757,3 +1757,20 @@ and realtime requests retain their three-minute HTTP timeout.
 
 Registering a generated image preserves existing image records, including omitted
 metadata fields and explicit empty values, so additive Cloud edits remain valid.
+
+### Embedded host keyboard shortcuts
+
+Available since v0.7.65.
+
+An embedding host can opt its current player frame into UI shortcuts by posting
+`{type:"vstd:host-shortcuts", version:1, enabled:true}` to the player's exact
+origin after `vstd:editor-ready` or frame load. Only the current parent window
+can configure the channel; `enabled:false` detaches it. Standalone players keep
+their existing keyboard behavior.
+
+An opted-in frame sends `{type:"vstd:host-shortcut", version:1, command:"search"}`
+for Cmd/Ctrl+K and `command:"agent"` for Ctrl+V outside editable fields. It ignores
+composition, repeat, Alt and Shift, and preserves normal paste while typing.
+Replies target the parent's exact origin. Receivers must verify both the exact
+player origin and their bound `iframe.contentWindow`. These messages carry only
+UI intent, with no content, clipboard bytes, credentials or execution authority.
