@@ -33,7 +33,6 @@
 *{box-sizing:border-box;margin:0;padding:0}
 html,body{height:100%;background:#0A0E13;font-family:var(--vstd-ui)}
 
-/* ---------- Stage & scaling ---------- */
 #stage{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;overflow:hidden}
 #frame{width:1280px;height:720px;position:relative;flex:0 0 auto;box-shadow:0 12px 60px rgba(0,0,0,.5)}
 .slide{display:none;font-family:var(--sans,var(--vstd-sans))}
@@ -1082,6 +1081,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       window.parent.postMessage({type:'vstd:host-shortcut',version:1,command},hostOrigin);
     },true);
   })();
+  // ---------- End host keyboard shortcuts ----------
   function keyTargetIsTextEntry(e){
     const selector='input,textarea,select,[contenteditable="true"],[contenteditable=""],[role="textbox"]';
     return [e&&e.target,document.activeElement].some(el=>el&&el.nodeType===1&&
