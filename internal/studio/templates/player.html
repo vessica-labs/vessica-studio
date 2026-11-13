@@ -476,6 +476,8 @@ document.addEventListener('DOMContentLoaded',()=>{
   <div class="stepper"><button type="button" class="ico" data-act="prev" data-tip="Previous slide" data-key="&#8592;" aria-label="Previous slide"><svg class="i"><use href="#vi-chevl"/></svg></button><span class="rcnt" id="rcnt">1 / 1</span><button type="button" class="ico" data-act="next" data-tip="Next slide" data-key="&#8594;" aria-label="Next slide"><svg class="i"><use href="#vi-chevr"/></svg></button></div>
   <span class="rsep"></span>
   <button type="button" class="ico" data-act="newslide" data-mirror="newslidebtn" data-tip="New slide after this one" aria-label="New slide"><svg class="i"><use href="#vi-plus"/></svg></button>
+  <button type="button" class="ico" data-act="delete-slide" data-slide-edit data-tip="Delete current slide" aria-label="Delete slide"><svg class="i"><use href="#vi-trash"/></svg></button>
+  <button type="button" class="ico" data-act="add-image" data-slide-edit data-tip="Upload an image, or drop or paste it onto the slide" aria-label="Add image"><svg class="i"><use href="#vi-image"/></svg></button>
   <button type="button" class="ico" data-act="addtext" data-tip="Add text box" aria-label="Add text box"><svg class="i"><use href="#vi-type"/></svg></button>
   <span class="rwrap" id="shapeWrap"><button type="button" class="ico" data-act="shapes" data-tip="Add shape" aria-label="Add shape" aria-haspopup="menu" aria-expanded="false"><svg class="i"><use href="#vi-shape"/></svg></button><span id="shapeMenu" role="menu"><button type="button" data-shape="rect" role="menuitem">Rectangle</button><button type="button" data-shape="circle" role="menuitem">Circle</button><button type="button" data-shape="line" role="menuitem">Line</button></span></span>
   <button type="button" class="ico" data-act="grid" data-tip="Grid" data-key="G" aria-label="Grid"><svg class="i"><use href="#vi-grid"/></svg></button>
@@ -764,7 +766,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     const body=Uint8Array.from(atob(entry.body),c=>c.charCodeAt(0));
     const response=await originalFetch(entry.url,{method:entry.method,headers:{...entry.headers,'X-VSTD-Operation-ID':entry.id},body});
     if(response.ok){await outbox('delete',null,entry.id);pendingOutbox.delete(entry.id);pendingSync=false;}
-    else if([400,413,422].includes(response.status))await outbox('put',{...entry,failed:true});
+    else if([400,410,413,422].includes(response.status))await outbox('put',{...entry,failed:true});
     return response;
   }
   async function retrySavedEdits(){
@@ -961,6 +963,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     else if(a==='share')openShare();
     else if(a==='present')enterPresent();
     else if(a==='newslide')newSlide();
+    else if(a==='delete-slide')deleteSlide();
+    else if(a==='add-image')chooseImage();
     else if(a==='addtext')addTextBox();
     else if(a==='shapes')toggleShapeMenu(b);
     else if(a==='kb'){const k=document.getElementById('kbbtn');if(k)k.click();}
@@ -984,6 +988,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   // Ribbon controls mirror the HUD's visibility rules (presenter gate, capabilities, editable).
   function syncRibbon(){
     document.querySelectorAll('#editRibbon [data-mirror]').forEach(b=>{const src=document.getElementById(b.dataset.mirror);b.style.display=(src&&(src.hasAttribute('data-edit-control')?canEditDeck():src.style.display!=='none'))?'':'none';});
+    document.querySelectorAll('[data-slide-edit]').forEach(b=>b.style.display=canEditDeck()?'':'none');
     const fn=document.getElementById('filmNew');if(fn)fn.style.display=canEditDeck()?'':'none';
     if(window.parent!==window)window.parent.postMessage({type:'vstd:editor-ready'},'*');
   }
@@ -1339,8 +1344,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     return saveSlide(sec).then(res=>{if(res&&res.status==='conflict')toast('Could not save because this slide was updated elsewhere. Reopen the presentation to review the latest version.',8500);return res;});
   }
   const redoStacks={};
-  function pushUndo(){
-    const sec=slides[cur];const id=sec.dataset.vstd||('idx'+cur);
+  function pushUndo(sec=slides[cur]){
+    const id=sec.dataset.vstd||('idx'+cur);
     (undoStacks[id]=undoStacks[id]||[]).push(sec.innerHTML);
     if(undoStacks[id].length>40)undoStacks[id].shift();
     delete redoStacks[id]; // a new action invalidates the redo history
@@ -1922,6 +1927,7 @@ document.addEventListener('DOMContentLoaded',()=>{
       setTimeout(()=>location.reload(),350);
     }catch(e){toast('New slide failed: '+e.message);}
   }
+  /*VSTD:SLIDE-EDIT*/
   const __nsb=document.getElementById('newslidebtn');
   if(__nsb)__nsb.addEventListener('click',newSlide);
 
@@ -2049,8 +2055,8 @@ document.addEventListener('DOMContentLoaded',()=>{
       const doc=new DOMParser().parseFromString(await response.text(),'text/html');
       const next=[...doc.querySelectorAll('#frame > .slide')];if(!next.length)return;
       const runtime=doc.getElementById('vstd-runtime')?.textContent||'';
-      if(runtime.startsWith('window.VSTD=')&&runtime.endsWith(';')){const metadata=JSON.parse(runtime.slice(12,-1));window.VSTD.bundles=metadata.bundles||[];}
       if(selfMutations||autosaveInFlight||slides.some(slideDirty)||frame.contains(document.activeElement))return;
+      if(runtime.startsWith('window.VSTD=')&&runtime.endsWith(';')){const metadata=JSON.parse(runtime.slice(12,-1));window.VSTD.bundles=metadata.bundles||[];window.VSTD.hashes=metadata.hashes||{};}
       presentationETag=response.headers.get('etag')||'';
       const slidesChanged=next.length!==slides.length||!next.every((s,i)=>s.dataset.vstd===slides[i].dataset.vstd&&cleanSlideHTML(s)===cleanSlideHTML(slides[i]));
       const stylesChanged=syncPresentationStyles(doc);
@@ -3924,42 +3930,7 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     if(P()&&P().persistSlide)return P().persistSlide(sec);
   }
 
-  // ---- edit mode: drag-drop upload ----
-  function canUpload(){return document.body.classList.contains('editmode')&&httpMode&&window.VSTD&&window.VSTD.deck&&(!window.__vme||window.__vme.editable===true);}
-  addEventListener('dragover',e=>{
-    if(!canUpload())return;
-    if([...(e.dataTransfer.items||[])].some(i=>i.kind==='file')){e.preventDefault();document.body.classList.add('vdrop');}
-  });
-  addEventListener('dragleave',e=>{if(!e.relatedTarget)document.body.classList.remove('vdrop');});
-  addEventListener('drop',e=>{
-    document.body.classList.remove('vdrop');
-    if(!canUpload())return;
-    const files=[...(e.dataTransfer.files||[])];
-    const vf=files.find(f=>/^video\//.test(f.type)||/\.(mp4|mov|webm|m4v)$/i.test(f.name));
-    const im=files.find(f=>/^image\/(png|jpe?g|gif|webp)$/.test(f.type)||/\.(png|jpe?g|gif|webp)$/i.test(f.name));
-    if(!vf&&!im)return;
-    e.preventDefault();e.stopPropagation();
-    if(vf){
-      if(vf.size>2*1024*1024*1024){P().toast('Too large (2GB max)');return;}
-      uploadVideo(vf);
-    }else{
-      if(im.size>100*1024*1024){P().toast('Image too large (100MB max)');return;}
-      uploadImage(im);
-    }
-  },true);
-
-  addEventListener('paste',e=>{
-    if(!canUpload())return;
-    const item=[...(e.clipboardData&&e.clipboardData.items||[])].find(i=>i.kind==='file'&&/^image\//.test(i.type));
-    if(!item)return;
-    const blob=item.getAsFile();if(!blob)return;
-    e.preventDefault();e.stopPropagation();
-    const ext=(blob.type.split('/')[1]||'png').replace('jpeg','jpg');
-    const file=new File([blob],'pasted-image-'+new Date().toISOString().replace(/[:.]/g,'-')+'.'+ext,{type:blob.type});
-    if(file.size>100*1024*1024){P().toast('Pasted image is too large (100MB max)');return;}
-    uploadImage(file);
-  },true);
-
+  document.addEventListener('vstd:upload-video',e=>uploadVideo(e.detail));
   function uploadVideo(f){
     const mb=(f.size/1e6).toFixed(1);
     P().toast('Uploading '+f.name+' ('+mb+' MB)… 0%',60000);
@@ -3979,33 +3950,6 @@ If narration starts with no draft slide, call new_slide first (infer a working t
     };
     xhr.onerror=()=>P().toast('Upload failed — network error');
     xhr.send(f);
-  }
-  function uploadImage(f){
-    P().toast('Uploading '+f.name+'…',30000);
-    const xhr=new XMLHttpRequest();
-    xhr.open('POST','/api/asset/image?filename='+encodeURIComponent(f.name)+'&deck='+encodeURIComponent(window.VSTD.deck));
-    const token=sessionStorage.getItem('vstd_player_session');if(token)xhr.setRequestHeader('Authorization','Bearer '+token);
-    xhr.onload=()=>{
-      window.__selfSave=Date.now();
-      let j={};try{j=JSON.parse(xhr.responseText);}catch(_){}
-      if(xhr.status!==200||!j.asset){P().toast('Upload failed: '+(j.error||('HTTP '+xhr.status)));return;}
-      insertImage(j.asset);
-      P().toast(j.reused?('Reused existing image "'+j.asset.id+'"'):('Image "'+j.asset.id+'" added to the library'),5000);
-    };
-    xhr.onerror=()=>P().toast('Upload failed — network error');
-    xhr.send(f);
-  }
-  function insertImage(asset){
-    const s=activeSlide();if(!s)return;
-    const img=document.createElement('img');
-    img.src='/library/'+asset.file;
-    img.alt=asset.id;
-    img.style.maxWidth='58%';img.style.maxHeight='58%';img.style.borderRadius='12px';
-    const host=s.querySelector('.content')||s;
-    if(host===s){img.style.position='absolute';img.style.right='66px';img.style.bottom='60px';}
-    host.appendChild(img);
-    persistSec(s);
-    P().toast('Drag to place, handles to resize');
   }
   function insertVideo(asset){
     const s=activeSlide();if(!s)return;

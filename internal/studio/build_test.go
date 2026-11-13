@@ -212,8 +212,8 @@ func TestEnsurePagePillAddsMissingPill(t *testing.T) {
 }
 
 func TestPrioritizeSlideAssets(t *testing.T) {
-	first := prioritizeSlideAssets(`<section class="slide"><img src="/library/cover.png"><picture><source srcset="/library/cover.webp"><img src="/library/fallback.png"></picture></section>`, true)
-	if strings.Contains(first, "data-vstd-src") || strings.Count(first, `loading="eager"`) != 2 || strings.Count(first, `fetchpriority="high"`) != 2 {
+	first := prioritizeSlideAssets(`<section class="slide"><img src="/library/cover.png"/><picture><source srcset="/library/cover.webp"><img src="/library/fallback.png"></picture></section>`, true)
+	if strings.Contains(first, "/ loading=") || strings.Contains(first, "data-vstd-src") || strings.Count(first, `loading="eager"`) != 2 || strings.Count(first, `fetchpriority="high"`) != 2 {
 		t.Fatalf("first slide assets were not prioritized:\n%s", first)
 	}
 	later := prioritizeSlideAssets(`<section class="slide"><img src="/library/later.png" srcset="/library/later-2x.png 2x"><source srcset="/library/later.webp"></section>`, false)

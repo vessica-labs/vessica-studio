@@ -154,7 +154,7 @@ func (s *Studio) SaveDeckMeta(deck string, m *DeckMeta) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(s.DeckDir(deck), "deck.yaml"), b, 0o644)
+	return writeCloudFile(filepath.Join(s.DeckDir(deck), "deck.yaml"), b, 0o644)
 }
 
 // SlideIDs lists slide ids (filename without .html) in order.

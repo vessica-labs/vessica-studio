@@ -164,6 +164,11 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 		return "", err
 	}
 	player = []byte(strings.Replace(string(player), "/*VSTD:HOSTED-APPS*/", string(hostedJS), 1))
+	slideEditJS, err := templates.ReadFile("templates/slide-edit.js")
+	if err != nil {
+		return "", err
+	}
+	player = []byte(strings.Replace(string(player), "/*VSTD:SLIDE-EDIT*/", string(slideEditJS), 1))
 	out := strings.Replace(string(player), "/*VSTD:BUNDLES*/", string(bundleDownloadJS)+"\n"+string(bundleJS), 1)
 	out = strings.Replace(out, "/*VSTD:EXPORTS*/", string(exportDownloadJS), 1)
 	out = strings.ReplaceAll(out, "<!--VSTD:TITLE-->", htmlEscape(meta.Title))
@@ -230,7 +235,7 @@ func addImageLoadingHints(tag, loading, priority string) string {
 	if !strings.Contains(lower, " decoding=") {
 		attrs += ` decoding="async"`
 	}
-	return strings.TrimSuffix(tag, ">") + attrs + ">"
+	return strings.TrimSuffix(strings.TrimSuffix(tag, ">"), "/") + attrs + ">"
 }
 
 func ensureAudienceShare(frag string) string {

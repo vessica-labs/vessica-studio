@@ -318,6 +318,8 @@ func TestPresentationTransformRejectsWrites(t *testing.T) {
 		{"PUT", "/api/deck/demo/slide/0010-a/companion"},
 		{"POST", "/api/deck/demo/slides"},
 		{"POST", "/api/deck/demo/slide/0010-a/move"},
+		{"DELETE", "/api/deck/demo/slide/0010-a"},
+		{"POST", "/api/asset/image?deck=demo&filename=test.png"},
 	} {
 		in.Method, in.Path = route.method, route.path
 		got, err := TransformEditor(context.Background(), in)

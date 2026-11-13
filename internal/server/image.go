@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -28,6 +29,7 @@ import (
 	"time"
 
 	"github.com/vessica-labs/vessica-studio/internal/library"
+	_ "golang.org/x/image/webp"
 )
 
 var imgSlugRe = regexp.MustCompile(`[^a-z0-9]+`)
@@ -43,11 +45,26 @@ func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, fmt.Errorf("unsupported image type %q (png, jpg, gif, webp)", ext), 400)
 		return
 	}
-	body, err := io.ReadAll(io.LimitReader(r.Body, 100<<20)) // 100MB guard
-	if err != nil || len(body) == 0 {
-		jsonErr(w, fmt.Errorf("empty or unreadable body"), 400)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 100<<20))
+	var tooLarge *http.MaxBytesError
+	if errors.As(err, &tooLarge) {
+		jsonErr(w, fmt.Errorf("image exceeds the 100 MB upload limit"), http.StatusRequestEntityTooLarge)
 		return
 	}
+	if err != nil || len(body) == 0 {
+		jsonErr(w, fmt.Errorf("empty or unreadable body"), http.StatusBadRequest)
+		return
+	}
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(body))
+	expectedFormat := strings.TrimPrefix(ext, ".")
+	if expectedFormat == "jpg" {
+		expectedFormat = "jpeg"
+	}
+	if err != nil || format != expectedFormat || cfg.Width <= 0 || cfg.Height <= 0 {
+		jsonErr(w, fmt.Errorf("file does not match its PNG, JPEG, GIF or WebP extension"), http.StatusBadRequest)
+		return
+	}
+	size := fmt.Sprintf("%dx%d", cfg.Width, cfg.Height)
 	sum := sha256.Sum256(body)
 	hash := hex.EncodeToString(sum[:8])
 
@@ -60,7 +77,9 @@ func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 	// content-hash dedupe: same bytes → same asset, no duplicate files
 	for i := range man.Assets {
 		if man.Assets[i].Hash == hash {
-			writeJSON(w, map[string]any{"status": "ok", "asset": man.Assets[i], "reused": true})
+			asset := man.Assets[i]
+			asset.Size = size
+			writeJSON(w, map[string]any{"status": "ok", "asset": asset, "reused": true})
 			return
 		}
 	}
@@ -85,11 +104,6 @@ func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	size := ""
-	if cfg, _, err := image.DecodeConfig(bytes.NewReader(body)); err == nil {
-		size = fmt.Sprintf("%dx%d", cfg.Width, cfg.Height)
-	}
-
 	file := "img/" + id + ext
 	if err := os.MkdirAll(filepath.Join(libDir, "img"), 0o755); err != nil {
 		jsonErr(w, err, 500)
@@ -109,6 +123,5 @@ func (s *Server) handleImageUpload(w http.ResponseWriter, r *http.Request) {
 		jsonErr(w, err, 500)
 		return
 	}
-	s.Broadcast("reload")
 	writeJSON(w, map[string]any{"status": "ok", "asset": asset, "reused": false})
 }

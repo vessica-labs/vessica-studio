@@ -495,6 +495,22 @@ Slides use a fixed 1280×720 canvas. Mark an element with
 `data-current-month-year` to render the viewer's current month and year, such as
 `August 2026`, at runtime and in browser-backed exports.
 
+### Edit slides in the browser
+
+In Edit mode, select a slide and use **Delete slide** in the toolbar. Confirm
+the deletion to remove the slide and its companion. A deck must retain at least
+one slide.
+
+Use **Add image** to choose a PNG, JPEG, GIF, or WebP file up to 16 MB. You can
+also drop the image on the canvas or paste an image from the clipboard. Dropped
+images land at the drop point. Chosen and pasted images start in the center.
+Drag the image or use its resize handles to adjust the placement.
+
+The editor uses `DELETE /api/deck/{deck}/slide/{id}` to remove a slide. Supply
+the slide fragment's quoted hash as `If-Match` to reject a stale deletion.
+Image uploads use the raw file body at
+`POST /api/asset/image?deck={deck}&filename={filename}`.
+
 ## CLI manual
 
 Run `vstd help` for the installed command summary. Examples below assume the
