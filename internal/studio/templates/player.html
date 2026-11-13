@@ -684,10 +684,6 @@ document.addEventListener('DOMContentLoaded',()=>{
   function show(i,notify=true){
     stopTextEdit();clearSel();
     cur=Math.max(0,Math.min(slides.length-1,i));
-    const tgt=slides[cur];
-    if(tgt.hasAttribute('data-hidden')){ // direct navigation to a hidden slide unhides it
-      tgt.removeAttribute('data-hidden');persistSlide(tgt);toast('Slide '+(cur+1)+' unhidden');
-    }
     slides.forEach((s,j)=>s.classList.toggle('active',j===cur));
     const vn=dispNum(cur),vt=visIdx().length;
     cnt.textContent=(vn||'·')+' / '+vt;
