@@ -292,11 +292,11 @@ body.editmode #editRibbon{display:flex}
 #vtip.above::before{top:auto;bottom:-4px}
 #vtip .kbd{border-color:var(--vstd-rail-line);background:rgba(255,255,255,.06);color:var(--vstd-rail-muted)}
 /* the stage becomes a cream desk; the slide sits on it like a sheet */
-body.editmode #stage{top:48px;left:200px;background:var(--vstd-cream)}
+body.editmode #stage{top:48px;left:var(--vstd-film-width,200px);background:var(--vstd-cream)}
 body.editmode.nofilm #stage{left:36px}
 body.editmode #frame{box-shadow:0 2px 6px rgba(26,26,26,.08),0 18px 48px rgba(26,26,26,.16);border-radius:2px}
 /* filmstrip: slide thumbnails, click to jump, drag to reorder */
-#filmstrip{position:fixed;left:0;top:48px;bottom:0;width:200px;z-index:139;display:none;flex-direction:column;
+#filmstrip{position:fixed;left:0;top:48px;bottom:0;width:var(--vstd-film-width,200px);z-index:139;display:none;flex-direction:column;
   background:var(--vstd-paper);border-right:1px solid var(--vstd-line);font-family:var(--vstd-ui);box-sizing:border-box}
 body.editmode #filmstrip{display:flex}
 body.gridmode #filmstrip{display:none!important}
@@ -346,8 +346,8 @@ body.editmode.nofilm #objectBar{left:52px}
 #objectBar button.danger,#videoRibbonTools .danger{color:var(--vstd-danger)}
 #objectBar button.danger:hover:not(:disabled){background:rgba(179,59,41,.08)}
 @media(max-width:900px){
-  body.editmode #filmstrip{display:none}
-  body.editmode #stage,body.editmode.nofilm #stage{left:0}
+  body.editmode{--vstd-film-width:clamp(92px,22vw,156px)}
+  #filmList{padding-inline:8px}
   body.editmode #objectBar,body.editmode.nofilm #objectBar{left:16px}
   #editRibbon{overflow-x:auto}
 }
@@ -664,7 +664,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   function fit(){
     const em=document.body.classList.contains('editmode');
     const top=em?48:0; // ribbon
-    const left=em?(innerWidth<=900?0:(document.body.classList.contains('nofilm')?36:200)):0; // filmstrip
+    const left=em?document.getElementById('filmstrip').offsetWidth:0;
     const pad=em?28:0,barRoom=em?44:0; // desk margins + room for the floating object bar
     scale=Math.min((innerWidth-left-pad*2)/1280,(innerHeight-top-barRoom-pad*2)/720)*(em?1:0.985);
     frame.style.transform=`scale(${scale})`;frame.style.transformOrigin='center center';
@@ -827,9 +827,11 @@ document.addEventListener('DOMContentLoaded',()=>{
       window.__selfSave=Date.now();
       if(target.type==='park'){
         await setParked(ids,true);
+        buildFilm();
         toast(ids.length+' slide(s) parked');
       }else{
         await setParked(ids,false);
+        buildFilm();
         await moveSeq(ids,target.type==='front'?'':target.id);
         toast(ids.length+' slide(s) moved');
       }
@@ -1043,88 +1045,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     clearTimeout(obsT);obsT=setTimeout(()=>{dirtyCheck();refreshThumb(cur);},250);
   });
   setInterval(()=>{if(editMode){dirtyCheck();if(dirtyIds.size)scheduleAutosave(0);}},15000);
-  // ---- filmstrip: slide thumbnails while editing (click to jump, drag to reorder) ----
-  const filmList=document.getElementById('filmList');
-  const FILM_TS=(200-24-2)/1280; // thumbnail scale: panel width minus padding and border
-  // Each thumbnail renders in its own shadow root (with the page's stylesheets cloned in)
-  // so slide ids and scripts never collide with the live slide in the document.
-  let filmStyles=null;
-  function filmStyleNodes(){
-    if(!filmStyles){filmStyles=document.createDocumentFragment();document.querySelectorAll('head style,head link[rel="stylesheet"]').forEach(n=>filmStyles.appendChild(n.cloneNode(true)));}
-    return filmStyles.cloneNode(true);
-  }
-  function miniClone(s){
-    const host=document.createElement('div');host.className='fmini';
-    const root=host.attachShadow({mode:'open'});
-    root.appendChild(filmStyleNodes());
-    const c=s.cloneNode(true);c.classList.add('active','mini');
-    if(window.__vhydrateAssets)window.__vhydrateAssets(c,'low');
-    c.removeAttribute('data-vstd');c.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
-    c.querySelectorAll('video').forEach(v=>{v.removeAttribute('autoplay');v.muted=true;});
-    // keep the slide's own inline style (themes put backgrounds there), then pin the thumbnail geometry
-    c.style.cssText=(c.getAttribute('style')||'')+';display:block;width:1280px;height:720px;position:absolute;top:0;left:0;transform:scale('+FILM_TS+');transform-origin:top left;pointer-events:none';
-    root.appendChild(c);
-    return host;
-  }
-  function filmThumb(s,i){
-    const t=document.createElement('div');t.className='fthumb';t.dataset.i=i;t.dataset.vstd=s.dataset.vstd||'';t.tabIndex=0;
-    t.setAttribute('role','button');t.setAttribute('aria-label','Slide '+(i+1));
-    if(s.hasAttribute('data-hidden'))t.classList.add('hiddenSlide');
-    if(s.hasAttribute('data-parked'))t.classList.add('parkedSlide');
-    t.appendChild(miniClone(s));
-    const n=document.createElement('span');n.className='fn';n.textContent=s.hasAttribute('data-parked')?'·':dispNum(i);t.appendChild(n);
-    t.addEventListener('click',()=>show(i));
-    t.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();show(i);}});
-    if(canEditDeck()&&s.dataset.vstd){
-      t.draggable=true;
-      t.addEventListener('dragstart',e=>{dragSrc=s.dataset.vstd;ovSel.clear();t.classList.add('dragging');try{e.dataTransfer.effectAllowed='move';e.dataTransfer.setData('text/plain',dragSrc);}catch(_){}});
-      t.addEventListener('dragend',()=>{t.classList.remove('dragging');filmList.querySelectorAll('.dropbefore,.dropafter').forEach(x=>x.classList.remove('dropbefore','dropafter'));});
-      t.addEventListener('dragover',e=>{e.preventDefault();try{e.dataTransfer.dropEffect='move';}catch(_){}const r=t.getBoundingClientRect();const before=e.clientY<r.top+r.height/2;t.classList.toggle('dropbefore',before);t.classList.toggle('dropafter',!before);});
-      t.addEventListener('dragleave',()=>t.classList.remove('dropbefore','dropafter'));
-      t.addEventListener('drop',e=>{
-        e.preventDefault();t.classList.remove('dropbefore','dropafter');
-        if(!dragSrc||dragSrc===s.dataset.vstd)return;
-        if(s.hasAttribute('data-parked')){dropSel({type:'park'},{stay:true,index:cur});return;}
-        const r=t.getBoundingClientRect(),before=e.clientY<r.top+r.height/2;
-        const rest=slides.filter(x=>x.dataset.vstd!==dragSrc&&!x.hasAttribute('data-parked'));
-        const restAll=slides.filter(x=>x.dataset.vstd!==dragSrc);
-        let k=rest.indexOf(s);if(before)k--;
-        if(k<0)dropSel({type:'front'},{stay:true,index:0});
-        else dropSel({type:'after',id:rest[k].dataset.vstd},{stay:true,index:restAll.indexOf(rest[k])+1});
-      });
-    }
-    return t;
-  }
-  function buildFilm(){
-    if(!editMode||!filmList)return;
-    filmList.innerHTML='';
-    slides.forEach((s,i)=>{if(!s.hasAttribute('data-parked'))filmList.appendChild(filmThumb(s,i));});
-    if(canEditDeck()&&slides.some(s=>s.hasAttribute('data-parked'))){
-      const h=document.createElement('div');h.className='funused';h.textContent='Unused';filmList.appendChild(h);
-      slides.forEach((s,i)=>{if(s.hasAttribute('data-parked'))filmList.appendChild(filmThumb(s,i));});
-    }
-    filmSetCur();
-  }
-  function refreshThumb(i){
-    if(!editMode||!filmList)return;
-    const t=filmList.querySelector('.fthumb[data-i="'+i+'"]');if(!t||!slides[i])return;
-    const old=t.querySelector('.fmini');if(old)old.replaceWith(miniClone(slides[i]));
-    t.classList.toggle('hiddenSlide',slides[i].hasAttribute('data-hidden'));
-  }
-  function filmSetCur(){
-    if(!filmList)return;
-    let curT=null;
-    filmList.querySelectorAll('.fthumb').forEach(t=>{const on=parseInt(t.dataset.i)===cur;t.classList.toggle('cur',on);if(on)curT=t;});
-    if(curT&&editMode)curT.scrollIntoView({block:'nearest'});
-  }
-  function toggleFilm(){
-    const off=document.body.classList.toggle('nofilm');
-    const b=document.getElementById('filmToggle');
-    if(b){b.dataset.tip=off?'Show slide panel':'Hide slide panel';b.setAttribute('aria-label',b.dataset.tip);}
-    try{localStorage.setItem('vstd_nofilm',off?'1':'');}catch(_){}
-    fit();
-  }
-  try{if(localStorage.getItem('vstd_nofilm')==='1')toggleFilm();}catch(_){}
+  /*VSTD:FILMSTRIP*/
   // ---- tooltips: label + shortcut for every ribbon control (hover 400ms, focus, long-press) ----
   const vtip=document.getElementById('vtip');let tipT=0;
   function showTip(el){

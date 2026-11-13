@@ -41,7 +41,7 @@
       "warn_lines": 500,
       "legacy": {
         "internal/studio/templates/player.html": {
-          "lines": 4027,
+          "lines": 3948,
           "reason": "Existing engine-owned embedded player predates the ecosystem guardrails.",
           "plan": "VE-10: extract cohesive player modules while preserving assembled HTML and offline builds."
         }
