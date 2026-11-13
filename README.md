@@ -499,7 +499,8 @@ Slides use a fixed 1280×720 canvas. Mark an element with
 
 In Edit mode, select a slide and use **Delete slide** in the toolbar. Confirm
 the deletion to remove the slide and its companion. A deck must retain at least
-one slide.
+one slide. Parked slides appear under **Unused** at the bottom of the left
+slide navigator. Select one to edit it or drag it into the main sequence.
 
 Use **Add image** to choose a PNG, JPEG, GIF, or WebP file up to 16 MB. You can
 also drop the image on the canvas or paste an image from the clipboard. Dropped

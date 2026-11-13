@@ -164,6 +164,11 @@ func (s *Studio) BuildWithAudienceURL(deck string, audienceURL *string) (string,
 		return "", err
 	}
 	player = []byte(strings.Replace(string(player), "/*VSTD:HOSTED-APPS*/", string(hostedJS), 1))
+	filmstripJS, err := templates.ReadFile("templates/filmstrip.js")
+	if err != nil {
+		return "", err
+	}
+	player = []byte(strings.Replace(string(player), "/*VSTD:FILMSTRIP*/", string(filmstripJS), 1))
 	slideEditJS, err := templates.ReadFile("templates/slide-edit.js")
 	if err != nil {
 		return "", err
