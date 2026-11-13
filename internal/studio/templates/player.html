@@ -299,7 +299,7 @@ body.editmode #frame{box-shadow:0 2px 6px rgba(26,26,26,.08),0 18px 48px rgba(26
 #filmstrip{position:fixed;left:0;top:48px;bottom:0;width:var(--vstd-film-width,200px);z-index:139;display:none;flex-direction:column;
   background:var(--vstd-paper);border-right:1px solid var(--vstd-line);font-family:var(--vstd-ui);box-sizing:border-box}
 body.editmode #filmstrip{display:flex}
-body.gridmode #filmstrip{display:none!important}
+body:has(#overview.open) #filmstrip{display:none!important}
 body.editmode.nofilm #filmstrip{width:36px}
 #filmstrip .fhead{display:flex;align-items:center;gap:6px;height:36px;padding:0 4px 0 12px;border-bottom:1px solid var(--vstd-line);
   font:600 11px/1 var(--vstd-ui);letter-spacing:.13em;text-transform:uppercase;color:var(--vstd-muted);flex:0 0 auto}
@@ -664,7 +664,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   function fit(){
     const em=document.body.classList.contains('editmode');
     const top=em?48:0; // ribbon
-    const left=em?document.getElementById('filmstrip').offsetWidth:0;
+    const left=em?parseFloat(getComputedStyle(document.getElementById('stage')).left)||0:0;
     const pad=em?28:0,barRoom=em?44:0; // desk margins + room for the floating object bar
     scale=Math.min((innerWidth-left-pad*2)/1280,(innerHeight-top-barRoom-pad*2)/720)*(em?1:0.985);
     frame.style.transform=`scale(${scale})`;frame.style.transformOrigin='center center';
@@ -930,9 +930,6 @@ document.addEventListener('DOMContentLoaded',()=>{
     }
     if(window.__vprogApply)window.__vprogApply();
   }
-  const syncGridMode=()=>document.body.classList.toggle('gridmode',overview.classList.contains('open'));
-  new MutationObserver(syncGridMode).observe(overview,{attributes:true,attributeFilter:['class']});
-  syncGridMode();
 
   // One action router for the bottom HUD, the edit ribbon and the filmstrip.
   function hudAction(b){

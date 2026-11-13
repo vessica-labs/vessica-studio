@@ -94,30 +94,30 @@ func TestBuildUsesEmbeddedPlayer(t *testing.T) {
 		`duplicateSelection`,                                     // ⌘D duplicates the selection in place
 		`function doRedo`,                                        // ⌘⇧Z redoes the last undone change
 		`shapeKind`,                                              // CSS fills, gradients, borders, and circles are selectable shapes
-		`body.editmode #stage{top:48px;left:200px`,               // ribbon and filmstrip reserve canvas space instead of covering it
-		`body.editmode #hud,body.editmode #progress{display:none}`, // the bottom HUD yields to the ribbon while editing
-		`--vstd-rail:`,                                                    // chrome tokens mirror the Studio Cloud shell
-		`data-act="sticky"`,                                               // sticky notes
-		`data-act="companion"`,                                            // companion drawer
-		`data-act="vessica"`,                                              // vessica toggle
-		`data-parked`,                                                     // hide/park handling in the runtime
-		`--vstd-green`,                                                    // engine-owned chrome tokens
-		`<h1>Hi</h1>`,                                                     // slides injected
-		`"deck":"demo"`,                                                   // runtime meta injected
-		`.slide{background:#fff}`,                                         // theme.css injected
-		`id="vstd-presentation-styles"`,                                   // live refresh can replace theme.css + deck.css atomically with slide markup
-		`syncPresentationStyles(doc)`,                                     // external revisions update presentation layout without a page reload
-		`c.removeAttribute('data-vstd')`,                                  // engine-only slide id is not persisted
-		`name:'open_companion'`,                                           // Vessica can open the narrative editor
-		`addEventListener('paste'`,                                        // clipboard images can be placed on slides
-		`keyTargetIsTextEntry`,                                            // typing surfaces suppress deck hotkeys
-		`pad.addEventListener('keydown'`,                                  // Sticky keystrokes cannot bubble to the player
-		`interactionSurfaceOpen()`,                                        // background reloads cannot dismiss Sticky or Companion
-		`scheduleAutosave()`,                                              // dirty presentation edits save automatically
-		`addEventListener('pagehide',flushAutosave`,                       // navigating away flushes pending edits with keepalive
-		`if(selfMutations||Date.now()-(window.__selfSave`,                 // in-flight editor writes cannot trigger their own reload
-		`body.editmode #vstatus{top:60px}`,                                // Vessica status stays below the editing ribbon
-		`body.gridmode #filmstrip{display:none!important}`,                // Grid fully hides the slide filmstrip
+		`body.editmode #stage{top:48px;left:var(--vstd-film-width,200px)`, // ribbon and filmstrip reserve canvas space instead of covering it
+		`body.editmode #hud,body.editmode #progress{display:none}`,        // the bottom HUD yields to the ribbon while editing
+		`--vstd-rail:`,                                    // chrome tokens mirror the Studio Cloud shell
+		`data-act="sticky"`,                               // sticky notes
+		`data-act="companion"`,                            // companion drawer
+		`data-act="vessica"`,                              // vessica toggle
+		`data-parked`,                                     // hide/park handling in the runtime
+		`--vstd-green`,                                    // engine-owned chrome tokens
+		`<h1>Hi</h1>`,                                     // slides injected
+		`"deck":"demo"`,                                   // runtime meta injected
+		`.slide{background:#fff}`,                         // theme.css injected
+		`id="vstd-presentation-styles"`,                   // live refresh can replace theme.css + deck.css atomically with slide markup
+		`syncPresentationStyles(doc)`,                     // external revisions update presentation layout without a page reload
+		`c.removeAttribute('data-vstd')`,                  // engine-only slide id is not persisted
+		`name:'open_companion'`,                           // Vessica can open the narrative editor
+		`addEventListener('paste'`,                        // clipboard images can be placed on slides
+		`keyTargetIsTextEntry`,                            // typing surfaces suppress deck hotkeys
+		`pad.addEventListener('keydown'`,                  // Sticky keystrokes cannot bubble to the player
+		`interactionSurfaceOpen()`,                        // background reloads cannot dismiss Sticky or Companion
+		`scheduleAutosave()`,                              // dirty presentation edits save automatically
+		`addEventListener('pagehide',flushAutosave`,       // navigating away flushes pending edits with keepalive
+		`if(selfMutations||Date.now()-(window.__selfSave`, // in-flight editor writes cannot trigger their own reload
+		`body.editmode #vstatus{top:60px}`,                // Vessica status stays below the editing ribbon
+		`body:has(#overview.open) #filmstrip{display:none!important}`,     // Grid fully hides the slide filmstrip
 		`const label=s.dataset.menu||s.dataset.sec||heading`,              // Agenda falls back to every slide's visible title
 		`vtip.classList.toggle('above',above)`,                            // bottom controls place tooltips above the viewport edge
 		`vstd:interactionend`,                                             // deferred reload resumes only after editing ends
