@@ -21,7 +21,7 @@ func TestPlayerPolishAgendaInsertGridAndChromePlacement(t *testing.T) {
 	writeFile(t, filepath.Join(root, "themes", "default", "theme.css"), ".slide{position:relative;width:1280px;height:720px;background:#fff}")
 	writeFile(t, filepath.Join(root, "decks", "demo", "deck.yaml"), "title: Demo\ntheme: default\n")
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0010-one.html"), `<section class="slide"><h1>First page</h1></section>`)
-	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0020-two.html"), `<section class="slide" data-sec="Evidence"><p>Second</p></section>`)
+	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0020-two.html"), `<section class="slide" data-hidden="1" data-sec="Evidence"><p>Second</p></section>`)
 	writeFile(t, filepath.Join(root, "decks", "demo", "slides", "0030-three.html"), `<section class="slide"><p>Third</p></section>`)
 	st, err := Open(root)
 	if err != nil {
@@ -42,6 +42,7 @@ func TestPlayerPolishAgendaInsertGridAndChromePlacement(t *testing.T) {
   const agenda=agendaLinks.map(a=>a.textContent.trim());
   agendaLinks[1].click();
   const agendaJumped=document.querySelector('[data-vstd="0020-two"]').classList.contains('active');
+  const stillHidden=document.querySelector('[data-vstd="0020-two"]').hasAttribute('data-hidden');
   document.querySelector('[data-act="addtext"]').click();
   const text=document.querySelector('[data-edit="text"]');
   document.querySelector('[data-act="shapes"]').click();
@@ -53,19 +54,20 @@ func TestPlayerPolishAgendaInsertGridAndChromePlacement(t *testing.T) {
   document.querySelector('#filmNew').focus();
   const tip=document.querySelector('#vtip').getBoundingClientRect(),button=document.querySelector('#filmNew').getBoundingClientRect();
   const vstatusTop=getComputedStyle(document.querySelector('#vstatus')).top;
-  return JSON.stringify({agenda,agendaJumped,text:!!text,circle:!!circle,filmHidden,tipAbove:tip.bottom<=button.top,vstatusTop});
+  return JSON.stringify({agenda,agendaJumped,stillHidden,text:!!text,circle:!!circle,filmHidden,tipAbove:tip.bottom<=button.top,vstatusTop});
 })()`)
 	if err != nil {
 		t.Fatal(err)
 	}
 	var got struct {
-		Agenda     []string `json:"agenda"`
-		AgendaJump bool     `json:"agendaJumped"`
-		Text       bool     `json:"text"`
-		Circle     bool     `json:"circle"`
-		FilmHidden bool     `json:"filmHidden"`
-		TipAbove   bool     `json:"tipAbove"`
-		VstatusTop string   `json:"vstatusTop"`
+		Agenda      []string `json:"agenda"`
+		AgendaJump  bool     `json:"agendaJumped"`
+		StillHidden bool     `json:"stillHidden"`
+		Text        bool     `json:"text"`
+		Circle      bool     `json:"circle"`
+		FilmHidden  bool     `json:"filmHidden"`
+		TipAbove    bool     `json:"tipAbove"`
+		VstatusTop  string   `json:"vstatusTop"`
 	}
 	if err := json.Unmarshal([]byte(raw), &got); err != nil {
 		t.Fatal(err)
@@ -75,6 +77,9 @@ func TestPlayerPolishAgendaInsertGridAndChromePlacement(t *testing.T) {
 	}
 	if !got.AgendaJump {
 		t.Fatal("Agenda page did not navigate to its slide")
+	}
+	if !got.StillHidden {
+		t.Fatal("Selecting a hidden slide changed its visibility")
 	}
 	if !got.Text || !got.Circle {
 		t.Fatalf("ribbon insertion unavailable: text=%v circle=%v", got.Text, got.Circle)
