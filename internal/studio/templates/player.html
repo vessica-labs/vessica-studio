@@ -68,27 +68,28 @@ body:hover #hud{opacity:1}
 #downloadMenu .downloadScope{display:grid;grid-template-columns:1fr 1fr;gap:3px;padding:3px;border-radius:10px;background:#0A0B0E;margin-bottom:4px}
 #downloadMenu .downloadScope button{text-align:center;padding:7px 8px;color:var(--vstd-rail-muted)}
 #downloadMenu .downloadScope button.active{background:var(--vstd-rail-active);color:#fff}
-/* while editing, the download menu docks under the ribbon's download control */
 #editRibbon #downloadMenu{top:38px;bottom:auto;right:0}
 #homebtn svg,#downloadbtn svg{width:16px;height:16px;display:block;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
 #shareDialog{position:fixed;inset:0;z-index:155;display:none;align-items:center;justify-content:center;background:rgba(7,8,13,.6);backdrop-filter:blur(3px);font-family:var(--vstd-ui)}
-#shareDialog.open{display:flex}
-#shareDialog .card{width:min(520px,calc(100vw - 32px));background:var(--vstd-paper);color:var(--vstd-ink);border-radius:12px;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+#shareDialog.open{display:flex}#shareDialog .card{width:min(520px,calc(100vw - 32px))}
+#shareDialog .card,#deleteSlideDialog{background:var(--vstd-paper);color:var(--vstd-ink);border-radius:12px;padding:28px;box-shadow:0 24px 80px rgba(0,0,0,.45)}
+#deleteSlideDialog{position:fixed;inset:0;margin:auto;width:min(420px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;border:1px solid var(--vstd-line);font-family:var(--vstd-ui)}#deleteSlideDialog::backdrop{background:rgba(7,8,13,.6)}
+#deleteSlideDialog h2{font:450 23px/1.25 var(--vstd-display);letter-spacing:-.02em;margin-bottom:8px;overflow-wrap:anywhere}
 #shareDialog .shead{display:flex;align-items:center;gap:12px;margin-bottom:8px}#shareDialog h2{font:450 23px/1.25 var(--vstd-display);letter-spacing:-.02em;flex:1}
 #shareDialog .close{border:0;background:transparent;color:var(--vstd-muted);font-size:20px;cursor:pointer;padding:4px 8px;border-radius:7px}
 #shareDialog .close:hover{background:var(--vstd-cream);color:var(--vstd-ink)}
-#shareDialog p{font-size:14px;line-height:1.5;color:var(--vstd-muted);margin-bottom:18px}
+#shareDialog p,#deleteSlideDialog p{font-size:14px;line-height:1.5;color:var(--vstd-muted);margin-bottom:18px}
 #shareDialog label{display:block;font:600 11px/1.5 var(--vstd-ui);letter-spacing:.13em;text-transform:uppercase;color:var(--vstd-muted);margin:12px 0 6px}
 #shareDialog select,#shareDialog input{width:100%;border:1px solid var(--vstd-line-strong);border-radius:7px;background:var(--vstd-paper);color:var(--vstd-ink);font:14px var(--vstd-ui);padding:9px 12px}
 #shareDialog select:focus,#shareDialog input:focus{outline:2px solid var(--vstd-accent-deep);outline-offset:1px}
-#shareDialog .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
-#shareDialog .actions button{border:1px solid var(--vstd-line);border-radius:7px;background:var(--vstd-paper);color:var(--vstd-ink);font:550 13px var(--vstd-ui);padding:0 14px;min-height:36px;cursor:pointer;transition:background var(--vstd-ease) .16s,border-color var(--vstd-ease) .16s}
-#shareDialog .actions button:hover:not(:disabled){background:var(--vstd-cream);border-color:var(--vstd-line-strong)}
+#shareDialog .actions,#deleteSlideDialog .actions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px;flex-wrap:wrap}
+#shareDialog .actions button,#deleteSlideDialog .actions button{border:1px solid var(--vstd-line);border-radius:7px;background:var(--vstd-paper);color:var(--vstd-ink);font:550 13px var(--vstd-ui);padding:0 14px;min-height:36px;cursor:pointer;transition:background var(--vstd-ease) .16s,border-color var(--vstd-ease) .16s}
+#shareDialog .actions button:hover:not(:disabled),#deleteSlideDialog .actions button:hover:not(:disabled){background:var(--vstd-cream);border-color:var(--vstd-line-strong)}
 #shareDialog .actions button:disabled{opacity:.55;cursor:default}
 #shareDialog .actions .primary{background:var(--vstd-accent-deep);border-color:var(--vstd-accent-deep);color:var(--vstd-paper)}
 #shareDialog .actions .primary:hover:not(:disabled){background:var(--vstd-accent-hover);border-color:var(--vstd-accent-hover)}
+#deleteSlideDialog .actions .danger{background:var(--vstd-danger);border-color:var(--vstd-danger);color:var(--vstd-paper)}#deleteSlideDialog .actions .danger:hover{background:#8E2F21;border-color:#8E2F21}#deleteSlideDialog button:focus-visible{outline:2px solid var(--vstd-accent-deep);outline-offset:2px}
 #shareDialog .meta{min-height:18px;margin-top:8px;color:var(--vstd-muted);font-size:12px}
-/* touch devices: hud always visible, bigger targets, secondary items behind ⋯ */
 body.mobilehud #hud{opacity:1;gap:2px;padding:8px 10px;bottom:calc(10px + env(safe-area-inset-bottom));max-width:96vw}
 body.mobilehud #hud>button{font-size:16px;padding:9px 13px}
 body.mobilehud #hud .cnt{font-size:14px;min-width:52px}
@@ -372,7 +373,7 @@ body.cropmode #selbox{border-style:dashed;border-color:var(--vstd-accent)}
 body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--vstd-accent-deep);outline-offset:2px;cursor:text}
 body.editmode .slide.active{cursor:default}
 @media print{
-  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#shareDialog,#capbar,#editRibbon,#objectBar,#filmstrip,#vtip,#selbox,#multiboxes,#marquee{display:none!important}
+  #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#shareDialog,#deleteSlideDialog,#capbar,#editRibbon,#objectBar,#filmstrip,#vtip,#selbox,#multiboxes,#marquee{display:none!important}
   #stage{position:static}
   #frame{width:1280px;height:720px;box-shadow:none;page-break-after:always;position:relative;margin:0 auto}
   .slide{display:block!important;position:relative;page-break-after:always}
@@ -1081,14 +1082,13 @@ document.addEventListener('DOMContentLoaded',()=>{
       window.parent.postMessage({type:'vstd:host-shortcut',version:1,command},hostOrigin);
     },true);
   })();
-  // ---------- End host keyboard shortcuts ----------
   function keyTargetIsTextEntry(e){
     const selector='input,textarea,select,[contenteditable="true"],[contenteditable=""],[role="textbox"]';
     return [e&&e.target,document.activeElement].some(el=>el&&el.nodeType===1&&
       (el.isContentEditable||(el.matches&&el.matches(selector))||(el.closest&&el.closest(selector))));
   }
   addEventListener('keydown',e=>{
-    if(keyTargetIsTextEntry(e))return;
+    if(deleteDialog.open||keyTargetIsTextEntry(e))return;
     if(window.__vaudience){
       if(e.key==='ArrowRight'||e.key===' '||e.key==='PageDown'){e.preventDefault();step(1);}
       else if(e.key==='ArrowLeft'||e.key==='PageUp'){e.preventDefault();step(-1);}

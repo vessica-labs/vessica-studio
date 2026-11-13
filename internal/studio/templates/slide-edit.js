@@ -3,8 +3,16 @@
   }
 
   const deleteDialog = document.createElement('dialog');
+  deleteDialog.id = 'deleteSlideDialog';
   deleteDialog.setAttribute('aria-labelledby','delete-slide-title');
-  deleteDialog.innerHTML = '<h2 id="delete-slide-title"></h2><p>The slide and its companion will be removed.</p><button type="button" autofocus>Cancel</button> <button type="button" value="delete">Delete slide</button>';
+  deleteDialog.setAttribute('aria-describedby','delete-slide-description');
+  deleteDialog.innerHTML = `
+    <h2 id="delete-slide-title"></h2>
+    <p id="delete-slide-description">The slide and its companion will be removed.</p>
+    <div class="actions">
+      <button type="button" autofocus>Cancel</button>
+      <button type="button" class="danger" value="delete">Delete slide</button>
+    </div>`;
   deleteDialog.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>deleteDialog.close(button.value)));
   document.body.appendChild(deleteDialog);
   let deletingSlide = false;
