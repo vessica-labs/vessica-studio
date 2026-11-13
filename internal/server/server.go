@@ -223,6 +223,7 @@ func (s *Server) Routes() http.Handler {
 	mux.HandleFunc("GET /api/deck/{deck}/status", s.handleDeckStatus)
 	mux.HandleFunc("GET /api/deck/{deck}/voice-context", s.handleVoiceContext)
 	mux.HandleFunc("GET /api/deck/{deck}/slide/{id}", s.handleGetSlide)
+	mux.HandleFunc("DELETE /api/deck/{deck}/slide/{id}", s.editOnly(s.handleDeleteSlide))
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/fragment", s.editOnly(s.handlePutFragment))
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion", s.editOnly(s.handlePutFullCompanion))
 	mux.HandleFunc("PUT /api/deck/{deck}/slide/{id}/companion/{section}", s.editOnly(s.handlePutCompanion))
@@ -415,7 +416,15 @@ func (s *Server) handleDeck(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	http.ServeFile(w, r, out)
+	// A rebuilt document can change more than once per second.
+	w.Header().Set("Cache-Control", "no-store")
+	f, err := os.Open(out)
+	if err != nil {
+		http.Error(w, "presentation unavailable", http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	http.ServeContent(w, r, "index.html", time.Time{}, f)
 }
 
 func (s *Server) handleVoiceContext(w http.ResponseWriter, r *http.Request) {
@@ -491,6 +500,14 @@ func (s *Server) handlePutFragment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	deck, id := r.PathValue("deck"), r.PathValue("id")
+	if !studio.ValidDeckName(deck) || !studio.ValidSlideID(id) {
+		jsonErr(w, fmt.Errorf("invalid deck/slide id"), 400)
+		return
+	}
+	if _, err := os.Stat(s.St.SlidePath(deck, id, ".html")); err != nil {
+		jsonErr(w, fmt.Errorf("slide unavailable"), http.StatusGone)
+		return
+	}
 	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
 		var edit struct {
 			Base string `json:"base"`

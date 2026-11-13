@@ -152,6 +152,9 @@ func editorSessionRoute(method, p, deck string) bool {
 		return method == "POST" && (p == "/api/asset/image" || p == "/api/asset/video")
 	}
 	suffix := strings.TrimPrefix(p, prefix)
+	if deleteSlideRoute(method, suffix) {
+		return true
+	}
 	if method == "GET" {
 		return suffix == "status" || suffix == "export.pdf" || suffix == "export.pptx" || suffix == "print.html" || strings.HasPrefix(suffix, "slide/") || strings.HasPrefix(suffix, "source/")
 	}

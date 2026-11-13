@@ -53,7 +53,6 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	if err := studio.ValidateEditorAssetURLs(in.AssetURLs, in.AssetSessionURL); err != nil {
 		return result, err
 	}
-	in.Body = studio.RestoreEditorAssetPaths(in.Body, in.AssetURLs)
 	sourceRoot := in.Root
 	if in.AudienceURL != nil && *in.AudienceURL != "" {
 		audience, e := url.Parse(*in.AudienceURL)
@@ -75,8 +74,11 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 	if err != nil || u.IsAbs() || u.Host != "" || u.RawPath != "" || strings.ContainsAny(u.Path, "\\\x00") || path.Clean(u.Path) != strings.TrimSuffix(u.Path, "/") || !studio.ValidDeckName(in.Deck) {
 		return result, errors.New("unsupported visual editor operation")
 	}
-	if !transformRoute(in.Method, u.Path, in.Deck) || (in.PresentationOnly && in.Method != "GET" && in.Method != "HEAD") {
+	if (u.Path == "/api/asset/image" && u.Query().Get("deck") != in.Deck) || !transformRoute(in.Method, u.Path, in.Deck) || (in.PresentationOnly && in.Method != "GET" && in.Method != "HEAD") {
 		return EditorTransformResult{Status: http.StatusNotFound, Headers: map[string]string{"content-type": "application/json"}, Body: []byte(`{"error":"operation unavailable in visual editor"}`), Files: in.Files}, nil
+	}
+	if u.Path != "/api/asset/image" {
+		in.Body = studio.RestoreEditorAssetPaths(in.Body, in.AssetURLs)
 	}
 	if len(in.Body) > 16<<20 {
 		return result, errors.New("editor body limit")
@@ -135,7 +137,7 @@ func TransformEditor(ctx context.Context, in EditorTransformInput) (EditorTransf
 		return result, err
 	}
 	for k, v := range in.Headers {
-		if strings.EqualFold(k, "content-type") || strings.EqualFold(k, "range") {
+		if strings.EqualFold(k, "content-type") || strings.EqualFold(k, "range") || strings.EqualFold(k, "if-match") {
 			r.Header.Set(k, v)
 		}
 	}
@@ -283,6 +285,9 @@ func copyEditorTransformMedia(sourceRoot, targetRoot string) error {
 }
 
 func transformRoute(method, p, deck string) bool {
+	if method == "POST" && p == "/api/asset/image" {
+		return true
+	}
 	if method == "HEAD" && (strings.HasPrefix(p, "/assets/video/") || strings.HasPrefix(p, "/assets/bundle/") || strings.HasPrefix(p, "/library/")) {
 		return true
 	}
@@ -294,6 +299,9 @@ func transformRoute(method, p, deck string) bool {
 		return false
 	}
 	suffix := strings.TrimPrefix(p, prefix)
+	if deleteSlideRoute(method, suffix) {
+		return true
+	}
 	parts := strings.Split(suffix, "/")
 	if method == "GET" {
 		return suffix == "share-qr.png" || suffix == "status" || suffix == "voice-context" || len(parts) == 2 && (parts[0] == "slide" && studio.ValidSlideID(parts[1]) || parts[0] == "source")
