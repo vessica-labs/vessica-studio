@@ -221,6 +221,7 @@ func TestPlayerVoiceKeyboardShortcuts(t *testing.T) {
 	script := `
  const assert=require('node:assert/strict');global.window=global;
  let keyboard,presenter=true,editingText=false,editMode=false,selEl=null;
+ const deleteDialog={open:false};
  const events=[];global.document={activeElement:null,dispatchEvent:e=>events.push(e.type)};
  global.addEventListener=(name,fn)=>keyboard=fn;global.VSTDPresenterControl=()=>presenter;
  ` + source[start:start+end] + `
@@ -230,6 +231,7 @@ func TestPlayerVoiceKeyboardShortcuts(t *testing.T) {
  key('v',{shiftKey:true});assert.deepEqual(events.splice(0),['vstd:conversation-toggle']);
  for(const modifier of ['ctrlKey','metaKey','altKey','repeat']){key('V',{shiftKey:true,[modifier]:true});key('v',{[modifier]:true});}
  assert.equal(events.length,0,'modified shortcuts and key repeat must not toggle voice');
+ deleteDialog.open=true;key('V');assert.equal(events.length,0,'modal suppresses deck shortcuts');deleteDialog.open=false;
  const entry={nodeType:1,matches:()=>true};key('V',{shiftKey:true,target:entry});
  document.activeElement=entry;key('V',{shiftKey:true});document.activeElement=null;
  presenter=false;key('V',{shiftKey:true});presenter=true;
