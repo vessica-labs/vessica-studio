@@ -596,7 +596,9 @@ responsive srcsets, sanitized SVG, minified HTML/CSS/JS, H.264 MP4 capped at 108
 with fast-start, and WebP posters. Variants and dimensions are optional artifact
 fields; delivery settings and variant rules participate in the deterministic
 manifest checksum. Original studio files are retained unchanged. Encoder versions
-should be pinned consistently across build workers.
+should be pinned consistently across build workers. The SVG sanitizer drops
+PowerPoint theme fill rules when the affected elements already declare the
+same fill colors. Other stylesheets still fail the build.
 
 Optimized `release-build` media encoding can reuse unchanged image/video derivatives
 when the host explicitly sets an absolute `XDG_CACHE_HOME`. The disposable cache

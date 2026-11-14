@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -64,8 +65,15 @@ func deliveryMinifier() *minify.M {
 	return m
 }
 
-// Reject active/external SVG features rather than trying to repair ambiguous
-// untrusted markup. Local fragment paint/clip references remain available.
+const (
+	svgNamespace   = "http://www.w3.org/2000/svg"
+	xlinkNamespace = "http://www.w3.org/1999/xlink"
+)
+
+var officeFillRule = regexp.MustCompile(`^\s*\.(MsftOfcThm_[A-Za-z0-9_]+_Fill_v[0-9]+)\s*\{\s*fill\s*:\s*(#[[:xdigit:]]{6})\s*;?\s*\}\s*`)
+
+// Preserve local fragment references and drop Office fill rules only when every
+// affected element already has the same fill as a presentation attribute.
 func sanitizeDeliverySVG(source []byte) ([]byte, error) {
 	d := xml.NewDecoder(bytes.NewReader(source))
 	var out bytes.Buffer
@@ -75,6 +83,10 @@ func sanitizeDeliverySVG(source []byte) ([]byte, error) {
 		allowed[name] = true
 	}
 	depth, skipping := 0, 0
+	var rootSeen bool
+	var sourceNamespace string
+	fills := map[string]string{}
+	var styled []svgClassFill
 	for {
 		token, err := d.Token()
 		if err == io.EOF {
@@ -96,26 +108,73 @@ func sanitizeDeliverySVG(source []byte) ([]byte, error) {
 				skipping++
 				continue
 			}
+			if depth == 1 {
+				if rootSeen || v.Name.Local != "svg" || v.Name.Space != "" && v.Name.Space != svgNamespace {
+					return nil, fmt.Errorf("invalid SVG root")
+				}
+				rootSeen = true
+				sourceNamespace = v.Name.Space
+			}
 			if v.Name.Local == "metadata" {
 				skipping = 1
 				continue
 			}
-			if !allowed[v.Name.Local] || (v.Name.Space != "" && v.Name.Space != "http://www.w3.org/2000/svg") {
+			if v.Name.Local == "style" && depth == 2 && v.Name.Space == sourceNamespace {
+				if err := readOfficeFillRules(d, v, fills); err != nil {
+					return nil, err
+				}
+				depth--
+				continue
+			}
+			if !allowed[v.Name.Local] || v.Name.Space != sourceNamespace {
 				return nil, fmt.Errorf("unsupported SVG element")
 			}
+			// Encode the default namespace once. Use the canonical XLink prefix
+			// because the SVG minifier drops attributes with generated prefixes.
+			v.Name.Space = ""
+			attrs := v.Attr[:0]
+			var classes, fill string
 			for _, a := range v.Attr {
+				if a.Name.Space == "xmlns" || a.Name.Space == "" && a.Name.Local == "xmlns" {
+					continue
+				}
+				if a.Name.Space == "" {
+					switch a.Name.Local {
+					case "class":
+						classes = a.Value
+					case "fill":
+						fill = a.Value
+					}
+				}
 				value := strings.ToLower(strings.TrimSpace(a.Value))
 				name := strings.ToLower(a.Name.Local)
-				if strings.HasPrefix(name, "on") || name == "style" || name == "base" || strings.Contains(value, "javascript:") || strings.Contains(value, "data:") || strings.Contains(value, "://") && name != "xmlns" || (name == "href" && !strings.HasPrefix(value, "#")) || strings.Contains(value, "url(") && !strings.HasPrefix(value, "url(#") {
+				if strings.HasPrefix(name, "on") || name == "style" || name == "base" || strings.Contains(value, "javascript:") || strings.Contains(value, "data:") || strings.Contains(value, "://") || (name == "href" && !strings.HasPrefix(value, "#")) || strings.Contains(value, "url(") && !strings.HasPrefix(value, "url(#") {
 					return nil, fmt.Errorf("active SVG attribute is forbidden")
 				}
+				if a.Name.Space == xlinkNamespace {
+					a.Name = xml.Name{Local: "xlink:" + a.Name.Local}
+				}
+				attrs = append(attrs, a)
 			}
+			if depth == 1 {
+				attrs = append(attrs,
+					xml.Attr{Name: xml.Name{Local: "xmlns"}, Value: svgNamespace},
+					xml.Attr{Name: xml.Name{Local: "xmlns:xlink"}, Value: xlinkNamespace},
+				)
+			}
+			if classes != "" {
+				styled = append(styled, svgClassFill{classes: classes, fill: fill})
+			}
+			v.Attr = attrs
+			token = v
 		case xml.EndElement:
 			depth--
 			if skipping > 0 {
 				skipping--
 				continue
 			}
+			v.Name.Space = ""
+			token = v
 		default:
 			if skipping > 0 {
 				continue
@@ -125,11 +184,61 @@ func sanitizeDeliverySVG(source []byte) ([]byte, error) {
 			return nil, err
 		}
 	}
-	if depth != 0 {
+	if !rootSeen || depth != 0 {
 		return nil, fmt.Errorf("invalid SVG")
+	}
+	for _, element := range styled {
+		for _, class := range strings.Fields(element.classes) {
+			if expected, ok := fills[class]; ok && !strings.EqualFold(strings.TrimSpace(element.fill), expected) {
+				return nil, fmt.Errorf("Office SVG stylesheet changes an element's fill")
+			}
+		}
 	}
 	if err := e.Flush(); err != nil {
 		return nil, err
 	}
+	if len(fills) != 0 {
+		// Keep Office logo path precision after removing the stylesheet.
+		return out.Bytes(), nil
+	}
 	return deliveryMinifier().Bytes("image/svg+xml", out.Bytes())
+}
+
+type svgClassFill struct {
+	classes string
+	fill    string
+}
+
+func readOfficeFillRules(d *xml.Decoder, start xml.StartElement, fills map[string]string) error {
+	if len(start.Attr) != 0 {
+		return fmt.Errorf("unsupported SVG stylesheet attributes")
+	}
+	var css strings.Builder
+read:
+	for {
+		token, err := d.Token()
+		if err != nil {
+			return err
+		}
+		switch v := token.(type) {
+		case xml.CharData:
+			css.Write(v)
+		case xml.EndElement:
+			break read
+		default:
+			return fmt.Errorf("unsupported SVG stylesheet content")
+		}
+	}
+	for remaining := strings.TrimSpace(css.String()); remaining != ""; {
+		rule := officeFillRule.FindStringSubmatch(remaining)
+		if rule == nil {
+			return fmt.Errorf("unsupported SVG stylesheet rule")
+		}
+		if previous, ok := fills[rule[1]]; ok && !strings.EqualFold(previous, rule[2]) {
+			return fmt.Errorf("conflicting Office SVG fill rules")
+		}
+		fills[rule[1]] = rule[2]
+		remaining = remaining[len(rule[0]):]
+	}
+	return nil
 }
