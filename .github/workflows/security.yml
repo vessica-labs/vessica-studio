@@ -83,15 +83,27 @@ jobs:
       - run: git diff --exit-code && git diff --check
       - name: Build immutable release binaries
         run: |
+          git clone --quiet --no-hardlinks "$GITHUB_WORKSPACE" "$RUNNER_TEMP/vstd-source"
+          cd "$RUNNER_TEMP/vstd-source"
+          git checkout --quiet --detach "$GITHUB_SHA"
+          test -z "$(git status --porcelain)"
           mkdir -p "$RUNNER_TEMP/vstd-release"
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64; do
             os="${target%/*}"
             arch="${target#*/}"
             CGO_ENABLED=0 GOOS="$os" GOARCH="$arch" go build -trimpath -buildvcs=true \
               -o "$RUNNER_TEMP/vstd-release/vstd_${os}_${arch}" ./cmd/vstd
+            metadata="$(go version -m "$RUNNER_TEMP/vstd-release/vstd_${os}_${arch}")"
+            grep -Fxq "$(printf '\tbuild\tvcs.revision=%s' "$GITHUB_SHA")" <<< "$metadata"
+            grep -Fxq "$(printf '\tbuild\tvcs.modified=false')" <<< "$metadata"
           done
           cd "$RUNNER_TEMP/vstd-release"
           sha256sum vstd_* > SHA256SUMS
+          studio="$(mktemp -d "$RUNNER_TEMP/release-smoke.XXXXXX")"
+          ./vstd_linux_amd64 init "$studio"
+          ./vstd_linux_amd64 new smoke --root "$studio"
+          ./vstd_linux_amd64 release-build smoke --root "$studio" --output "$studio/release"
+          jq -e --arg revision "$GITHUB_SHA" '.engine.revision == $revision' "$studio/release/release-manifest.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: vstd-${{ github.sha }}
