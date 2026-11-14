@@ -2,6 +2,7 @@ package studio
 
 import (
 	"bytes"
+	"encoding/xml"
 	"image"
 	"image/png"
 	"os"
@@ -45,6 +46,53 @@ func TestSanitizeDeliverySVG(t *testing.T) {
 	}
 	if strings.Contains(string(clean), "private") || !strings.Contains(string(clean), "path") {
 		t.Fatal(string(clean))
+	}
+}
+
+func TestSanitizeDeliverySVGPreservesPowerPointLogo(t *testing.T) {
+	source := []byte(`<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 10 10">
+		<style>.MsftOfcThm_Text2_Fill_v2 { fill: #00008F; }</style>
+		<defs><path id="logo" class="cls-1 MsftOfcThm_Text2_Fill_v2" fill="#00008F" d="M0 0H10V10Z"/></defs>
+		<use xlink:href="#logo"/>
+	</svg>`)
+	clean, err := sanitizeDeliverySVG(source)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var logo struct {
+		XMLName xml.Name
+		Path    struct {
+			Fill string `xml:"fill,attr"`
+			Data string `xml:"d,attr"`
+		} `xml:"defs>path"`
+		Use struct {
+			Href string `xml:"http://www.w3.org/1999/xlink href,attr"`
+		} `xml:"use"`
+	}
+	if err := xml.Unmarshal(clean, &logo); err != nil {
+		t.Fatal(err)
+	}
+	if logo.XMLName.Space != "http://www.w3.org/2000/svg" || logo.XMLName.Local != "svg" ||
+		logo.Path.Fill != "#00008f" && logo.Path.Fill != "#00008F" || logo.Path.Data != "M0 0H10V10Z" || logo.Use.Href != "#logo" {
+		t.Fatalf("published logo changed: %s", clean)
+	}
+	if bytes.Count(clean, []byte(`xmlns="http://www.w3.org/2000/svg"`)) != 1 || bytes.Contains(clean, []byte("<style")) {
+		t.Fatalf("published SVG should have one default namespace and no stylesheet: %s", clean)
+	}
+}
+
+func TestSanitizeDeliverySVGRejectsUnsupportedStylesheets(t *testing.T) {
+	for _, source := range []string{
+		`<style>.MsftOfcThm_Text2_Fill_v2 { fill: #00008F; }</style><path class="MsftOfcThm_Text2_Fill_v2" fill="#fff"/>`,
+		`<style>.MsftOfcThm_Text2_Fill_v2 { fill: #00008F; }</style><path class="MsftOfcThm_Text2_Fill_v2"/>`,
+		`<style>.MsftOfcThm_Text2_Fill_v2 { fill: url(https://example.test/fill); }</style>`,
+		`<style>path { fill: #00008F; }</style>`,
+		`<style><path/></style>`,
+		`<style media="print">.MsftOfcThm_Text2_Fill_v2 { fill: #00008F; }</style>`,
+	} {
+		if _, err := sanitizeDeliverySVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg">` + source + `</svg>`)); err == nil {
+			t.Errorf("unsupported stylesheet accepted: %s", source)
+		}
 	}
 }
 
