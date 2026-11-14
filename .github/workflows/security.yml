@@ -99,11 +99,12 @@ jobs:
           done
           cd "$RUNNER_TEMP/vstd-release"
           sha256sum vstd_* > SHA256SUMS
-          studio="$(mktemp -d "$RUNNER_TEMP/release-smoke.XXXXXX")"
+          smoke="$(mktemp -d "$RUNNER_TEMP/release-smoke.XXXXXX")"
+          studio="$smoke/studio"
           ./vstd_linux_amd64 init "$studio"
           ./vstd_linux_amd64 new smoke --root "$studio"
-          ./vstd_linux_amd64 release-build smoke --root "$studio" --output "$studio/release"
-          jq -e --arg revision "$GITHUB_SHA" '.engine.revision == $revision' "$studio/release/release-manifest.json"
+          ./vstd_linux_amd64 release-build smoke --root "$studio" --output "$smoke/release"
+          jq -e --arg revision "$GITHUB_SHA" '.engine.revision == $revision' "$smoke/release/release-manifest.json"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: vstd-${{ github.sha }}
