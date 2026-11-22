@@ -52,6 +52,40 @@ func TestBuildPPTXEmitsEditableObjects(t *testing.T) {
 	}
 }
 
+func TestBuildPPTXKeepsRichParagraphsInOneWrappingTextBox(t *testing.T) {
+	e := PPTXElement{
+		Kind: "text", W: 240, H: 96, Align: "center", FontFamily: "Arial", FontSize: 20,
+		Paragraphs: []PPTXParagraph{
+			{LineHeight: 24, Runs: []PPTXTextRun{
+				{Text: "A long sentence ", FontFamily: "Arial", FontSize: 20},
+				{Text: "with bold", FontFamily: "Arial", FontSize: 20, Bold: true},
+				{Text: " & more", FontFamily: "Arial", FontSize: 20},
+			}},
+			{LineHeight: 24},
+			{LineHeight: 24, Runs: []PPTXTextRun{
+				{Text: "Second paragraph", FontFamily: "Arial", FontSize: 20, Italic: true, Underline: true},
+			}},
+		},
+	}
+	data, err := BuildPPTX(PPTXDeck{Slides: []PPTXSlide{{Elements: []PPTXElement{e}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	slide := pptxParts(t, data)["ppt/slides/slide1.xml"]
+	if strings.Count(slide, `txBox="1"`) != 1 || strings.Count(slide, "<a:p>") != 3 {
+		t.Fatalf("expected one text box with three paragraphs: %s", slide)
+	}
+	for _, want := range []string{
+		`wrap="square"`, `<a:pPr algn="ctr">`, `<a:spcPts val="1800"/>`,
+		`<a:t>A long sentence </a:t>`, `b="true"`, `<a:t> &amp; more</a:t>`,
+		`i="true" u="sng"`, `<a:t>Second paragraph</a:t>`,
+	} {
+		if !strings.Contains(slide, want) {
+			t.Errorf("missing %s", want)
+		}
+	}
+}
+
 func TestBuildRasterPPTXEmitsOneFullBleedImagePerSlide(t *testing.T) {
 	png := []byte{137, 80, 78, 71, 13, 10, 26, 10, 0, 0, 0, 0}
 	b, err := BuildRasterPPTX("Visual exact", [][]byte{png, png})
