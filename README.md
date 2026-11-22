@@ -50,8 +50,10 @@ and deployable with Git—without locking the deck inside a proprietary editor.
   S3-compatible storage.
 - **Source-aware creation.** Attach PDFs, PowerPoint files, documents,
   spreadsheets, or images to a slide companion so an editing agent can inspect
-  the original source. Source-backed redesigns can run a separate visual critic
-  pass against the reference.
+  the original source. Source-backed redesigns run a separate visual critic
+  when source previews are available. Hosted snapshots can retain companion
+  references to local source files. Those references are preserved if the files
+  are unavailable to the worker.
 - **Forkable decks.** Create audience- or client-specific variants while
   retaining upstream provenance and detecting later parent changes.
 - **Organized and reusable work.** Keep a personal one-level folder view of
