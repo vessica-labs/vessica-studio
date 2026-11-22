@@ -488,10 +488,10 @@ a yaml into requests/ with deck: and slide: fields and rewrite that bullet
 prefixed "- awaiting imagery: …" so the queue knows it is on hold; complete
 everything else.
 
-If the companion frontmatter lists attachments, those files live at the
-deck-relative paths shown there. They are primary source material: inspect
-them directly and preserve their attachment metadata. The engine will run a
-separate visual source-fidelity critic after your pass.
+Preserve the companion's attachment metadata. Inspect available source files
+at the listed deck-relative paths. Hosted snapshots may omit local source
+files. If a source is unavailable, use the slide and assets in this workspace.
+The engine runs a separate visual source-fidelity critic when it has source previews.
 
 Progress: update the "(in progress — cloud agent — NN%%)" marker line in the
 companion as you work — 60 while editing, 90 before finishing.
@@ -640,13 +640,7 @@ func (w *agentWorker) runSourceCritic(deck, id string, preexisting map[string]bo
 		return true
 	}
 	defer os.RemoveAll(tmp)
-	current, err := w.renderSlide(deck, id, tmp)
-	if err != nil {
-		log.Printf("agent: source critic skipped %s/%s: render current slide: %v", deck, id, err)
-		w.mark(deck, id, "")
-		return true
-	}
-	images := []string{current}
+	var previews []string
 	var sourceNames []string
 	for i, attachment := range attachments {
 		if i >= 3 {
@@ -657,13 +651,20 @@ func (w *agentWorker) runSourceCritic(deck, id string, preexisting map[string]bo
 			log.Printf("agent: source preview unavailable %s/%s (%s): %v", deck, id, attachment.Name, err)
 			continue
 		}
-		images = append(images, preview)
+		previews = append(previews, preview)
 		sourceNames = append(sourceNames, attachment.Name)
 	}
-	if len(images) == 1 {
+	if len(previews) == 0 {
 		w.mark(deck, id, "")
 		return true
 	}
+	current, err := w.renderSlide(deck, id, tmp)
+	if err != nil {
+		log.Printf("agent: source critic skipped %s/%s: render current slide: %v", deck, id, err)
+		w.mark(deck, id, "")
+		return true
+	}
+	images := append([]string{current}, previews...)
 	prompt := fmt.Sprintf(`You are the independent Vessica Studio source-fidelity critic.
 
 The FIRST attached image is the current rendered slide %q in deck %q. The remaining images are previews of its source attachment(s), in this order: %s.
@@ -742,6 +743,13 @@ func agentCriticTimeout() time.Duration {
 
 func (w *agentWorker) renderSourceAttachment(deck string, attachment studio.CompanionAttachment, tmp string, index int) (string, error) {
 	source := filepath.Join(w.s.St.DeckDir(deck), filepath.FromSlash(attachment.Path))
+	info, err := os.Stat(source)
+	if err != nil {
+		return "", err
+	}
+	if !info.Mode().IsRegular() {
+		return "", fmt.Errorf("source attachment is not a regular file")
+	}
 	ext := strings.ToLower(filepath.Ext(source))
 	if imgExts[ext] {
 		return source, nil

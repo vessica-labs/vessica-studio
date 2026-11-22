@@ -50,15 +50,19 @@ func TestSelectedImageProcessesOneOwnedRequestAndRegistersAsset(t *testing.T) {
 func TestImagePlanningAndLandingHaveDistinctOpeningRequests(t *testing.T) {
 	st := testStudio(t)
 	companion := st.SlidePath("demo", "0010-a", ".md")
-	if err := os.WriteFile(companion, []byte("# Cover\n\n## Edit requests\n- create a new background\n\n## Log\n"), 0644); err != nil {
+	// Hosted projections can retain companion metadata for local-only files.
+	sourceMetadata := "---\nattachments:\n  - name: Original cover\n    path: sources/original.png\n    media_type: image/png\n---"
+	if err := os.WriteFile(companion, []byte(sourceMetadata+"\n# Cover\n\n## Edit requests\n- create a new background\n\n## Log\n"), 0644); err != nil {
 		t.Fatal(err)
 	}
 	bin := filepath.Join(t.TempDir(), "claude")
 	script := `#!/bin/sh
 for arg do last="$arg"; done
+case "$last" in *'independent Vessica Studio source-fidelity critic'*) exit 1 ;; esac
 printf '%s' "$last" > "$VSTD_TEST_OPENING_REQUEST"
+printf '%s\n' "$VSTD_TEST_SOURCE_METADATA" > decks/demo/slides/0010-a.md
 if [ "$VSTD_TEST_IMAGE_STAGE" = planning ]; then
-cat > decks/demo/slides/0010-a.md <<'EOF'
+cat >> decks/demo/slides/0010-a.md <<'EOF'
 # Cover
 
 ## Edit requests
@@ -74,7 +78,7 @@ slug: cover
 EOF
 else
 printf '<section class="slide" style="background:url(%s)"></section>\n' "$VSTD_TEST_IMAGE_URL" > decks/demo/slides/0010-a.html
-cat > decks/demo/slides/0010-a.md <<'EOF'
+cat >> decks/demo/slides/0010-a.md <<'EOF'
 # Cover
 
 ## Edit requests
@@ -90,6 +94,13 @@ fi
 	t.Setenv("VSTD_AGENT_CMD", bin)
 	t.Setenv("VSTD_AGENT_SANDBOX", "")
 	t.Setenv("VSTD_OPENAI_KEY", "fixture-capability")
+	t.Setenv("VSTD_TEST_SOURCE_METADATA", sourceMetadata)
+	// Keep the browser step viable so the old critic would reach the missing PNG.
+	browser := filepath.Join(t.TempDir(), "chromium")
+	if err := os.WriteFile(browser, []byte("#!/bin/sh\nfor arg do case \"$arg\" in --screenshot=*) touch \"${arg#--screenshot=}\" ;; esac; done\n"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VSTD_CHROMIUM", browser)
 	s := New(st, ModeStudio)
 	opening := filepath.Join(t.TempDir(), "opening.txt")
 	t.Setenv("VSTD_TEST_OPENING_REQUEST", opening)
@@ -133,6 +144,10 @@ fi
 	}
 	if calls != 1 || s.RunAgentSelectedIsolated("demo", "0010-a") != 0 {
 		t.Fatal("completed image work was replayed")
+	}
+	finished, err := os.ReadFile(companion)
+	if err != nil || !strings.HasPrefix(string(finished), sourceMetadata) {
+		t.Fatalf("source metadata was lost: %v", err)
 	}
 }
 
