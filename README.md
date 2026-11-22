@@ -704,9 +704,11 @@ whole deck). Dynamic dates and deck numbering also invalidate the relevant slide
 artifacts when their rendered values change. The cache is excluded from Git, content sync, file-watcher reloads,
 bundles, and source-asset manifests. Delete that directory at any time to force
 a clean rebuild. Editable PowerPoint converts supported rendered elements into
-native PresentationML objects. Text retains browser wrapping, padding and inline
-styles; SVG paths retain editable subpaths, Bézier controls, gradient stops and
-dash patterns. Generated CSS bullets and arrows are included. Complex CSS
+native PresentationML objects. Multiline text stays in one editable box with
+authored breaks and inline styles. PowerPoint wraps the text at the box width
+as you edit. Polygon-clipped artwork keeps its crop, and solid polygon shapes
+remain editable. SVG paths retain editable subpaths, Bézier controls, gradient
+stops and dash patterns. Generated CSS bullets and arrows are included. Complex CSS
 backgrounds, masks and shadows become individual pictures, while text and
 ordinary shapes remain editable. The installed font that Chromium actually
 uses is recorded; the same font should be available on the PowerPoint machine.

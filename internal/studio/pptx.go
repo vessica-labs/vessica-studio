@@ -58,6 +58,7 @@ type PPTXElement struct {
 	H             float64            `json:"h"`
 	Rotation      float64            `json:"rotation,omitempty"`
 	Text          string             `json:"text,omitempty"`
+	Paragraphs    []PPTXParagraph    `json:"paragraphs,omitempty"`
 	FontFamily    string             `json:"font_family,omitempty"`
 	FontSize      float64            `json:"font_size,omitempty"`
 	Bold          bool               `json:"bold,omitempty"`
@@ -227,64 +228,6 @@ func shapeXML(e PPTXElement, id int, name string) string {
 		adjust = fmt.Sprintf(`<a:avLst><a:gd name="adj" fmla="val %d"/></a:avLst>`, int(math.Round(math.Min(.5, e.Radius/math.Max(1, math.Min(e.W, e.H)))*100000)))
 	}
 	return fmt.Sprintf(`<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr>%s<a:prstGeom prst="%s">%s</a:prstGeom>%s%s</p:spPr></p:sp>`, id, xmlText(name), xfrmXML(e), geom, adjust, fillXML(e), elementLineXML(e))
-}
-
-func textParagraphXML(text string, e PPTXElement) string {
-	if e.Color == "" {
-		e.Color = "#111111"
-	}
-	fontSize := e.FontSize
-	if fontSize <= 0 {
-		fontSize = 18
-	}
-	// CSS px to PowerPoint points, represented in hundredths of a point.
-	sz := max(100, min(400000, int(math.Round(fontSize*75))))
-	font := strings.TrimSpace(strings.Split(e.FontFamily, ",")[0])
-	font = strings.Trim(font, ` "'`)
-	if font == "" {
-		font = "Arial"
-	}
-	align := map[string]string{"center": "ctr", "right": "r", "justify": "just"}[e.Align]
-	if align == "" {
-		align = "l"
-	}
-	b, i := "0", "0"
-	if e.Bold {
-		b = "1"
-	}
-	if e.Italic {
-		i = "1"
-	}
-	return fmt.Sprintf(`<a:p><a:pPr algn="%s"><a:lnSpc><a:spcPct val="100000"/></a:lnSpc><a:spcBef><a:spcPts val="0"/></a:spcBef><a:spcAft><a:spcPts val="0"/></a:spcAft></a:pPr><a:r><a:rPr lang="en-US" sz="%d" b="%s" i="%s" spc="%d" kern="0">%s<a:latin typeface="%s"/></a:rPr><a:t>%s</a:t></a:r><a:endParaRPr lang="en-US" sz="%d"/></a:p>`, align, sz, b, i, int(math.Round(e.LetterSpacing*75)), solidFillXML(e.Color, e.Opacity), xmlText(font), xmlText(text), sz)
-}
-
-func textXML(e PPTXElement, id int, name string) string {
-	// Chromium Range bounds and Office's first-line leading differ by font.
-	// Calibrated against native PowerPoint, proportional to the measured size;
-	// legacy/unmeasured and unknown fonts retain their existing positioning.
-	if e.Measured && math.Abs(e.Rotation) < .01 {
-		switch strings.ToLower(e.FontFamily) {
-		case "henderson bcg sans", "henderson bcg serif":
-			e.Y -= e.FontSize * .067
-		case "arial":
-			e.Y -= e.FontSize * .075
-		}
-	}
-
-	anchor := map[string]string{"middle": "ctr", "center": "ctr", "bottom": "b"}[e.VAlign]
-	if anchor == "" {
-		anchor = "t"
-	}
-	var paras strings.Builder
-	lines := strings.Split(strings.ReplaceAll(e.Text, "\r\n", "\n"), "\n")
-	for _, line := range lines {
-		paras.WriteString(textParagraphXML(line, e))
-	}
-	wrap := "square"
-	if e.NoWrap {
-		wrap = "none"
-	}
-	return fmt.Sprintf(`<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr>%s<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr><p:txBody><a:bodyPr wrap="%s" lIns="0" tIns="0" rIns="0" bIns="0" anchor="%s"><a:noAutofit/></a:bodyPr><a:lstStyle/>%s</p:txBody></p:sp>`, id, xmlText(name), xfrmXML(e), wrap, anchor, paras.String())
 }
 
 func lineShapeXML(x1, y1, x2, y2 float64, e PPTXElement, id int, name string) string {
@@ -461,7 +404,7 @@ func (b *pptxBuild) slide(slide PPTXSlide, number int) (string, string) {
 		}
 		switch e.Kind {
 		case "text":
-			if strings.TrimSpace(e.Text) != "" {
+			if len(e.Paragraphs) > 0 || strings.TrimSpace(e.Text) != "" {
 				shapes.WriteString(textXML(e, id, name))
 				id++
 			}

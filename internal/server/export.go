@@ -38,7 +38,15 @@ type printJob struct {
 }
 
 //go:embed pptx_capture.js
-var pptxCaptureJS string
+var pptxCaptureMain string
+
+//go:embed pptx_capture_text.js
+var pptxCaptureText string
+
+//go:embed pptx_capture_clip.js
+var pptxCaptureClip string
+
+var pptxCaptureJS = "(() => {\n" + pptxCaptureText + "\n" + pptxCaptureClip + "\n" + pptxCaptureMain + "\n})();"
 
 func injectPPTXCapture(page string) string {
 	return strings.Replace(page, "</body>", "<script>"+pptxCaptureJS+"</script></body>", 1)

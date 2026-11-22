@@ -292,6 +292,7 @@
         x.roundRect(0, 0, w, h, radii);
         x.clip();
       }
+      pptxClipPicture(x, cs, w, h);
       if (img instanceof Element) {
         for (
           let parent = img.parentElement;
@@ -359,111 +360,6 @@
     }
     fontCache.set(cs.fontFamily, chosen);
     return chosen;
-  }
-  // Capture each browser-laid-out line and inline style independently. Range
-  // geometry includes the real padding, flex alignment and browser wrapping.
-  function captureText(node, sr, elements) {
-    const el = node.parentElement,
-      cs = getComputedStyle(el),
-      raw = node.nodeValue,
-      range = document.createRange();
-    const rot = rotation(cs);
-    if (Math.abs(rot) > 0.1) {
-      range.selectNodeContents(node);
-      const r = range.getBoundingClientRect(),
-        g = geom(r, sr),
-        cx = g.x + g.w / 2,
-        cy = g.y + g.h / 2;
-      if (Math.abs(rot % 180) > 45) {
-        const t = g.w;
-        g.w = g.h;
-        g.h = t;
-      }
-      g.x = cx - g.w / 2;
-      g.y = cy - g.h / 2;
-      elements.push({
-        kind: "text",
-        ...g,
-        w: g.w + 2,
-        rotation: rot,
-        text:
-          cs.textTransform === "uppercase"
-            ? raw.trim().toUpperCase()
-            : raw.trim(),
-        measured: true,
-        align: "left",
-        valign: "top",
-        nowrap: true,
-        font_family: fontFamily(cs),
-        font_size: parseFloat(cs.fontSize) || 16,
-        bold: parseInt(cs.fontWeight) >= 600,
-        color: cs.color,
-        opacity: opacity(el),
-        letter_spacing: parseFloat(cs.letterSpacing) || 0,
-      });
-      return;
-    }
-    const lines = [];
-    let line = null;
-    for (let i = 0; i < raw.length;) {
-      const n = raw.codePointAt(i) > 65535 ? 2 : 1;
-      range.setStart(node, i);
-      range.setEnd(node, i + n);
-      const r = range.getBoundingClientRect();
-      let t = raw.slice(i, i + n);
-      i += n;
-      if (r.width < 0.01 || r.height < 0.01) continue;
-      if (cs.whiteSpace === "normal" || cs.whiteSpace === "nowrap")
-        t = t.replace(/\s/g, " ");
-      if (cs.textTransform === "uppercase") t = t.toUpperCase();
-      else if (cs.textTransform === "lowercase") t = t.toLowerCase();
-      if (!line || Math.abs(line.top - r.top) > 1) {
-        line = {
-          text: "",
-          left: r.left,
-          right: r.right,
-          top: r.top,
-          bottom: r.bottom,
-        };
-        lines.push(line);
-      }
-      line.text += t;
-      line.left = Math.min(line.left, r.left);
-      line.right = Math.max(line.right, r.right);
-      line.bottom = Math.max(line.bottom, r.bottom);
-    }
-    for (const l of lines) {
-      if (!l.text.trim()) continue;
-      const g = geom(
-        {
-          left: l.left,
-          top: l.top,
-          width: l.right - l.left,
-          height: l.bottom - l.top,
-        },
-        sr,
-      );
-      const size = ((parseFloat(cs.fontSize) || 16) * 1280) / sr.width;
-      elements.push({
-        kind: "text",
-        name: (el.className || el.tagName).toString().slice(0, 80),
-        ...g,
-        w: g.w + 2,
-        h: Math.max(g.h, size * 1.35),
-        text: l.text,
-        nowrap: true,
-        font_family: fontFamily(cs),
-        font_size: size,
-        bold: parseInt(cs.fontWeight) >= 600,
-        italic: cs.fontStyle === "italic",
-        color: cs.color,
-        opacity: opacity(el),
-        letter_spacing: parseFloat(cs.letterSpacing) || 0,
-        align: "left",
-        valign: "top",
-        measured: true,
-      });
-    }
   }
   function svgPath(n, sr) {
     const tokens =
@@ -580,10 +476,9 @@
   }
   const escapeXML = (s) =>
     s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
-  async function cssBackground(r, cs) {
+  async function cssBackground(r, cs, clippedBox) {
     let bg = cs.backgroundImage,
       mask = cs.maskImage;
-    if ((!bg || bg === "none") && (!mask || mask === "none")) return "";
     let combined = bg + "__MASK__" + mask;
     for (const m of [...combined.matchAll(/url\(["']?([^"')]+)["']?\)/g)]) {
       try {
@@ -627,8 +522,11 @@
       ";mask-repeat:" +
       cs.maskRepeat +
       ";background-color:" +
-      (mask !== "none" ? cs.backgroundColor : "transparent") +
-      ";";
+      (mask !== "none" || clippedBox ? cs.backgroundColor : "transparent") +
+      ";clip-path:" + cs.clipPath + ";box-sizing:border-box;" +
+      (clippedBox ? ["Top", "Right", "Bottom", "Left"].map((side) =>
+        "border-" + side.toLowerCase() + ":" + cs["border" + side] + ";"
+      ).join("") : "");
     const svg =
       '<svg xmlns="http://www.w3.org/2000/svg" width="' +
       w +
@@ -714,27 +612,34 @@
         r = el.getBoundingClientRect();
       if (!visible(el, cs, r)) return;
       if (r.width > 0.3 && r.height > 0.3) {
-        await cssShadow(el, r, cs, sr, elements);
         const base = styleBase(el, cs, r, sr);
+        const name = (el.className || el.tagName).toString().slice(0, 80);
+        const polygon = pptxClipPolygon(cs, base.w, base.h);
+        const clippedBox = polygon && (polygon.fillRule === "evenodd" ||
+          [cs.borderTopWidth, cs.borderRightWidth, cs.borderBottomWidth, cs.borderLeftWidth].some((width) => width !== "0px"));
+        if (!polygon) await cssShadow(el, r, cs, sr, elements);
         const radii = cornerRadii(cs, r.width, r.height);
         const radius = Math.min(radii[0].x, radii[0].y);
         const shapeKind = radii.every((corner) => corner.x >= r.width / 2 && corner.y >= r.height / 2)
           ? "ellipse" : radius > 0 ? "roundRect" : "rect";
-        if (
+        if (polygon) {
+          if (!clippedBox && opaque(cs.backgroundColor) && cs.maskImage === "none")
+            elements.push({ name, ...pptxPolygonShape(polygon, base) });
+        } else if (
           (opaque(cs.backgroundColor) && cs.maskImage === "none") ||
           base.stroke_width > 0
         )
           elements.push({
             kind: shapeKind,
-            name: (el.className || el.tagName).toString().slice(0, 80),
+            name,
             ...base,
             gradient: [],
             radius,
             stroke_width: cs.backgroundImage === "none" ? base.stroke_width : 0,
           });
-        borderElements(el, cs, r, sr, elements);
-        if (cs.backgroundImage !== "none" || cs.maskImage !== "none") {
-          const data = await cssBackground(r, cs);
+        if (!polygon) borderElements(el, cs, r, sr, elements);
+        if (clippedBox || cs.backgroundImage !== "none" || cs.maskImage !== "none") {
+          const data = await cssBackground(r, cs, clippedBox);
           if (data)
             elements.push({
               kind: "image",
@@ -743,7 +648,7 @@
               opacity: base.opacity,
               image_data: data,
             });
-          if (base.stroke_width > 0)
+          if (!polygon && base.stroke_width > 0)
             elements.push({
               kind: shapeKind,
               ...base,
@@ -911,10 +816,22 @@
         }
         return;
       }
-      for (const child of el.childNodes) {
-        if (child.nodeType === 3) captureText(child, sr, elements);
-        else if (child.nodeType === 1) await walk(child);
+      const allowBlocks = el.matches('[data-edit="text"]') && !/flex|grid/.test(cs.display);
+      let flow = [];
+      function flushText() {
+        if (!flow.length) return;
+        const box = pptxTextBox(el, flow, sr, { geom, rotation, fontFamily, opacity });
+        if (box) elements.push(box);
+        flow = [];
       }
+      for (const child of el.childNodes) {
+        if (pptxInlineText(child, allowBlocks)) flow.push(child);
+        else if (child.nodeType === Node.ELEMENT_NODE) {
+          flushText();
+          await walk(child);
+        }
+      }
+      flushText();
     }
     for (const video of slide.querySelectorAll("video[data-vstd-video]"))
       if (!video.poster)
