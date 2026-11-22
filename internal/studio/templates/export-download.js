@@ -1,13 +1,17 @@
 (function(){
   'use strict';
+  const statusTimeout=30*1000, powerPointTimeout=6*60*1000;
   // Hosts may accept an export as a durable job. Keep preparation independent
   // of a single browser connection; ordinary local responses still return once.
   async function download(path){
     const origin=new URL(location.href).origin,deadline=Date.now()+20*60*1000;
     let url=new URL(path,location.href),failures=0;
+    // PowerPoint can be rendered synchronously by a hosted editor. Allow the
+    // gateway's provisioning and rendering budget before retrying that request.
+    let requestTimeout=url.pathname.endsWith('/export.pptx')?powerPointTimeout:statusTimeout;
     while(Date.now()<deadline){
       if(url.origin!==origin||url.username||url.password)throw new Error('Invalid export status location');
-      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),30000);
+      const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),requestTimeout);
       let response;
       try{
         response=await fetch(url.href,{credentials:'same-origin',headers:{Prefer:'respond-async'},signal:controller.signal,redirect:'error'});
@@ -27,6 +31,7 @@
       await response.body?.cancel();
       if(!next)throw new Error('Invalid export status location');
       url=new URL(next,url);
+      requestTimeout=statusTimeout;
       if(url.origin!==origin||url.username||url.password)throw new Error('Invalid export status location');
       const seconds=Number(response.headers.get('Retry-After')??1);
       const delay=Number.isFinite(seconds)?Math.min(5000,Math.max(250,seconds*1000)):1000;

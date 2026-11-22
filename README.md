@@ -691,6 +691,8 @@ normally. A hosted adapter may instead return HTTP 202 with a same-origin
 minutes, preserving the selected export parameters. Short status requests keep
 hosted preparation independent of one long browser connection. Cross-origin
 status locations are rejected, and only read-only download requests retry.
+Direct PowerPoint requests allow up to six minutes for hosted preparation and
+rendering. Job status requests retain their shorter deadline.
 
 PDF is a fixed-layout document and is regenerated per request. Dynamic
 `data-current-month-year` fields resolve to the rendering machine's current month
