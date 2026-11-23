@@ -1040,6 +1040,10 @@ object: edit text, bold, italic, underline, text size, text/fill/line color,
 picture crop and zoom, video playback options, reset, and delete. It disappears
 again when nothing is selected, so the canvas stays clear.
 
+While editing a text box, select lines or place the caret on a line and choose
+**Bulleted list** or **Numbered list** in the object bar. Click the same control
+again to remove the list formatting.
+
 Edit-mode shortcuts: **Enter** edits the selected text, **⌘B / ⌘I / ⌘U** toggle
 bold, italic, and underline, **⌘⇧>** and **⌘⇧<** change text size, **⌘D**
 duplicates the selection, **C** toggles crop on a picture, **Delete** removes
