@@ -371,6 +371,9 @@ body.cropmode #selbox{border-style:dashed;border-color:var(--vstd-accent)}
 #selbox .hnd.sw{left:-7px;bottom:-7px;cursor:nesw-resize}#selbox .hnd.w{left:-7px;top:calc(50% - 6px);cursor:ew-resize}
 body.editmode .slide.active [contenteditable="true"]{outline:2px solid var(--vstd-accent-deep);outline-offset:2px;cursor:text}
 body.editmode .slide.active{cursor:default}
+.slide [data-vstd-text-lists] :is(ul,ol){padding-inline-start:1.5em}
+.slide [data-vstd-text-lists] ul{list-style-type:disc}
+.slide [data-vstd-text-lists] ol{list-style-type:decimal}
 @media print{
   #hud,#progress,#notesPanel,#menu,#overview,#vprog,#vproglabel,#stickyPad,#companionDrawer,#downloadMenu,#shareDialog,#deleteSlideDialog,#capbar,#editRibbon,#objectBar,#filmstrip,#vtip,#selbox,#multiboxes,#marquee{display:none!important}
   #stage{position:static}
@@ -455,6 +458,8 @@ document.addEventListener('DOMContentLoaded',()=>{
 <symbol id="vi-bold" viewBox="0 0 24 24"><path d="M6 4h8a4 4 0 0 1 0 8H6zM6 12h9a4 4 0 0 1 0 8H6z"/></symbol>
 <symbol id="vi-italic" viewBox="0 0 24 24"><path d="M19 4h-9M14 20H5M15 4 9 20"/></symbol>
 <symbol id="vi-underline" viewBox="0 0 24 24"><path d="M6 4v6a6 6 0 0 0 12 0V4M4 20h16"/></symbol>
+<symbol id="vi-bullets" viewBox="0 0 24 24"><path d="M9 6h12M9 12h12M9 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></symbol>
+<symbol id="vi-numbers" viewBox="0 0 24 24"><path d="M10 6h11M10 12h11M10 18h11M3 5l2-1v5m-2 0h4m-4 5a2 2 0 1 1 3 2l-3 3h4"/></symbol>
 <symbol id="vi-fill" viewBox="0 0 24 24"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0z"/><path d="m5 2 5 5M2 13h15M22 20a2 2 0 1 1-4 0c0-1.6 1.7-2.4 2-4 .3 1.6 2 2.4 2 4z"/></symbol>
 <symbol id="vi-square" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/></symbol>
 <symbol id="vi-reset" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></symbol>
@@ -510,6 +515,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     <button type="button" class="ico" data-e="bold" data-tip="Bold" data-key="&#8984;B" aria-label="Bold"><svg class="i"><use href="#vi-bold"/></svg></button>
     <button type="button" class="ico" data-e="italic" data-tip="Italic" data-key="&#8984;I" aria-label="Italic"><svg class="i"><use href="#vi-italic"/></svg></button>
     <button type="button" class="ico" data-e="under" data-tip="Underline" data-key="&#8984;U" aria-label="Underline"><svg class="i"><use href="#vi-underline"/></svg></button>
+    <button type="button" class="ico" data-list="insertUnorderedList" data-tip="Bulleted list" aria-label="Bulleted list"><svg class="i"><use href="#vi-bullets"/></svg></button>
+    <button type="button" class="ico" data-list="insertOrderedList" data-tip="Numbered list" aria-label="Numbered list"><svg class="i"><use href="#vi-numbers"/></svg></button>
     <span class="rsep"></span>
     <button type="button" data-e="fminus" data-tip="Smaller text" data-key="&#8984;&#8679;&lt;">A&#8722;</button>
     <button type="button" data-e="fplus" data-tip="Larger text" data-key="&#8984;&#8679;&gt;">A+</button>
@@ -1170,6 +1177,8 @@ document.addEventListener('DOMContentLoaded',()=>{
     const r=slideRect(el);return r.w>=4&&r.h>=4&&r.w<1240&&r.h<700;
   }
   function pickCandidate(target,slide){
+    const listBox=target.closest('[data-vstd-text-lists]');
+    if(listBox&&slide.contains(listBox))return listBox;
     for(let el=target;el&&el!==slide;el=el.parentElement){
       if(el.matches(CAND)||((pictureKind(el)||shapeKind(el))&&visualCandidateSize(el)))return el;
     }
@@ -1209,7 +1218,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(el.matches('video'))return 'Video';
     if(el.matches('svg'))return 'Graphic';
     if(el.matches('table'))return 'Table';
-    if(el.matches('h1,h2,h3,h4,h5,h6,p,li,label,button,.s-title,.s-lead,.hero-title,.hero-sub,.eyebrow,.kpi,.statxl,.headband,.bh'))return 'Text box';
+    if(el.matches('h1,h2,h3,h4,h5,h6,p,li,label,button,[data-edit="text"],[data-vstd-text-lists],.s-title,.s-lead,.hero-title,.hero-sub,.eyebrow,.kpi,.statxl,.headband,.bh'))return 'Text box';
     if(shapeKind(el))return 'Shape';
     if(!el.children.length&&(el.textContent||'').trim())return 'Text box';
     return 'Object';
@@ -1228,6 +1237,7 @@ document.addEventListener('DOMContentLoaded',()=>{
     editTools.querySelectorAll('[data-e="text"],[data-e="bold"],[data-e="italic"],[data-e="under"],[data-e="fminus"],[data-e="fplus"],[data-c="color"]').forEach(x=>{x.disabled=!textOK;});
     objectBar.querySelectorAll('[data-c="bg"],[data-c="border"],[data-e="reset"]').forEach(x=>{x.disabled=!single;});
     objectBar.querySelectorAll('.cwrap').forEach(label=>label.classList.toggle('disabled',!!label.querySelector('input:disabled')));
+    syncListControls(textOK&&canFormatList(selEl));
     imageRibbonTools.style.display=picture?'flex':'none';
     imageRibbonTools.querySelectorAll('button').forEach(x=>x.disabled=!picture);
     imageRibbonTools.querySelectorAll('[data-img^="zoom"]').forEach(x=>x.disabled=picture!=='background');
@@ -1308,7 +1318,7 @@ document.addEventListener('DOMContentLoaded',()=>{
   function stopTextEdit(){
     if(!editingText)return;
     document.querySelectorAll('[contenteditable]').forEach(el=>el.removeAttribute('contenteditable'));
-    editingText=false;
+    editingText=false;savedRange=null;syncListControls(false);
   }
   function slideRect(el){
     const fr=frame.getBoundingClientRect(),r=el.getBoundingClientRect();
@@ -1548,47 +1558,12 @@ document.addEventListener('DOMContentLoaded',()=>{
     if(!editMode)return;
     const slide=slides[cur];
     const t=pickCandidate(e.target,slide);
-    if(t&&slide.contains(t)){
+    if(t&&slide.contains(t)&&!t.isContentEditable){
       selectEl(t);
       if(pictureKind(t))setCropMode(true);else startTextEdit(t,e);
     }
   });
-  let savedRange=null;
-  function activeRange(){
-    if(!editingText)return null;
-    const sel=getSelection();
-    if(sel.rangeCount&&!sel.isCollapsed&&selEl.contains(sel.anchorNode))return sel.getRangeAt(0);
-    if(savedRange&&!savedRange.collapsed&&selEl.contains(savedRange.startContainer)){
-      sel.removeAllRanges();sel.addRange(savedRange);return savedRange;
-    }
-    return null;
-  }
-  function toggleStyle(prop,onVal,offVal,isOn){
-    keepOrig(selEl);
-    selEl.style[prop]=isOn?offVal:onVal;
-    updateSelbox();
-  }
-  function fmt(cmd){
-    if(!selEl)return;
-    const cs=getComputedStyle(selEl);
-    const range=activeRange();
-    try{document.execCommand('styleWithCSS',false,true);}catch(_){}
-    if(cmd==='bold'){
-      if(range)document.execCommand('bold');
-      else toggleStyle('fontWeight','700','400',parseInt(cs.fontWeight)>=600);
-    }else if(cmd==='italic'){
-      if(range)document.execCommand('italic');
-      else toggleStyle('fontStyle','italic','normal',cs.fontStyle==='italic');
-    }else if(cmd==='under'){
-      if(range)document.execCommand('underline');
-      else toggleStyle('textDecoration','underline','none',cs.textDecorationLine.includes('underline'));
-    }else if(cmd==='fminus'||cmd==='fplus'){
-      keepOrig(selEl);
-      const cur=parseFloat(cs.fontSize)||19;
-      selEl.style.fontSize=Math.max(8,cur+(cmd==='fplus'?2:-2))+'px';
-    }
-    updateSelbox();
-  }
+  /*VSTD:TEXT-EDIT*/
   objectBar.addEventListener('input',e=>{
     const inp=e.target.closest('input[type=color]');
     if(!inp||!selEl)return;
@@ -1618,13 +1593,14 @@ document.addEventListener('DOMContentLoaded',()=>{
       }
       return;
     }
+    if(b.dataset.list){formatList(b.dataset.list);return;}
     if(['bold','italic','under','fminus','fplus'].includes(b.dataset.e)){fmt(b.dataset.e);return;}
     if(b.dataset.e==='del'&&selEl){
       deleteSelection();
       return;
     }
     if(b.dataset.e==='text'&&selEl)startTextEdit(selEl);
-    else if(b.dataset.e==='done'){stopTextEdit();clearSel();savedRange=null;}
+    else if(b.dataset.e==='done'){stopTextEdit();clearSel();}
     else if(b.dataset.e==='reset'&&selEl){
       if(selEl.dataset.orig!==undefined){
         if(selEl.dataset.orig)selEl.setAttribute('style',selEl.dataset.orig);else selEl.removeAttribute('style');
